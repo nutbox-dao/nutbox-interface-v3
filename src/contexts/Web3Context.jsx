@@ -1,130 +1,103 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+/**
+ * Web3Context — Compatibility bridge over wagmi + RainbowKit.
+ *
+ * Exposes the same { account, provider, signer, chainId, connecting,
+ * error, isConnected, isCorrectChain, readProvider, connect, disconnect,
+ * switchToBSC } interface that the rest of the app relies on, so no other
+ * files need to change after migrating to RainbowKit.
+ */
+import { createContext, useContext, useMemo, useEffect, useState } from 'react';
+import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
+import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { ethers } from 'ethers';
-import { CHAIN_ID, BSC_CONFIG } from '../config/contracts';
+import { bsc } from 'wagmi/chains';
+import { BSC_CONFIG, CHAIN_ID } from '../config/contracts';
 
 const Web3Context = createContext(null);
 
-export function Web3Provider({ children }) {
-  const [account, setAccount] = useState(null);
-  const [provider, setProvider] = useState(null);
-  const [signer, setSigner] = useState(null);
-  const [chainId, setChainId] = useState(null);
-  const [connecting, setConnecting] = useState(false);
-  const [error, setError] = useState(null);
+/**
+ * Convert a wagmi WalletClient (viem) into an ethers.js v6 Signer.
+ * This lets existing ethers.Contract code continue to work unchanged.
+ */
+function walletClientToEthersSigner(walletClient) {
+  if (!walletClient) return null;
+  const { account, chain, transport } = walletClient;
+  const network = {
+    chainId: chain.id,
+    name: chain.name,
+    ensAddress: chain.contracts?.ensRegistry?.address,
+  };
+  const provider = new ethers.BrowserProvider(transport, network);
+  return provider.getSigner(account.address);
+}
 
-  // Read-only provider for querying on-chain data
-  const readProvider = new ethers.JsonRpcProvider(BSC_CONFIG.rpcUrls[0], CHAIN_ID);
+export function Web3Provider({ children }) {
+  const { address: account, isConnected, chainId } = useAccount();
+  const { connectAsync, isPending: connecting, error: connectError } = useConnect();
+  const { disconnectAsync } = useDisconnect();
+  const { data: walletClient } = useWalletClient();
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  const { switchChainAsync } = useSwitchChain();
+  const { openConnectModal } = useConnectModal();
+
+  const [signerPromise, setSignerPromise] = useState(null);
+  const [signer, setSigner] = useState(null);
+
+  // Build ethers Signer whenever walletClient changes
+  useEffect(() => {
+    if (!walletClient) {
+      setSigner(null);
+      return;
+    }
+    let cancelled = false;
+    walletClientToEthersSigner(walletClient).then((s) => {
+      if (!cancelled) setSigner(s);
+    }).catch(() => {
+      if (!cancelled) setSigner(null);
+    });
+    return () => { cancelled = true; };
+  }, [walletClient]);
+
+  // Build a read-only ethers Provider backed by the wagmi publicClient
+  const readProvider = useMemo(() => {
+    return new ethers.JsonRpcProvider(BSC_CONFIG.rpcUrls[0], CHAIN_ID);
+  }, []);
+
+  // Build an ethers BrowserProvider (write-capable) from walletClient transport
+  const provider = useMemo(() => {
+    if (!walletClient) return null;
+    const { chain, transport } = walletClient;
+    const network = { chainId: chain.id, name: chain.name };
+    return new ethers.BrowserProvider(transport, network);
+  }, [walletClient]);
 
   const isCorrectChain = chainId === CHAIN_ID;
 
-  const switchToBSC = useCallback(async () => {
-    if (!window.ethereum) return;
+  const connect = () => {
+    openConnectModal?.();
+  };
+
+  const disconnect = async () => {
+    await disconnectAsync();
+  };
+
+  const switchToBSC = async () => {
     try {
-      await window.ethereum.request({
-        method: 'wallet_switchEthereumChain',
-        params: [{ chainId: BSC_CONFIG.chainId }],
-      });
-    } catch (switchError) {
-      // Chain not added yet
-      if (switchError.code === 4902) {
-        await window.ethereum.request({
-          method: 'wallet_addEthereumChain',
-          params: [BSC_CONFIG],
-        });
-      }
-    }
-  }, []);
-
-  const connect = useCallback(async () => {
-    if (!window.ethereum) {
-      setError('Please install MetaMask to continue');
-      return;
-    }
-    setConnecting(true);
-    setError(null);
-    try {
-      const browserProvider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await browserProvider.send('eth_requestAccounts', []);
-      const network = await browserProvider.getNetwork();
-      const currentChainId = Number(network.chainId);
-
-      setProvider(browserProvider);
-      setAccount(accounts[0]);
-      setChainId(currentChainId);
-
-      if (currentChainId !== CHAIN_ID) {
-        await switchToBSC();
-      }
-
-      const walletSigner = await browserProvider.getSigner();
-      setSigner(walletSigner);
+      await switchChainAsync({ chainId: bsc.id });
     } catch (err) {
-      console.error('Connection failed:', err);
-      setError(err.message || 'Failed to connect wallet');
-    } finally {
-      setConnecting(false);
+      console.error('Failed to switch chain:', err);
     }
-  }, [switchToBSC]);
-
-  const disconnect = useCallback(() => {
-    setAccount(null);
-    setProvider(null);
-    setSigner(null);
-    setChainId(null);
-    setError(null);
-  }, []);
-
-  // Listen for MetaMask events
-  useEffect(() => {
-    if (!window.ethereum) return;
-
-    const handleAccountsChanged = (accounts) => {
-      if (accounts.length === 0) {
-        disconnect();
-      } else {
-        setAccount(accounts[0]);
-        // Re-create signer
-        if (provider) {
-          provider.getSigner().then(setSigner).catch(console.error);
-        }
-      }
-    };
-
-    const handleChainChanged = (newChainId) => {
-      setChainId(Number(newChainId));
-      // Refresh provider/signer on chain change
-      if (window.ethereum) {
-        const bp = new ethers.BrowserProvider(window.ethereum);
-        setProvider(bp);
-        bp.getSigner().then(setSigner).catch(console.error);
-      }
-    };
-
-    window.ethereum.on('accountsChanged', handleAccountsChanged);
-    window.ethereum.on('chainChanged', handleChainChanged);
-
-    // Auto-reconnect if previously connected
-    window.ethereum.request({ method: 'eth_accounts' }).then((accounts) => {
-      if (accounts.length > 0) {
-        connect();
-      }
-    }).catch(console.error);
-
-    return () => {
-      window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
-      window.ethereum.removeListener('chainChanged', handleChainChanged);
-    };
-  }, []);
+  };
 
   const value = {
-    account,
+    account: account ?? null,
     provider,
     signer,
-    chainId,
+    chainId: chainId ?? null,
     connecting,
-    error,
+    error: connectError?.message ?? null,
     isCorrectChain,
-    isConnected: !!account,
+    isConnected: !!account && isConnected,
     readProvider,
     connect,
     disconnect,
