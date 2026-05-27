@@ -39,6 +39,7 @@ export default function CommunityDetail() {
   const [activeTab, setActiveTab] = useState('pools');
   const [retainedRevenue, setRetainedRevenue] = useState(null);
   const [showFeeRatioPopover, setShowFeeRatioPopover] = useState(false);
+  const [onChainFeeRatio, setOnChainFeeRatio] = useState(null);
 
   const communityContract = useCommunityRead(address);
   const linearCalc = useLinearCalculator();
@@ -62,10 +63,14 @@ export default function CommunityDetail() {
         setTokenInfo({ name, symbol, decimals: Number(decimals), address: data.cToken });
       }
 
-      // Load reward rate by detecting calculator type
+      // Load reward rate and fee ratio by detecting calculator type on-chain
       if (communityContract) {
         try {
-          const calcAddr = await communityContract.rewardCalculator();
+          const [calcAddr, ratio] = await Promise.all([
+            communityContract.rewardCalculator(),
+            communityContract.feeRatio()
+          ]);
+          setOnChainFeeRatio(Number(ratio));
           const calcAddrLower = calcAddr.toLowerCase();
           
           let rate = 0n;
@@ -176,6 +181,7 @@ export default function CommunityDetail() {
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
   );
+  const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
 
   return (
     <div className="page container">
@@ -272,7 +278,7 @@ export default function CommunityDetail() {
                 ⓘ
               </span>
             </span>
-            <span className="info-value">{((community.feeRatio || 0) / 100).toFixed(1)}%</span>
+            <span className="info-value">{((displayFeeRatio || 0) / 100).toFixed(1)}%</span>
 
             {showFeeRatioPopover && (
               <div 
@@ -386,7 +392,7 @@ export default function CommunityDetail() {
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
                 <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>DAO Fund Ratio</span>
                 <span style={{ fontWeight: 700, fontSize: 'var(--font-size-lg)' }}>
-                  {((community.feeRatio || 0) / 100).toFixed(1)}%
+                  {((displayFeeRatio || 0) / 100).toFixed(1)}%
                 </span>
               </div>
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
@@ -467,7 +473,7 @@ export default function CommunityDetail() {
       {showSettings && (
         <CommunitySettingsModal
           communityAddress={address}
-          community={community}
+          community={{ ...community, feeRatio: displayFeeRatio }}
           onClose={() => setShowSettings(false)}
           onSuccess={() => { setShowSettings(false); loadCommunity(); }}
         />
