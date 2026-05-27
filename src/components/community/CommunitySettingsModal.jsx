@@ -74,7 +74,7 @@ export default function CommunitySettingsModal({ communityAddress, community, on
     }
     const percent = parseFloat(feeRatioPercent);
     if (isNaN(percent) || percent < 0 || percent > 100) {
-      toast.error('Fee ratio must be a percentage between 0% and 100%');
+      toast.error('DAO Fund Ratio must be a percentage between 0% and 100%');
       return;
     }
 
@@ -86,14 +86,14 @@ export default function CommunitySettingsModal({ communityAddress, community, on
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
       
       const tx = await communityContract.adminSetFeeRatio(ratioPPM, { value: settingsFee });
-      toast.info('Updating fee ratio on-chain...');
+      toast.info('Updating DAO Fund Ratio on-chain...');
       await tx.wait();
       
-      toast.success('Fee ratio updated successfully!');
+      toast.success('DAO Fund Ratio updated successfully!');
       onSuccess?.();
     } catch (err) {
-      console.error('Update fee ratio failed:', err);
-      toast.error(err.reason || err.message || 'Failed to update fee ratio');
+      console.error('Update DAO Fund Ratio failed:', err);
+      toast.error(err.reason || err.message || 'Failed to update DAO Fund Ratio');
     } finally {
       setFeeLoading(false);
     }
@@ -141,17 +141,17 @@ export default function CommunitySettingsModal({ communityAddress, community, on
             </button>
           </div>
 
-          {/* Section 2: Fee Ratio */}
+          {/* Section 2: DAO Fund Ratio */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, marginBottom: 'var(--space-3)', color: 'var(--color-success)' }}>
-              💰 Fee Ratio
+              🏛️ DAO Fund Ratio
             </h3>
             <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, marginBottom: 'var(--space-3)' }}>
               Change the percentage of community rewards allocated to the DAO Fund.
             </p>
             <div className="input-group" style={{ marginBottom: 'var(--space-4)' }}>
               <label>
-                Fee Ratio (%)
+                DAO Fund Ratio (%)
                 {settingsFee > 0n && (
                   <span style={{ float: 'right', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
                     Operation Fee: {ethers.formatEther(settingsFee)} BNB
@@ -182,7 +182,7 @@ export default function CommunitySettingsModal({ communityAddress, community, on
               {feeLoading ? (
                 <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving...</>
               ) : (
-                'Update Fee Ratio'
+                'Update DAO Fund Ratio'
               )}
             </button>
           </div>

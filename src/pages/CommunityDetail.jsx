@@ -250,7 +250,7 @@ export default function CommunityDetail() {
           </div>
           <div className="info-item" style={{ position: 'relative' }}>
             <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              Fee Ratio
+              DAO Fund Ratio
               <span
                 onClick={() => setShowFeeRatioPopover(!showFeeRatioPopover)}
                 style={{
@@ -296,7 +296,7 @@ export default function CommunityDetail() {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontWeight: 600, color: 'var(--color-text-accent)' }}>
-                  <span>Fee Ratio (手续费比例)</span>
+                  <span>DAO Fund Ratio (DAO基金比例)</span>
                   <button 
                     onClick={() => setShowFeeRatioPopover(false)}
                     style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '14px', padding: 0 }}
@@ -384,7 +384,7 @@ export default function CommunityDetail() {
                 </span>
               </div>
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>Fee Ratio</span>
+                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>DAO Fund Ratio</span>
                 <span style={{ fontWeight: 700, fontSize: 'var(--font-size-lg)' }}>
                   {((community.feeRatio || 0) / 100).toFixed(1)}%
                 </span>
