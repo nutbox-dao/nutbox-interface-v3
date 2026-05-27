@@ -225,12 +225,6 @@ export default function CommunityDetail() {
 
         <div className="community-info-grid">
           <div className="info-item">
-            <span className="info-label">Community Token</span>
-            <span className="info-value" style={{ fontFamily: 'monospace' }}>
-              {tokenInfo ? `${tokenInfo.symbol} (${tokenInfo.name})` : shortenAddress(community.cToken)}
-            </span>
-          </div>
-          <div className="info-item">
             <span className="info-label">Token Address</span>
             <span className="info-value ctoken-address">
               <a
