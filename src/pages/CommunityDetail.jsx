@@ -494,25 +494,25 @@ export default function CommunityDetail() {
 }
 
 function getOperationDisplay(type) {
-  const t = (type || '').toUpperCase().replace(/_/g, '');
+  const t = (type || '').trim().toUpperCase().replace(/_/g, '');
   
   // Admin Operations
-  if (t === 'ADMINSETDEV' || t === 'ADMINSETDAOFUND' || t === 'DEVCHANGED') {
+  if (t.includes('SETDEV') || t.includes('SETDAOFUND') || t === 'DEVCHANGED') {
     return { label: 'Change Fund Address', isAdmin: true };
   }
-  if (t === 'ADMINSETFEERATIO') {
+  if (t.includes('SETFEERATIO') || t.includes('SETFEE')) {
     return { label: 'Change Fund Ratio', isAdmin: true };
   }
-  if (t === 'ADMINADDPOOL') {
+  if (t.includes('ADDPOOL')) {
     return { label: 'Add Pool', isAdmin: true };
   }
-  if (t === 'ADMINCLOSEPOOL') {
+  if (t.includes('CLOSEPOOL')) {
     return { label: 'Close Pool', isAdmin: true };
   }
-  if (t === 'ADMINSETPOOLRATIOS' || t === 'ADMINSETPOOLRATIO') {
+  if (t.includes('SETRATIO')) {
     return { label: 'Adjust Pool Ratios', isAdmin: true };
   }
-  if (t === 'ADMINWITHDRAWREVENUE' || t === 'REVENUEWITHDRAWN' || t === 'WITHDRAWREVENUE') {
+  if (t.includes('WITHDRAWREVENUE') || t.includes('REVENUEWITHDRAWN') || (t.includes('WITHDRAW') && t.includes('REVENUE'))) {
     return { label: 'Claim Revenue', isAdmin: true };
   }
   
@@ -536,6 +536,7 @@ function getOperationDisplay(type) {
   // Fallback: If type contains 'ADMIN', it is admin operation
   const isFallbackAdmin = t.includes('ADMIN');
   const formattedLabel = (type || '')
+    .trim()
     .split(/[_-]/)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
