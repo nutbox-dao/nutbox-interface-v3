@@ -40,6 +40,7 @@ export default function CommunityDetail() {
   const [retainedRevenue, setRetainedRevenue] = useState(null);
   const [showFeeRatioPopover, setShowFeeRatioPopover] = useState(false);
   const [onChainFeeRatio, setOnChainFeeRatio] = useState(null);
+  const [daoFundAddress, setDaoFundAddress] = useState(null);
 
   const communityContract = useCommunityRead(address);
   const linearCalc = useLinearCalculator();
@@ -107,13 +108,20 @@ export default function CommunityDetail() {
         }
       }
 
-      // Load retained revenue from storage slot 5 on-chain
+      // Load devFund (daoFund) and retainedRevenue from storage slot on-chain
       if (readProvider && address) {
         try {
-          const rawVal = await readProvider.getStorage(address, 5);
-          setRetainedRevenue(rawVal ? BigInt(rawVal) : 0n);
+          const [rawDev, rawRevenue] = await Promise.all([
+            readProvider.getStorage(address, 3), // slot 3: devFund
+            readProvider.getStorage(address, 4)  // slot 4: retainedRevenue
+          ]);
+
+          if (rawDev && rawDev !== '0x' + '0'.repeat(64)) {
+            setDaoFundAddress(ethers.getAddress('0x' + rawDev.slice(-40)));
+          }
+          setRetainedRevenue(rawRevenue ? BigInt(rawRevenue) : 0n);
         } catch (err) {
-          console.error('Failed to read retainedRevenue from storage:', err);
+          console.error('Failed to read storage fields:', err);
           setRetainedRevenue(0n);
         }
       }
@@ -182,6 +190,7 @@ export default function CommunityDetail() {
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
   );
   const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
+  const displayDaoFund = daoFundAddress || community.daoFund;
 
   return (
     <div className="page container">
@@ -380,9 +389,9 @@ export default function CommunityDetail() {
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
                 <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>DAO Fund Address</span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
-                  {community.daoFund ? (
-                    <a href={getBscScanUrl(community.daoFund)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
-                      {community.daoFund}
+                  {displayDaoFund ? (
+                    <a href={getBscScanUrl(displayDaoFund)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
+                      {displayDaoFund}
                     </a>
                   ) : (
                     'Not Set'
@@ -475,7 +484,7 @@ export default function CommunityDetail() {
       {showSettings && (
         <CommunitySettingsModal
           communityAddress={address}
-          community={{ ...community, feeRatio: displayFeeRatio }}
+          community={{ ...community, feeRatio: displayFeeRatio, daoFund: displayDaoFund }}
           onClose={() => setShowSettings(false)}
           onSuccess={() => { setShowSettings(false); loadCommunity(); }}
         />
