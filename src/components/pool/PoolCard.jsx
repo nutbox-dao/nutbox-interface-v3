@@ -7,7 +7,7 @@ import { CONTRACTS, BLOCKS_PER_YEAR } from '../../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDuration, getBscScanUrl, getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
 import './PoolCard.css';
 
-export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, isOwner, onRefresh }) {
+export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, isOwner, onRefresh }) {
   const { account, signer, readProvider, isConnected } = useWeb3();
   const toast = useToast();
 
@@ -100,7 +100,19 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     if (!rewardRate || rewardRate === 0n || totalStaked === 0n || !communityToken || !stakeTokenInfo) return null;
     try {
       const poolRatio = BigInt(pool.ratio || 10000);
-      const yearlyRewards = rewardRate * BigInt(BLOCKS_PER_YEAR) * poolRatio / 10000n;
+
+      // Determine the multiplier based on the reward rate unit
+      let multiplier = BigInt(BLOCKS_PER_YEAR); // default '/block'
+      if (rewardRateUnit === '/sec') {
+        multiplier = 31_536_000n; // 365 * 24 * 3600
+      } else if (rewardRateUnit === '/hour') {
+        multiplier = 8_760n; // 365 * 24
+      }
+
+      // Staker rewards are reduced by feeRatio (DAO Fund)
+      const stakerRewardRatio = 10000n - BigInt(feeRatio);
+      const yearlyRewards = rewardRate * multiplier * poolRatio / 10000n * stakerRewardRatio / 10000n;
+
       // Simple APR: yearlyRewards / totalStaked * 100 (assuming same token for simplicity)
       const aprBps = yearlyRewards * 10000n / totalStaked;
       return Number(aprBps) / 100;

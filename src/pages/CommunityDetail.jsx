@@ -430,6 +430,8 @@ export default function CommunityDetail() {
                 communityAddress={address}
                 communityToken={tokenInfo}
                 rewardRate={rewardRate}
+                rewardRateUnit={rewardRateUnit}
+                feeRatio={displayFeeRatio}
                 isOwner={isOwner}
                 onRefresh={loadCommunity}
               />
