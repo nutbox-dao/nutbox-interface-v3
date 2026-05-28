@@ -5,7 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
 
-export default function CommunitySettingsModal({ communityAddress, community, onClose, onSuccess }) {
+export default function CommunitySettingsModal({ communityAddress, community, retainedRevenue, communityToken, onClose, onSuccess }) {
   const { signer, readProvider } = useWeb3();
   const toast = useToast();
 
@@ -13,6 +13,7 @@ export default function CommunitySettingsModal({ communityAddress, community, on
   const [feeRatioPercent, setFeeRatioPercent] = useState('');
   const [devLoading, setDevLoading] = useState(false);
   const [feeLoading, setFeeLoading] = useState(false);
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [settingsFee, setSettingsFee] = useState(0n);
 
   useEffect(() => {
@@ -99,11 +100,34 @@ export default function CommunitySettingsModal({ communityAddress, community, on
     }
   };
 
+  const handleWithdrawRevenue = async () => {
+    if (!signer) {
+      toast.error('Wallet not connected');
+      return;
+    }
+    setWithdrawLoading(true);
+    try {
+      const communityContract = new ethers.Contract(communityAddress, [
+        'function adminWithdrawRevenue()',
+      ], signer);
+      const tx = await communityContract.adminWithdrawRevenue();
+      toast.info('Withdrawing revenue...');
+      await tx.wait();
+      toast.success('Revenue withdrawn successfully!');
+      onSuccess?.();
+    } catch (err) {
+      console.error('Withdraw revenue failed:', err);
+      toast.error(err.reason || err.message || 'Failed to withdraw revenue');
+    } finally {
+      setWithdrawLoading(false);
+    }
+  };
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div className="modal-header">
-          <h2 className="modal-title">⚙️ Community Settings</h2>
+          <h2 className="modal-title">⚙️ Fund Settings</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -183,6 +207,37 @@ export default function CommunitySettingsModal({ communityAddress, community, on
                 <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving...</>
               ) : (
                 'Update DAO Fund Ratio'
+              )}
+            </button>
+          </div>
+
+          {/* Section 3: DAO Fund Revenue */}
+          <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
+            <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, marginBottom: 'var(--space-3)', color: 'var(--color-amber)' }}>
+              🏛️ DAO Fund Revenue
+            </h3>
+            <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, marginBottom: 'var(--space-4)' }}>
+              Withdraw the accumulated revenue to the DAO Fund wallet address.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
+              <span style={{ fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>Accumulated Revenue:</span>
+              <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-success)' }}>
+                {retainedRevenue !== null && retainedRevenue !== undefined ? 
+                  `${ethers.formatUnits(retainedRevenue, communityToken?.decimals || 18)} ${communityToken?.symbol || 'tokens'}` : 
+                  '...'
+                }
+              </span>
+            </div>
+            <button
+              className="btn btn-warning"
+              onClick={handleWithdrawRevenue}
+              disabled={devLoading || feeLoading || withdrawLoading || !retainedRevenue || retainedRevenue === 0n}
+              style={{ width: '100%' }}
+            >
+              {withdrawLoading ? (
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Withdrawing...</>
+              ) : (
+                'Withdraw DAO Fund Revenue'
               )}
             </button>
           </div>

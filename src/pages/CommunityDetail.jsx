@@ -347,10 +347,7 @@ export default function CommunityDetail() {
                 📐 Adjust Pool Ratios
               </button>
               <button className="btn btn-info btn-sm" onClick={() => setShowSettings(true)}>
-                ⚙️ Community Settings
-              </button>
-              <button className="btn btn-success btn-sm" onClick={handleWithdrawRevenue}>
-                Withdraw Revenue
+                ⚙️ Fund Settings
               </button>
             </div>
           </div>
@@ -485,6 +482,8 @@ export default function CommunityDetail() {
         <CommunitySettingsModal
           communityAddress={address}
           community={{ ...community, feeRatio: displayFeeRatio, daoFund: displayDaoFund }}
+          retainedRevenue={retainedRevenue}
+          communityToken={tokenInfo}
           onClose={() => setShowSettings(false)}
           onSuccess={() => { setShowSettings(false); loadCommunity(); }}
         />
