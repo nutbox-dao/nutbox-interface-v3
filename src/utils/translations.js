@@ -295,7 +295,7 @@ export const translations = {
     detail: {
       breadcrumbHome: '首页',
       ownerBadge: '创建者',
-      adminPanelTitle: '⚙️ 官员操作栏',
+      adminPanelTitle: '⚙️ 管理员操作',
       addPoolBtn: '+ 新增矿池',
       adjustRatiosBtn: '📐 调整矿池比例',
       fundSettingsBtn: '⚙️ 基金设置',
