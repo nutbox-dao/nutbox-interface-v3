@@ -379,7 +379,7 @@ export default function CommunityDetail() {
         </div>
 
         {activeTab === 'history' ? (
-          <HistoryTab operations={community.operationHistory} />
+          <HistoryTab operations={community.operationHistory} pools={community.pools} />
         ) : activeTab === 'devfund' ? (
           <div className="devfund-panel glass-card" style={{ padding: 'var(--space-6)', marginTop: 'var(--space-4)' }}>
             <h4 style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--font-size-lg)', display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -544,7 +544,20 @@ function getOperationDisplay(type) {
   return { label: formattedLabel, isAdmin: isFallbackAdmin };
 }
 
-function HistoryTab({ operations }) {
+function guessPoolType(factoryAddress) {
+  if (!factoryAddress) return '';
+  const addr = factoryAddress.toLowerCase();
+  const map = {
+    '0xdc3f940ac6da516d5c9cc59c8afe0f85a576e2a4': 'ERC20_STAKING',
+    '0x8189a03cfa3d8919a2eb8f08e4f88c21cf78ca01': 'ERC20_LOCKING',
+    '0x398ea6db014595f23d0c9cb1390a10472cdd43ba': 'ERC1155_STAKING',
+    '0x47738e3420be8ced8a9476cf4daf84c549835d44': 'SP_STAKING',
+    '0xc4674d3fbbd201ea401a8b7e7285f956178593d8': 'SOCIAL_CURATION',
+  };
+  return map[addr] || '';
+}
+
+function HistoryTab({ operations, pools = [] }) {
   if (!operations || operations.length === 0) {
     return (
       <div className="empty-state">
@@ -568,7 +581,47 @@ function HistoryTab({ operations }) {
             </div>
             <div className="history-details">
               <span className="history-account">{shortenAddress(op.account?.id)}</span>
-              {op.amount && op.amount !== '0' && (
+              
+              {/* Case 1: Change Fund Ratio */}
+              {opInfo.label === 'Change Fund Ratio' && op.amount !== undefined && (
+                <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
+                  {((parseFloat(op.amount) || 0) / 100).toFixed(1)}%
+                </span>
+              )}
+              
+              {/* Case 2: Change Fund Address */}
+              {opInfo.label === 'Change Fund Address' && op.asset && (
+                <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                  ➡️ New: <a href={getBscScanUrl(op.asset)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text-accent)', textDecoration: 'underline' }}>{shortenAddress(op.asset, 6)}</a>
+                </span>
+              )}
+              
+              {/* Case 3: Add Pool */}
+              {opInfo.label === 'Add Pool' && (() => {
+                const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
+                const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory)) : '');
+                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${((parseFloat(op.amount) || 0) / 100).toFixed(1)}%` : '');
+                return (
+                  <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'inline-flex', gap: 8 }}>
+                    {typeLabel && <span>Type: <strong style={{ color: 'var(--color-text-primary)' }}>{typeLabel}</strong></span>}
+                    {ratioLabel && <span>Ratio: <strong style={{ color: 'var(--color-text-primary)' }}>{ratioLabel}</strong></span>}
+                  </span>
+                );
+              })()}
+
+              {/* Case 4: Adjust Pool Ratios */}
+              {opInfo.label === 'Adjust Pool Ratios' && (() => {
+                const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
+                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${((parseFloat(op.amount) || 0) / 100).toFixed(1)}%` : '');
+                return ratioLabel ? (
+                  <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
+                    Ratio: {ratioLabel}
+                  </span>
+                ) : null;
+              })()}
+              
+              {/* Case 5: Standard token amount operations (Stake, Withdraw, Claim Rewards, etc.) */}
+              {opInfo.label !== 'Change Fund Ratio' && opInfo.label !== 'Change Fund Address' && opInfo.label !== 'Add Pool' && opInfo.label !== 'Adjust Pool Ratios' && op.amount && op.amount !== '0' && (
                 <span className="history-amount">
                   {(() => {
                     const num = parseFloat(op.amount);
