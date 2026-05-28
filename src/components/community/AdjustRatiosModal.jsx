@@ -4,14 +4,26 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function AdjustRatiosModal({ communityAddress, activePools, onClose, onSuccess }) {
+  const { t, language } = useLanguage();
   const { signer, readProvider } = useWeb3();
   const toast = useToast();
   
   const [loading, setLoading] = useState(false);
+  const [settingsFee, setSettingsFee] = useState(null);
   // Store pool ratios in percent (e.g. 50.00% => 50) for easier user editing
   const [ratios, setRatios] = useState({});
+
+  // Load operation fee on mount
+  useEffect(() => {
+    if (!readProvider) return;
+    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      'function getCommunitySettingsFee() view returns (uint256)',
+    ], readProvider);
+    committeeContract.getCommunitySettingsFee().then(fee => setSettingsFee(fee)).catch(() => {});
+  }, [readProvider]);
 
   useEffect(() => {
     if (!activePools) return;
@@ -40,7 +52,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
 
   const handleSave = async () => {
     if (!signer) {
-      toast.error('Wallet not connected');
+      toast.error(t('common.walletNotConnected'));
       return;
     }
 
@@ -51,7 +63,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
       const pool = activePools[i];
       const pct = parseFloat(ratios[pool.id]);
       if (isNaN(pct) || pct < 0) {
-        toast.error('Each ratio must be a non-negative number');
+        toast.error(language === 'zh' ? '每个比例必须是非负数' : 'Each ratio must be a non-negative number');
         return;
       }
       // Convert percent back to uint16 PPM (0 ~ 10000)
@@ -61,7 +73,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
     }
 
     if (sumVal !== 10000 && sumVal !== 0) {
-      toast.error(`Ratios must sum to 100% or 0% (current sum: ${(sumVal/100).toFixed(2)}%)`);
+      toast.error(language === 'zh' ? `所有比例之和必须为 100% 或 0%（当前和：${(sumVal/100).toFixed(2)}%）` : `Ratios must sum to 100% or 0% (current sum: ${(sumVal/100).toFixed(2)}%)`);
       return;
     }
 
@@ -79,13 +91,13 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
         { value: fee }
       );
 
-      toast.info('Updating pool ratios...');
+      toast.info(t('adjustRatios.toastSaving'));
       await tx.wait();
-      toast.success('Ratios updated successfully!');
+      toast.success(t('adjustRatios.toastSuccess'));
       onSuccess?.();
     } catch (err) {
       console.error('Update pool ratios failed:', err);
-      toast.error(err.reason || err.message || 'Failed to update ratios');
+      toast.error(err.reason || err.message || (language === 'zh' ? '修改比例失败' : 'Failed to update ratios'));
     } finally {
       setLoading(false);
     }
@@ -98,13 +110,13 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
         <div className="modal-header">
-          <h2 className="modal-title">📐 Adjust Pool Ratios</h2>
+          <h2 className="modal-title">{t('adjustRatios.title')}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
           <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, lineHeight: 1.4 }}>
-            Set the percentage share of rewards distributed to each pool. The total sum of all pool ratios must be exactly 100% (or 0% to pause distribution).
+            {t('adjustRatios.desc')}
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -147,7 +159,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
             border: `1px solid ${isValid ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
             marginTop: 'var(--space-2)'
           }}>
-            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>Total Ratio Sum</span>
+            <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>{t('adjustRatios.totalSumLabel')}</span>
             <span style={{
               fontSize: 'var(--font-size-md)',
               fontWeight: 700,
@@ -157,6 +169,12 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
             </span>
           </div>
 
+          {settingsFee !== null && settingsFee > 0n && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', padding: 'var(--space-3)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              {t('adjustRatios.operationFee', { fee: ethers.formatEther(settingsFee) })}
+            </div>
+          )}
+
           <button
             className={`btn ${isValid ? 'btn-primary' : 'btn-ghost'}`}
             onClick={handleSave}
@@ -164,9 +182,9 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
             style={{ width: '100%', marginTop: 'var(--space-2)' }}
           >
             {loading ? (
-              <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving...</>
+              <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {language === 'zh' ? '保存中...' : 'Saving...'}</>
             ) : (
-              'Save Ratios'
+              t('adjustRatios.btnSave')
             )}
           </button>
         </div>

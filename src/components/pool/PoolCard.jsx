@@ -29,6 +29,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   const [claimable, setClaimable] = useState(0n);
   const [redeemRequests, setRedeemRequests] = useState([]);
   const [stakersCount, setStakersCount] = useState(0);
+  const [poolOperationFee, setPoolOperationFee] = useState(null);
 
   const isLocking = pool.poolType === 'ERC20_LOCKING';
   const poolABI = isLocking ? ERC20LockingABI : ERC20StakingABI;
@@ -123,6 +124,15 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     const interval = setInterval(loadPoolData, 15000);
     return () => clearInterval(interval);
   }, [loadPoolData]);
+
+  // Load pool operation fee once
+  useEffect(() => {
+    if (!readProvider) return;
+    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      'function getPoolOperationFee() view returns (uint256)',
+    ], readProvider);
+    committeeContract.getPoolOperationFee().then(fee => setPoolOperationFee(fee)).catch(() => {});
+  }, [readProvider]);
 
   // Calculate APR
   const apr = (() => {
@@ -328,6 +338,13 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
             </div>
           </div>
 
+          {/* Operation fee hint */}
+          {poolOperationFee !== null && poolOperationFee > 0n && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'right', marginBottom: 4 }}>
+              Network fee per operation: {ethers.formatEther(poolOperationFee)} BNB
+            </div>
+          )}
+
           {/* Action Buttons */}
           <div className="pool-actions">
             {pool.status === 'OPENED' && (
@@ -386,6 +403,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                 />
                 <button className="max-btn" onClick={() => setStakeAmount(ethers.formatUnits(userBalance, decimals))}>MAX</button>
               </div>
+              {poolOperationFee !== null && poolOperationFee > 0n && (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'center', marginTop: 4 }}>
+                  Network fee: {ethers.formatEther(poolOperationFee)} BNB
+                </div>
+              )}
               {needsApproval ? (
                 <button
                   className="btn btn-primary"
@@ -426,6 +448,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                 />
                 <button className="max-btn" onClick={() => setWithdrawAmount(ethers.formatUnits(userStaked, decimals))}>MAX</button>
               </div>
+              {poolOperationFee !== null && poolOperationFee > 0n && (
+                <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'center', marginTop: 4 }}>
+                  Network fee: {ethers.formatEther(poolOperationFee)} BNB
+                </div>
+              )}
               <button
                 className="btn btn-secondary"
                 onClick={handleWithdraw}

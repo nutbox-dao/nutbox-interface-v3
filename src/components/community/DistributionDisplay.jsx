@@ -5,6 +5,7 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useCommunityRead, useLinearCalculator, useLinearTimeCalculator, useHourlyTickCalculator } from '../../hooks/useContract';
 import { CONTRACTS, BLOCK_TIME_SECONDS } from '../../config/contracts';
 import { formatTokenAmount, formatDate } from '../../utils/helpers';
+import { useLanguage } from '../../contexts/LanguageContext';
 import './DistributionDisplay.css';
 
 // ── Calculator type detection ──
@@ -39,6 +40,7 @@ const COLOR_FORECAST = '#9B83FA';
 const COLOR_TIMELINE_GRADIENT = ['#7c3aed', '#3b82f6', '#06b6d4'];
 
 export default function DistributionDisplay({ communityAddress, tokenInfo, community }) {
+  const { t, language } = useLanguage();
   const communityContract = useCommunityRead(communityAddress);
   const linearCalc = useLinearCalculator();
   const linearTimeCalc = useLinearTimeCalculator();
@@ -107,7 +109,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         }
       } catch (err) {
         console.error('Failed to load distribution data:', err);
-        if (!cancelled) setError('Failed to load distribution data');
+        if (!cancelled) setError(t('detail.distLoadingError') || 'Failed to load distribution data');
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -115,7 +117,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
     loadData();
     return () => { cancelled = true; };
-  }, [calculatorType, communityAddress, linearCalc, linearTimeCalc, hourlyCalc]);
+  }, [calculatorType, communityAddress, linearCalc, linearTimeCalc, hourlyCalc, language]);
 
   // ── Load linear eras from chain ──
   const loadLinearEras = async (cancelled) => {
@@ -208,7 +210,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         const isToday = d === todayIdx;
         const isTomorrow = d === todayIdx + 1;
 
-        const label = isToday ? `${dateStr} (Today)` : isTomorrow ? `${dateStr} (Tomorrow)` : dateStr;
+        const label = isToday ? `${dateStr} (${t('detail.distToday')})` : isTomorrow ? `${dateStr} (${t('detail.distTomorrow')})` : dateStr;
 
         // Split today's bar into actual/forecast
         let actual = dayTotalNum;
@@ -326,10 +328,10 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       const estimatedMs = Number(cursor) * BLOCK_TIME_SECONDS * 1000;
       const d = new Date(estimatedMs);
       // This is a rough estimate, show with a hint
-      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ' (est.)';
+      return d.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ` (${t('detail.distEst')})`;
     }
     // Time-based: cursor is unix timestamp
-    return new Date(Number(cursor) * 1000).toLocaleDateString('en-US', {
+    return new Date(Number(cursor) * 1000).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -365,12 +367,12 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         <div className="dist-chart-tooltip-label">{label}</div>
         {actual && actual.value > 0 && (
           <div className="dist-chart-tooltip-row" style={{ color: COLOR_ACTUAL }}>
-            Distributed: {actual.value.toLocaleString()} {tokenInfo?.symbol || ''}
+            {t('detail.distDistributed')}: {actual.value.toLocaleString()} {tokenInfo?.symbol || ''}
           </div>
         )}
         {forecast && forecast.value > 0 && (
           <div className="dist-chart-tooltip-row" style={{ color: COLOR_FORECAST }}>
-            Forecast: {forecast.value.toLocaleString()} {tokenInfo?.symbol || ''}
+            {t('detail.distForecast')}: {forecast.value.toLocaleString()} {tokenInfo?.symbol || ''}
           </div>
         )}
       </div>
@@ -382,11 +384,11 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
     return (
       <div className="distribution-section glass-card">
         <div className="distribution-header">
-          <h3 className="distribution-title">📊 Distribution Schedule</h3>
+          <h3 className="distribution-title">{t('detail.distScheduleTitle')}</h3>
         </div>
         <div className="distribution-loading">
           <div className="spinner" />
-          <span>Loading distribution data...</span>
+          <span>{t('detail.distLoading')}</span>
         </div>
       </div>
     );
@@ -396,7 +398,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
     return (
       <div className="distribution-section glass-card">
         <div className="distribution-header">
-          <h3 className="distribution-title">📊 Distribution Schedule</h3>
+          <h3 className="distribution-title">{t('detail.distScheduleTitle')}</h3>
         </div>
         <div className="distribution-empty">{error}</div>
       </div>
@@ -408,12 +410,12 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       {/* Header with calculator type badge */}
       <div className="distribution-header" style={{ position: 'relative' }}>
         <h3 className="distribution-title" style={{ display: 'flex', alignItems: 'center' }}>
-          📊 Distribution Schedule
+          {t('detail.distScheduleTitle')}
           {calculatorType === 'HOURLY_TICK' && (
             <span
               className="distribution-info-trigger"
               onClick={() => setShowInfoPopover(!showInfoPopover)}
-              title="Click to view details"
+              title={language === 'zh' ? '点击查看详情' : 'Click to view details'}
               style={{
                 cursor: 'pointer',
                 marginLeft: 'var(--space-2)',
@@ -432,9 +434,9 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         {showInfoPopover && calculatorType === 'HOURLY_TICK' && (
           <div className="distribution-info-popover glass-card">
             <button className="popover-close-btn" onClick={() => setShowInfoPopover(false)}>×</button>
-            <div className="popover-title">Daily Reward Distribution</div>
+            <div className="popover-title">{t('detail.distDailyRewardTitle')}</div>
             <div className="popover-content">
-              Tokens injected via DEX swaps are vested over 168 hours (7 days). Chart shows daily reward amounts.
+              {t('detail.distDailyRewardDesc')}
             </div>
           </div>
         )}
@@ -442,7 +444,11 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         {calculatorType !== 'HOURLY_TICK' && (
           <div className="distribution-calculator-badge">
             <span className="calculator-icon">{CALCULATOR_ICONS[calculatorType] || '❓'}</span>
-            <span className="calculator-label">{CALCULATOR_LABELS[calculatorType] || 'Unknown'}</span>
+            <span className="calculator-label">
+              {calculatorType === 'LINEAR_BLOCK' && t('detail.distLinearBlock')}
+              {calculatorType === 'LINEAR_TIME' && t('detail.distLinearTime')}
+              {calculatorType === 'UNKNOWN' && t('detail.distUnknownCalc')}
+            </span>
           </div>
         )}
       </div>
@@ -478,7 +484,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       {/* Unknown calculator */}
       {calculatorType === 'UNKNOWN' && (
         <div className="distribution-empty">
-          <p>Unknown calculator at address:</p>
+          <p>{language === 'zh' ? '未知的计算策略合约，地址为：' : 'Unknown calculator at address:'}</p>
           <code className="address">{calculatorAddress}</code>
         </div>
       )}
@@ -491,8 +497,9 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 // ═══════════════════════════════════════════════════════════════
 
 function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, isPastPeriod, formatCursorToDate, getRewardPerDay, currentPhaseRef }) {
+  const { t, language } = useLanguage();
   if (!eras || eras.length === 0) {
-    return <div className="distribution-empty">No distribution eras configured.</div>;
+    return <div className="distribution-empty">{t('detail.distNoEras')}</div>;
   }
 
   // Reverse to show newest first? Actually show in chronological order.
@@ -523,26 +530,26 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
               {isCurrent && (
                 <div className="timeline-badge timeline-badge--current">
                   <span className="timeline-badge-dot" />
-                  Ongoing
+                  {t('detail.distOngoing')}
                 </div>
               )}
               {isPast && (
-                <div className="timeline-badge timeline-badge--past">Completed</div>
+                <div className="timeline-badge timeline-badge--past">{t('detail.distCompleted')}</div>
               )}
               {!isCurrent && !isPast && (
-                <div className="timeline-badge timeline-badge--future">Upcoming</div>
+                <div className="timeline-badge timeline-badge--future">{t('detail.distUpcoming')}</div>
               )}
 
               {/* Reward amount */}
               <div className="timeline-reward">
-                <div className="timeline-reward-label">Reward per Day</div>
+                <div className="timeline-reward-label">{t('detail.distRewardPerDay')}</div>
                 <div className={`timeline-reward-value ${isCurrent ? 'timeline-reward-value--current' : ''}`}>
                   {rewardPerDay.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                  <span className="timeline-reward-symbol">{tokenInfo?.symbol || 'tokens'}</span>
+                  <span className="timeline-reward-symbol">{tokenInfo?.symbol || t('detail.historyTokens')}</span>
                 </div>
                 <div className="timeline-rate-hint">
                   {formatTokenAmount(era.amount, tokenInfo?.decimals || 18, 6)}
-                  {calculatorType === 'LINEAR_BLOCK' ? '/block' : '/sec'}
+                  {calculatorType === 'LINEAR_BLOCK' ? (language === 'zh' ? '/区块' : '/block') : (language === 'zh' ? '/秒' : '/sec')}
                 </div>
               </div>
 
@@ -554,7 +561,7 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
                       d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <div className="timeline-date-col">
-                    <span className="timeline-date-label">Start</span>
+                    <span className="timeline-date-label">{t('detail.distStart')}</span>
                     <span className="timeline-date-value">{formatCursorToDate(era.startCursor)}</span>
                   </div>
                 </div>
@@ -569,7 +576,7 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
                       d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                   </svg>
                   <div className="timeline-date-col">
-                    <span className="timeline-date-label">End</span>
+                    <span className="timeline-date-label">{t('detail.distEnd')}</span>
                     <span className="timeline-date-value">{formatCursorToDate(era.stopCursor)}</span>
                   </div>
                 </div>
@@ -583,12 +590,13 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
 }
 
 function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMode, avgRewardPerDay, totalInjected, tokenInfo, CustomTooltip }) {
+  const { t, language } = useLanguage();
   if (!chartData || chartData.length === 0) {
-    return <div className="distribution-empty">No injection data available yet.</div>;
+    return <div className="distribution-empty">{t('detail.distNoInjectionData')}</div>;
   }
 
   const decimals = tokenInfo?.decimals || 18;
-  const symbol = tokenInfo?.symbol || 'tokens';
+  const symbol = tokenInfo?.symbol || t('detail.historyTokens');
 
   const activeData = chartViewMode === 'daily' ? chartData : hourlyData;
 
@@ -597,7 +605,7 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
       {/* Header and view controls */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 'var(--space-2)' }}>
         <div className="hourly-info-title" style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'rgba(220, 220, 240, 0.8)' }}>
-          {chartViewMode === 'daily' ? 'Daily Reward Volume (日向分发量)' : 'Hourly Reward Details (小时分发量)'}
+          {chartViewMode === 'daily' ? t('detail.distDailyRewardVolume') : t('detail.distHourlyRewardVolume')}
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)', background: 'rgba(255,255,255,0.03)', padding: 3, borderRadius: 6, border: '1px solid rgba(255,255,255,0.06)' }}>
           <button
@@ -615,7 +623,7 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
               transition: 'all 0.2s'
             }}
           >
-            Daily (天)
+            {t('detail.distDaily')}
           </button>
           <button
             onClick={() => setChartViewMode('hourly')}
@@ -632,7 +640,7 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
               transition: 'all 0.2s'
             }}
           >
-            Hourly (小时)
+            {t('detail.distHourly')}
           </button>
         </div>
       </div>
@@ -664,8 +672,8 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
               iconSize={10}
               wrapperStyle={{ fontSize: 11, color: 'rgba(200, 200, 240, 0.7)', paddingBottom: 'var(--space-2)' }}
             />
-            <Bar dataKey="actual" name="Distributed" stackId="a" fill={COLOR_ACTUAL} radius={[0, 0, 0, 0]} />
-            <Bar dataKey="forecast" name="Forecast" stackId="a" fill={COLOR_FORECAST} radius={[4, 4, 0, 0]} />
+            <Bar dataKey="actual" name={t('detail.distDistributed')} stackId="a" fill={COLOR_ACTUAL} radius={[0, 0, 0, 0]} />
+            <Bar dataKey="forecast" name={t('detail.distForecast')} stackId="a" fill={COLOR_FORECAST} radius={[4, 4, 0, 0]} />
             
             {/* Beautiful scroll Brush for the 336 hours in Hourly View */}
             {chartViewMode === 'hourly' && (
@@ -687,14 +695,14 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
       {/* Stats row */}
       <div className="hourly-stats">
         <div className="hourly-stat-item">
-          <span className="hourly-stat-label">Avg. Reward / Day</span>
+          <span className="hourly-stat-label">{t('detail.distAvgRewardPerDay')}</span>
           <span className="hourly-stat-value hourly-stat-value--accent">
             {avgRewardPerDay.toLocaleString(undefined, { maximumFractionDigits: 2 })} {symbol}
           </span>
         </div>
         {totalInjected && (
           <div className="hourly-stat-item">
-            <span className="hourly-stat-label">Total Injected</span>
+            <span className="hourly-stat-label">{t('detail.distTotalInjected')}</span>
             <span className="hourly-stat-value">
               {formatTokenAmount(totalInjected, decimals, 2)} {symbol}
             </span>

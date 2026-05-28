@@ -4,6 +4,7 @@ import { ethers } from 'ethers';
 import { fetchCommunity } from '../config/subgraph';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
+import { useLanguage } from '../contexts/LanguageContext';
 import {
   useCommunity,
   useCommunityRead,
@@ -17,6 +18,7 @@ import { CONTRACTS, BLOCKS_PER_YEAR } from '../config/contracts';
 import { ERC20StakingABI, ERC20LockingABI, ERC20ABI } from '../config/abis';
 import { formatTokenAmount, shortenAddress, formatDate, formatDuration, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
+import SocialCurationCard from '../components/pool/SocialCurationCard';
 import AddPoolModal from '../components/community/AddPoolModal';
 import AdjustRatiosModal from '../components/community/AdjustRatiosModal';
 import CommunitySettingsModal from '../components/community/CommunitySettingsModal';
@@ -27,6 +29,7 @@ export default function CommunityDetail() {
   const { address } = useParams();
   const { account, isConnected, readProvider, signer } = useWeb3();
   const toast = useToast();
+  const { t, language } = useLanguage();
 
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -179,12 +182,12 @@ export default function CommunityDetail() {
         'function adminWithdrawRevenue()',
       ], signer);
       const tx = await contract.adminWithdrawRevenue();
-      toast.info('Withdrawing revenue...');
+      toast.info(t('detail.revenueWithdrawing'));
       await tx.wait();
-      toast.success('Revenue withdrawn!');
+      toast.success(t('detail.revenueWithdrawn'));
       loadCommunity();
     } catch (err) {
-      toast.error(err.reason || err.message || 'Failed to withdraw revenue');
+      toast.error(err.reason || err.message || t('detail.revenueWithdrawFailed'));
     }
   };
 
@@ -205,9 +208,9 @@ export default function CommunityDetail() {
       <div className="page container">
         <div className="empty-state">
           <div className="empty-state-icon">❌</div>
-          <div className="empty-state-title">Community not found</div>
-          <div className="empty-state-desc">This community address doesn&apos;t exist on chain.</div>
-          <Link to="/" className="btn btn-primary">Back to Home</Link>
+          <div className="empty-state-title">{language === 'zh' ? '未找到社区' : 'Community not found'}</div>
+          <div className="empty-state-desc">{language === 'zh' ? '此社区合约地址在链上不存在。' : 'This community address doesn\'t exist on chain.'}</div>
+          <Link to="/" className="btn btn-primary">{language === 'zh' ? '返回首页' : 'Back to Home'}</Link>
         </div>
       </div>
     );
@@ -218,8 +221,11 @@ export default function CommunityDetail() {
   const erc20Pools = displayPools.filter(p =>
     p.poolType === 'ERC20_STAKING' || p.poolType === 'ERC20_LOCKING'
   );
+  const socialCurationPools = displayPools.filter(p =>
+    p.poolType === 'SOCIAL_CURATION'
+  );
   const otherPools = displayPools.filter(p =>
-    p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
+    p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING' && p.poolType !== 'SOCIAL_CURATION'
   );
   const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
   const displayDaoFund = daoFundAddress || community.daoFund;
@@ -228,7 +234,7 @@ export default function CommunityDetail() {
     <div className="page container">
       {/* ── Breadcrumb ── */}
       <nav className="breadcrumb">
-        <Link to="/">Home</Link>
+        <Link to="/">{t('detail.breadcrumbHome')}</Link>
         <span className="breadcrumb-sep">/</span>
         <span>{community.name || `Community #${community.index?.toString()}`}</span>
       </nav>
@@ -247,9 +253,9 @@ export default function CommunityDetail() {
             <h1 className="community-header-title">
               {community.name || `Community #${community.index?.toString()}`}
               {community.tick && <span className="community-detail-tick">${community.tick}</span>}
-              {isOwner && <span className="badge badge-active" style={{ marginLeft: 8 }}>Owner</span>}
+              {isOwner && <span className="badge badge-active" style={{ marginLeft: 8 }}>{t('detail.ownerBadge')}</span>}
             </h1>
-            <div className="community-header-address" onClick={() => { copyToClipboard(address); toast.info('Address copied!'); }}>
+            <div className="community-header-address" onClick={() => { copyToClipboard(address); toast.info(t('common.copySuccess')); }}>
               {shortenAddress(address, 8)}
               <span style={{ fontSize: 12, opacity: 0.5, marginLeft: 4 }}>📋</span>
             </div>
@@ -272,7 +278,7 @@ export default function CommunityDetail() {
 
         <div className="community-info-grid">
           <div className="info-item">
-            <span className="info-label">Token Address</span>
+            <span className="info-label">{t('detail.tokenAddress')}</span>
             <span className="info-value ctoken-address">
               <a
                 href={getBscScanUrl(community.cToken)}
@@ -284,20 +290,20 @@ export default function CommunityDetail() {
               </a>
               <button
                 className="copy-btn"
-                onClick={(e) => { e.stopPropagation(); copyToClipboard(community.cToken); toast.info('Token address copied!'); }}
-                title="Copy token address"
+                onClick={(e) => { e.stopPropagation(); copyToClipboard(community.cToken); toast.info(t('common.copySuccess')); }}
+                title={language === 'zh' ? '复制代币地址' : 'Copy token address'}
               >
                 📋
               </button>
             </span>
           </div>
           <div className="info-item">
-            <span className="info-label">Owner</span>
+            <span className="info-label">{t('detail.ownerAddress')}</span>
             <span className="info-value" style={{ fontFamily: 'monospace' }}>{shortenAddress(community.owner?.id)}</span>
           </div>
           <div className="info-item" style={{ position: 'relative' }}>
             <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-              DAO Fund Ratio
+              {t('detail.daoFundRatio')}
               <span
                 onClick={() => setShowFeeRatioPopover(!showFeeRatioPopover)}
                 style={{
@@ -314,7 +320,7 @@ export default function CommunityDetail() {
                   borderRadius: '50%',
                   lineHeight: 1
                 }}
-                title="Click for details"
+                title={language === 'zh' ? '点击查看详情' : 'Click for details'}
               >
                 ⓘ
               </span>
@@ -343,7 +349,7 @@ export default function CommunityDetail() {
                 }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', fontWeight: 600, color: 'var(--color-text-accent)' }}>
-                  <span>DAO Fund Ratio (DAO基金比例)</span>
+                  <span>{t('detail.daoFundRatioTitle')}</span>
                   <button 
                     onClick={() => setShowFeeRatioPopover(false)}
                     style={{ background: 'none', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '14px', padding: 0 }}
@@ -352,15 +358,15 @@ export default function CommunityDetail() {
                   </button>
                 </div>
                 <div style={{ textTransform: 'none', letterSpacing: 'normal', fontWeight: 'normal' }}>
-                  分发资金将以一定比例进入到DAO基金地址中
+                  {t('detail.daoFundRatioDesc')}
                 </div>
               </div>
             )}
           </div>
           <div className="info-item">
-            <span className="info-label">Reward Rate</span>
+            <span className="info-label">{t('detail.rewardRate')}</span>
             <span className="info-value">
-              {rewardRate !== null ? `${formatTokenAmount(rewardRate, tokenInfo?.decimals || 18, 4)}${rewardRateUnit}` : '...'}
+              {rewardRate !== null ? `${formatTokenAmount(rewardRate, tokenInfo?.decimals || 18, 4)}${language === 'zh' && rewardRateUnit === '/block' ? '/区块' : (language === 'zh' && rewardRateUnit === '/sec' ? '/秒' : rewardRateUnit)}` : '...'}
             </span>
           </div>
         </div>
@@ -369,17 +375,17 @@ export default function CommunityDetail() {
         {isOwner && (
           <div className="admin-panel">
             <div className="admin-panel-header">
-              <span>⚙️ Admin Controls</span>
+              <span>{t('detail.adminPanelTitle')}</span>
             </div>
             <div className="admin-actions">
               <button className="btn btn-primary btn-sm" onClick={() => setShowAddPool(true)}>
-                + Add Pool
+                {t('detail.addPoolBtn')}
               </button>
               <button className="btn btn-warning btn-sm" onClick={() => setShowAdjustRatios(true)}>
-                📐 Adjust Pool Ratios
+                {t('detail.adjustRatiosBtn')}
               </button>
               <button className="btn btn-info btn-sm" onClick={() => setShowSettings(true)}>
-                ⚙️ Fund Settings
+                {t('detail.fundSettingsBtn')}
               </button>
             </div>
           </div>
@@ -397,13 +403,13 @@ export default function CommunityDetail() {
       <div style={{ marginTop: 'var(--space-8)' }}>
         <div className="tabs">
           <button className={`tab ${activeTab === 'pools' ? 'active' : ''}`} onClick={() => setActiveTab('pools')}>
-            Active Pools ({activePools.length})
+            {t('detail.tabActivePools')} ({activePools.length})
           </button>
           <button className={`tab ${activeTab === 'devfund' ? 'active' : ''}`} onClick={() => setActiveTab('devfund')}>
-            DAO Fund
+            {t('detail.tabDaoFund')}
           </button>
           <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
-            History
+            {t('detail.tabHistory')}
           </button>
         </div>
 
@@ -412,51 +418,51 @@ export default function CommunityDetail() {
         ) : activeTab === 'devfund' ? (
           <div className="devfund-panel glass-card" style={{ padding: 'var(--space-6)', marginTop: 'var(--space-4)' }}>
             <h4 style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--font-size-lg)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              🏛️ DAO Fund Info
+              {t('detail.daoFundInfoTitle')}
             </h4>
             <div className="devfund-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 'var(--space-4)' }}>
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>DAO Fund Address</span>
+                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>{t('detail.daoFundAddressLabel')}</span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
                   {displayDaoFund ? (
                     <a href={getBscScanUrl(displayDaoFund)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
                       {displayDaoFund}
                     </a>
                   ) : (
-                    'Not Set'
+                    t('detail.notSet')
                   )}
                 </span>
               </div>
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>DAO Fund Ratio</span>
+                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>{t('detail.daoFundRatioLabel')}</span>
                 <span style={{ fontWeight: 700, fontSize: 'var(--font-size-lg)' }}>
                   {((displayFeeRatio || 0) / 100).toFixed(1)}%
                 </span>
               </div>
               <div className="devfund-item glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)' }}>
-                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>Pending Rewards</span>
+                <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>{t('detail.pendingRewardsLabel')}</span>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'var(--space-1)', gap: 8 }}>
                   <span style={{ fontWeight: 700, fontSize: 'var(--font-size-lg)', color: 'var(--color-success)' }}>
-                    {retainedRevenue !== null ? `${formatTokenAmount(retainedRevenue, tokenInfo?.decimals || 18, 4)} ${tokenInfo?.symbol || 'tokens'}` : '...'}
+                    {retainedRevenue !== null ? `${formatTokenAmount(retainedRevenue, tokenInfo?.decimals || 18, 4)} ${tokenInfo?.symbol || t('detail.historyTokens')}` : '...'}
                   </span>
                   {retainedRevenue > 0n && (
                     <button className="btn btn-success btn-xs" onClick={handleWithdrawRevenue} style={{ padding: '2px 8px', fontSize: 11 }}>
-                      Claim Revenue
+                      {t('detail.claimRevenueBtn')}
                     </button>
                   )}
                 </div>
               </div>
             </div>
           </div>
-        ) : erc20Pools.length === 0 && otherPools.length === 0 ? (
+        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && otherPools.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
-            <div className="empty-state-title">No active pools</div>
+            <div className="empty-state-title">{t('detail.noPoolsTitle')}</div>
             <div className="empty-state-desc">
-              {isOwner ? 'Create your first staking pool!' : 'No pools to display.'}
+              {isOwner ? t('detail.noPoolsDesc') : t('detail.noPoolsDescUser')}
             </div>
             {isOwner && (
-              <button className="btn btn-primary" onClick={() => setShowAddPool(true)}>+ Add Pool</button>
+              <button className="btn btn-primary" onClick={() => setShowAddPool(true)}>{t('detail.addPoolBtn')}</button>
             )}
           </div>
         ) : (
@@ -474,6 +480,16 @@ export default function CommunityDetail() {
                 onRefresh={loadCommunity}
               />
             ))}
+            {socialCurationPools.map(pool => (
+              <SocialCurationCard
+                key={pool.id}
+                pool={pool}
+                communityAddress={address}
+                communityToken={tokenInfo}
+                rewardRate={rewardRate}
+                feeRatio={displayFeeRatio}
+              />
+            ))}
             {otherPools.map(pool => (
               <div key={pool.id} className="glass-card" style={{ padding: 'var(--space-6)', opacity: 0.6 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
@@ -481,7 +497,7 @@ export default function CommunityDetail() {
                   <span className={getPoolTypeBadgeClass(pool.poolType)}>{getPoolTypeLabel(pool.poolType)}</span>
                 </div>
                 <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-tertiary)' }}>
-                  This pool type is not yet supported in the frontend.
+                  {t('detail.unsupportedPool')}
                 </div>
               </div>
             ))}
@@ -529,39 +545,39 @@ function getOperationDisplay(type) {
   
   // Admin Operations
   if (t.includes('SETDEV') || t.includes('SETDAOFUND') || t === 'DEVCHANGED') {
-    return { label: 'Change Fund Address', isAdmin: true };
+    return { label: 'detail.historyTitleChangeAddr', isKey: true, isAdmin: true };
   }
   if (t.includes('SETFEERATIO') || t.includes('SETFEE')) {
-    return { label: 'Change Fund Ratio', isAdmin: true };
+    return { label: 'detail.historyTitleChangeRatio', isKey: true, isAdmin: true };
   }
   if (t.includes('ADDPOOL')) {
-    return { label: 'Add Pool', isAdmin: true };
+    return { label: 'detail.historyTitleAddPool', isKey: true, isAdmin: true };
   }
   if (t.includes('CLOSEPOOL')) {
-    return { label: 'Close Pool', isAdmin: true };
+    return { label: 'Close Pool', isKey: false, isAdmin: true };
   }
   if (t.includes('SETRATIO')) {
-    return { label: 'Adjust Pool Ratios', isAdmin: true };
+    return { label: 'detail.historyTitleAdjustRatios', isKey: true, isAdmin: true };
   }
   if (t.includes('WITHDRAWREVENUE') || t.includes('REVENUEWITHDRAWN') || (t.includes('WITHDRAW') && t.includes('REVENUE'))) {
-    return { label: 'Claim Revenue', isAdmin: true };
+    return { label: 'detail.historyTitleClaimRevenue', isKey: true, isAdmin: true };
   }
   
   // User/Normal Operations
   if (t === 'DEPOSIT' || t === 'STAKE' || t === 'LOCKED' || t === 'LOCK') {
-    return { label: 'Stake', isAdmin: false };
+    return { label: 'detail.historyTitleStake', isKey: true, isAdmin: false };
   }
   if (t === 'WITHDRAW' || t === 'UNSTAKE' || t === 'UNLOCKED' || t === 'UNLOCK') {
-    return { label: 'Withdraw', isAdmin: false };
+    return { label: 'detail.historyTitleWithdraw', isKey: true, isAdmin: false };
   }
   if (t === 'REDEEM' || t === 'REDEEMED') {
-    return { label: 'Redeem', isAdmin: false };
+    return { label: 'detail.historyTitleRedeem', isKey: true, isAdmin: false };
   }
   if (t === 'WITHDRAWREWARDS' || t === 'CLAIM' || t === 'HARVEST' || t === 'CLAIMREWARDS') {
-    return { label: 'Claim Rewards', isAdmin: false };
+    return { label: 'detail.historyTitleClaimRewards', isKey: true, isAdmin: false };
   }
   if (t === 'SOCIALCLAIMED' || t === 'CLAIMED') {
-    return { label: 'Social Claim', isAdmin: false };
+    return { label: 'detail.historyTitleSocialClaim', isKey: true, isAdmin: false };
   }
   
   // Fallback: If type contains 'ADMIN', it is admin operation
@@ -572,7 +588,7 @@ function getOperationDisplay(type) {
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
 
-  return { label: formattedLabel, isAdmin: isFallbackAdmin };
+  return { label: formattedLabel, isKey: false, isAdmin: isFallbackAdmin };
 }
 
 function guessPoolType(factoryAddress) {
@@ -589,11 +605,12 @@ function guessPoolType(factoryAddress) {
 }
 
 function HistoryTab({ operations, pools = [] }) {
+  const { t, language } = useLanguage();
   if (!operations || operations.length === 0) {
     return (
       <div className="empty-state">
         <div className="empty-state-icon">📜</div>
-        <div className="empty-state-title">No history yet</div>
+        <div className="empty-state-title">{t('detail.historyNoData')}</div>
       </div>
     );
   }
@@ -606,7 +623,7 @@ function HistoryTab({ operations, pools = [] }) {
           <div key={op.id} className="history-item glass-card">
             <div className="history-type">
               <span className={`badge ${opInfo.isAdmin ? 'badge-admin' : 'badge-staking'}`}>
-                {opInfo.label}
+                {opInfo.isKey ? t(opInfo.label) : opInfo.label}
                 {opInfo.isAdmin && <span style={{ marginLeft: 4, fontSize: 10 }}>👑</span>}
               </span>
             </div>
@@ -614,45 +631,45 @@ function HistoryTab({ operations, pools = [] }) {
               <span className="history-account">{shortenAddress(op.account?.id)}</span>
               
               {/* Case 1: Change Fund Ratio */}
-              {opInfo.label === 'Change Fund Ratio' && op.amount !== undefined && (
+              {opInfo.label === 'detail.historyTitleChangeRatio' && op.amount !== undefined && (
                 <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
                   {(parseFloat(op.amount) * 1e16).toFixed(1)}%
                 </span>
               )}
               
               {/* Case 2: Change Fund Address */}
-              {opInfo.label === 'Change Fund Address' && op.asset && (
+              {opInfo.label === 'detail.historyTitleChangeAddr' && op.asset && (
                 <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  ➡️ New: <a href={getBscScanUrl(op.asset)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text-accent)', textDecoration: 'underline' }}>{shortenAddress(op.asset, 6)}</a>
+                  ➡️ {t('detail.historyNewAddr')}: <a href={getBscScanUrl(op.asset)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text-accent)', textDecoration: 'underline' }}>{shortenAddress(op.asset, 6)}</a>
                 </span>
               )}
               
               {/* Case 3: Add Pool */}
-              {opInfo.label === 'Add Pool' && (() => {
+              {opInfo.label === 'detail.historyTitleAddPool' && (() => {
                 const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
                 const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory)) : '');
                 const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return (
                   <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'inline-flex', gap: 8 }}>
-                    {typeLabel && <span>Type: <strong style={{ color: 'var(--color-text-primary)' }}>{typeLabel}</strong></span>}
-                    {ratioLabel && <span>Ratio: <strong style={{ color: 'var(--color-text-primary)' }}>{ratioLabel}</strong></span>}
+                    {typeLabel && <span>{t('detail.historyType')}: <strong style={{ color: 'var(--color-text-primary)' }}>{typeLabel}</strong></span>}
+                    {ratioLabel && <span>{t('detail.historyRatio')}: <strong style={{ color: 'var(--color-text-primary)' }}>{ratioLabel}</strong></span>}
                   </span>
                 );
               })()}
 
               {/* Case 4: Adjust Pool Ratios */}
-              {opInfo.label === 'Adjust Pool Ratios' && (() => {
+              {opInfo.label === 'detail.historyTitleAdjustRatios' && (() => {
                 const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
                 const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return ratioLabel ? (
                   <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
-                    Ratio: {ratioLabel}
+                    {t('detail.historyRatio')}: {ratioLabel}
                   </span>
                 ) : null;
               })()}
               
               {/* Case 5: Standard token amount operations (Stake, Withdraw, Claim Rewards, etc.) */}
-              {opInfo.label !== 'Change Fund Ratio' && opInfo.label !== 'Change Fund Address' && opInfo.label !== 'Add Pool' && opInfo.label !== 'Adjust Pool Ratios' && op.amount && op.amount !== '0' && (
+              {opInfo.label !== 'detail.historyTitleChangeRatio' && opInfo.label !== 'detail.historyTitleChangeAddr' && opInfo.label !== 'detail.historyTitleAddPool' && opInfo.label !== 'detail.historyTitleAdjustRatios' && op.amount && op.amount !== '0' && (
                 <span className="history-amount">
                   {(() => {
                     const num = parseFloat(op.amount);
@@ -663,7 +680,7 @@ function HistoryTab({ operations, pools = [] }) {
                       maximumFractionDigits: 4,
                       minimumFractionDigits: 0
                     });
-                  })()} tokens
+                  })()} {t('detail.historyTokens')}
                 </span>
               )}
             </div>

@@ -1,10 +1,12 @@
 import { Link } from 'react-router-dom';
 import { useWeb3 } from '../../contexts/Web3Context';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { shortenAddress } from '../../utils/helpers';
 import './Header.css';
 
 export default function Header() {
   const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC } = useWeb3();
+  const { language, setLanguage, t } = useLanguage();
 
   return (
     <header className="header">
@@ -31,10 +33,10 @@ export default function Header() {
             <>
               {!isCorrectChain && (
                 <button className="btn btn-danger btn-sm" onClick={switchToBSC}>
-                  Switch to BSC
+                  {t('header.switchToBSC')}
                 </button>
               )}
-              <div className="wallet-info" onClick={disconnect} title="Click to disconnect">
+              <div className="wallet-info" onClick={disconnect} title={t('header.disconnect')}>
                 <div className="wallet-dot" />
                 <span>{shortenAddress(account)}</span>
               </div>
@@ -46,12 +48,32 @@ export default function Header() {
               disabled={connecting}
             >
               {connecting ? (
-                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Connecting...</>
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {t('header.connecting')}</>
               ) : (
-                'Connect Wallet'
+                t('header.connect')
               )}
             </button>
           )}
+
+          {/* Language Toggle Button placed to the right of address/connect button */}
+          <button 
+            className="btn btn-ghost btn-sm lang-btn" 
+            onClick={() => setLanguage(language === 'en' ? 'zh' : 'en')}
+            style={{ 
+              marginLeft: 'var(--space-3)', 
+              fontSize: 'var(--font-size-xs)', 
+              padding: '6px 10px',
+              background: 'rgba(255, 255, 255, 0.04)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '6px',
+              color: 'var(--color-text-primary)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              cursor: 'pointer'
+            }}
+          >
+            {language === 'en' ? '🇨🇳 中文' : '🇬🇧 EN'}
+          </button>
         </div>
       </div>
     </header>

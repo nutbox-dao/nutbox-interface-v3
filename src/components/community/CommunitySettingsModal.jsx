@@ -4,8 +4,10 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function CommunitySettingsModal({ communityAddress, community, retainedRevenue, communityToken, onClose, onSuccess }) {
+  const { t, language } = useLanguage();
   const { signer, readProvider } = useWeb3();
   const toast = useToast();
 
@@ -42,11 +44,11 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
   const handleUpdateDevFund = async () => {
     if (!signer) {
-      toast.error('Wallet not connected');
+      toast.error(t('common.walletNotConnected'));
       return;
     }
     if (!ethers.isAddress(devFund)) {
-      toast.error('Invalid Ethereum address');
+      toast.error(language === 'zh' ? '无效的钱包地址' : 'Invalid Ethereum address');
       return;
     }
 
@@ -55,14 +57,14 @@ export default function CommunitySettingsModal({ communityAddress, community, re
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
       
       const tx = await communityContract.adminSetDev(devFund);
-      toast.info('Updating DAO Fund address...');
+      toast.info(t('settings.walletSaving'));
       await tx.wait();
       
-      toast.success('DAO Fund address updated successfully!');
+      toast.success(t('settings.walletSaveSuccess'));
       onSuccess?.();
     } catch (err) {
       console.error('Update DAO Fund failed:', err);
-      toast.error(err.reason || err.message || 'Failed to update DAO Fund');
+      toast.error(err.reason || err.message || (language === 'zh' ? '更新DAO基金地址失败' : 'Failed to update DAO Fund'));
     } finally {
       setDevLoading(false);
     }
@@ -70,12 +72,12 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
   const handleUpdateFeeRatio = async () => {
     if (!signer) {
-      toast.error('Wallet not connected');
+      toast.error(t('common.walletNotConnected'));
       return;
     }
     const percent = parseFloat(feeRatioPercent);
     if (isNaN(percent) || percent < 0 || percent > 100) {
-      toast.error('DAO Fund Ratio must be a percentage between 0% and 100%');
+      toast.error(language === 'zh' ? '提取比率必须是 0 到 100 之间的百分比' : 'DAO Fund Ratio must be a percentage between 0% and 100%');
       return;
     }
 
@@ -87,14 +89,14 @@ export default function CommunitySettingsModal({ communityAddress, community, re
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
       
       const tx = await communityContract.adminSetFeeRatio(ratioPPM, { value: settingsFee });
-      toast.info('Updating DAO Fund Ratio on-chain...');
+      toast.info(t('settings.ratioSaving'));
       await tx.wait();
       
-      toast.success('DAO Fund Ratio updated successfully!');
+      toast.success(t('settings.ratioSaveSuccess'));
       onSuccess?.();
     } catch (err) {
       console.error('Update DAO Fund Ratio failed:', err);
-      toast.error(err.reason || err.message || 'Failed to update DAO Fund Ratio');
+      toast.error(err.reason || err.message || (language === 'zh' ? '更新DAO基金提取比例失败' : 'Failed to update DAO Fund Ratio'));
     } finally {
       setFeeLoading(false);
     }
@@ -102,7 +104,7 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
   const handleWithdrawRevenue = async () => {
     if (!signer) {
-      toast.error('Wallet not connected');
+      toast.error(t('common.walletNotConnected'));
       return;
     }
     setWithdrawLoading(true);
@@ -111,13 +113,13 @@ export default function CommunitySettingsModal({ communityAddress, community, re
         'function adminWithdrawRevenue()',
       ], signer);
       const tx = await communityContract.adminWithdrawRevenue();
-      toast.info('Withdrawing revenue...');
+      toast.info(t('settings.revenueWithdrawing'));
       await tx.wait();
-      toast.success('Revenue withdrawn successfully!');
+      toast.success(t('settings.revenueWithdrawSuccess'));
       onSuccess?.();
     } catch (err) {
       console.error('Withdraw revenue failed:', err);
-      toast.error(err.reason || err.message || 'Failed to withdraw revenue');
+      toast.error(err.reason || err.message || (language === 'zh' ? '提取DAO基金收益失败' : 'Failed to withdraw revenue'));
     } finally {
       setWithdrawLoading(false);
     }
@@ -127,7 +129,7 @@ export default function CommunitySettingsModal({ communityAddress, community, re
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: 480 }}>
         <div className="modal-header">
-          <h2 className="modal-title">⚙️ Fund Settings</h2>
+          <h2 className="modal-title">{t('settings.title')}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
@@ -135,13 +137,13 @@ export default function CommunitySettingsModal({ communityAddress, community, re
           {/* Section 1: DAO Fund Address */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, marginBottom: 'var(--space-3)', color: 'var(--color-primary)' }}>
-              🏛️ DAO Fund Wallet
+              {t('settings.walletSectionTitle')}
             </h3>
             <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, marginBottom: 'var(--space-3)' }}>
-              Change the address where DAO fund revenues are withdrawn.
+              {t('settings.walletSectionDesc')}
             </p>
             <div className="input-group" style={{ marginBottom: 'var(--space-4)' }}>
-              <label>DAO Fund Address</label>
+              <label>{t('settings.walletFieldAddress')}</label>
               <input
                 className="input"
                 placeholder="0x..."
@@ -158,9 +160,9 @@ export default function CommunitySettingsModal({ communityAddress, community, re
               style={{ width: '100%' }}
             >
               {devLoading ? (
-                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving...</>
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {language === 'zh' ? '保存中...' : 'Saving...'}</>
               ) : (
-                'Update DAO Fund'
+                t('settings.walletBtnSave')
               )}
             </button>
           </div>
@@ -168,17 +170,17 @@ export default function CommunitySettingsModal({ communityAddress, community, re
           {/* Section 2: DAO Fund Ratio */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, marginBottom: 'var(--space-3)', color: 'var(--color-success)' }}>
-              🏛️ DAO Fund Ratio
+              {t('settings.ratioSectionTitle')}
             </h3>
             <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, marginBottom: 'var(--space-3)' }}>
-              Change the percentage of community rewards allocated to the DAO Fund.
+              {t('settings.ratioSectionDesc')}
             </p>
             <div className="input-group" style={{ marginBottom: 'var(--space-4)' }}>
               <label>
-                DAO Fund Ratio (%)
+                {t('settings.ratioFieldPercent')}
                 {settingsFee > 0n && (
                   <span style={{ float: 'right', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-                    Operation Fee: {ethers.formatEther(settingsFee)} BNB
+                    {t('settings.ratioOperationFee')}: {ethers.formatEther(settingsFee)} BNB
                   </span>
                 )}
               </label>
@@ -204,9 +206,9 @@ export default function CommunitySettingsModal({ communityAddress, community, re
               style={{ width: '100%' }}
             >
               {feeLoading ? (
-                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Saving...</>
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {language === 'zh' ? '保存中...' : 'Saving...'}</>
               ) : (
-                'Update DAO Fund Ratio'
+                t('settings.ratioBtnSave')
               )}
             </button>
           </div>
@@ -214,16 +216,16 @@ export default function CommunitySettingsModal({ communityAddress, community, re
           {/* Section 3: DAO Fund Revenue */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)' }}>
             <h3 style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, marginBottom: 'var(--space-3)', color: 'var(--color-amber)' }}>
-              🏛️ DAO Fund Revenue
+              {t('settings.revenueSectionTitle')}
             </h3>
             <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.7, marginBottom: 'var(--space-4)' }}>
-              Withdraw the accumulated revenue to the DAO Fund wallet address.
+              {t('settings.revenueSectionDesc')}
             </p>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-4)' }}>
-              <span style={{ fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>Accumulated Revenue:</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', opacity: 0.8 }}>{t('settings.revenueAccumulated')}</span>
               <span style={{ fontSize: 'var(--font-size-md)', fontWeight: 700, color: 'var(--color-success)' }}>
                 {retainedRevenue !== null && retainedRevenue !== undefined ? 
-                  `${ethers.formatUnits(retainedRevenue, communityToken?.decimals || 18)} ${communityToken?.symbol || 'tokens'}` : 
+                  `${ethers.formatUnits(retainedRevenue, communityToken?.decimals || 18)} ${communityToken?.symbol || t('detail.historyTokens')}` : 
                   '...'
                 }
               </span>
@@ -235,9 +237,9 @@ export default function CommunitySettingsModal({ communityAddress, community, re
               style={{ width: '100%' }}
             >
               {withdrawLoading ? (
-                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Withdrawing...</>
+                <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {language === 'zh' ? '提取中...' : 'Withdrawing...'}</>
               ) : (
-                'Withdraw DAO Fund Revenue'
+                t('settings.revenueBtnWithdraw')
               )}
             </button>
           </div>

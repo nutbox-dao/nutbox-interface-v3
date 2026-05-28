@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
 import { formatTokenAmount, shortenAddress, formatCompact } from '../utils/helpers';
+import { useLanguage } from '../contexts/LanguageContext';
 import './Home.css';
 
 export default function Home() {
   const [stats, setStats] = useState(null);
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const { t } = useLanguage();
 
   useEffect(() => {
     async function load() {
@@ -33,16 +35,16 @@ export default function Home() {
       <section className="hero">
         <div className="container">
           <div className="hero-content">
-            <div className="hero-badge">🌰 Community Staking Protocol on BSC</div>
+            <div className="hero-badge">{t('home.heroBadge')}</div>
             <h1 className="hero-title">
-              Build Your <span className="gradient-text">Staking Economy</span>
+              {t('home.heroTitle1')}<span className="gradient-text">{t('home.heroTitle2')}</span>
             </h1>
             <p className="hero-subtitle">
-              Create communities, deploy staking pools, and distribute rewards — all powered by smart contracts on BNB Smart Chain.
+              {t('home.heroSubtitle')}
             </p>
             <div className="hero-actions">
               <Link to="/create" className="btn btn-primary btn-lg">
-                Create Community
+                {t('home.createBtn')}
               </Link>
             </div>
           </div>
@@ -53,19 +55,19 @@ export default function Home() {
               <div className="stat-value count-up">
                 {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalCommunities || 0)}
               </div>
-              <div className="stat-label">Communities</div>
+              <div className="stat-label">{t('home.statsCommunities')}</div>
             </div>
             <div className="stat-card glass-card">
               <div className="stat-value count-up">
                 {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalPools || 0)}
               </div>
-              <div className="stat-label">Pools</div>
+              <div className="stat-label">{t('home.statsPools')}</div>
             </div>
             <div className="stat-card glass-card">
               <div className="stat-value count-up">
                 {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalUsers || 0)}
               </div>
-              <div className="stat-label">Users</div>
+              <div className="stat-label">{t('home.statsUsers')}</div>
             </div>
           </div>
         </div>
@@ -74,8 +76,8 @@ export default function Home() {
       {/* ── Communities List ── */}
       <section className="container" style={{ marginTop: 'var(--space-12)' }}>
         <div className="section-header">
-          <h2 className="section-title">Communities</h2>
-          <Link to="/create" className="btn btn-ghost">+ Create New</Link>
+          <h2 className="section-title">{t('home.sectionTitle')}</h2>
+          <Link to="/create" className="btn btn-ghost">{t('home.createNew')}</Link>
         </div>
 
         {loading ? (
@@ -91,9 +93,9 @@ export default function Home() {
         ) : communities.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">🌰</div>
-            <div className="empty-state-title">No communities yet</div>
-            <div className="empty-state-desc">Be the first to create a community staking economy!</div>
-            <Link to="/create" className="btn btn-primary">Create Community</Link>
+            <div className="empty-state-title">{t('home.noCommunitiesTitle')}</div>
+            <div className="empty-state-desc">{t('home.noCommunitiesDesc')}</div>
+            <Link to="/create" className="btn btn-primary">{t('home.createBtn')}</Link>
           </div>
         ) : (
           <div className="grid-communities">
@@ -110,6 +112,7 @@ export default function Home() {
 function CommunityCard({ community }) {
   const activePools = community.pools?.filter(p => p.status === 'OPENED') || [];
   const displayName = community.name || `Community #${community.index?.toString() || '?'}`;
+  const { t } = useLanguage();
 
   return (
     <Link to={`/community/${community.id}`} className="community-card glass-card" id={`community-${community.id}`}>
@@ -139,15 +142,15 @@ function CommunityCard({ community }) {
       <div className="community-stats-row">
         <div className="community-stat">
           <span className="community-stat-value">{activePools.length}</span>
-          <span className="community-stat-label">Active Pools</span>
+          <span className="community-stat-label">{t('home.cardActivePools')}</span>
         </div>
         <div className="community-stat">
           <span className="community-stat-value">{community.usersCount || 0}</span>
-          <span className="community-stat-label">Users</span>
+          <span className="community-stat-label">{t('home.cardUsers')}</span>
         </div>
         <div className="community-stat">
           <span className="community-stat-value">{community.poolsCount || 0}</span>
-          <span className="community-stat-label">Total Pools</span>
+          <span className="community-stat-label">{t('home.cardTotalPools')}</span>
         </div>
       </div>
 
@@ -177,7 +180,7 @@ function CommunityCard({ community }) {
           CToken: {shortenAddress(community.cToken)}
         </span>
         <span className="community-fee">
-          Fee: {((community.feeRatio || 0) / 100).toFixed(1)}%
+          {t('home.cardFee')}: {((community.feeRatio || 0) / 100).toFixed(1)}%
         </span>
       </div>
     </Link>

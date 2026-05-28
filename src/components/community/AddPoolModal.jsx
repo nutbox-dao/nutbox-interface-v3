@@ -5,8 +5,10 @@ import { useToast } from '../../contexts/ToastContext';
 import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
 import { getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
+import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function AddPoolModal({ communityAddress, activePools, onClose, onSuccess }) {
+  const { t, language } = useLanguage();
   const { signer, readProvider } = useWeb3();
   const toast = useToast();
 
@@ -16,6 +18,16 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   const [lockDuration, setLockDuration] = useState('');
   const [inputRatios, setInputRatios] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [settingsFee, setSettingsFee] = useState(null);
+
+  // Load operation fee on mount
+  useEffect(() => {
+    if (!readProvider) return;
+    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      'function getCommunitySettingsFee() view returns (uint256)',
+    ], readProvider);
+    committeeContract.getCommunitySettingsFee().then(fee => setSettingsFee(fee)).catch(() => {});
+  }, [readProvider]);
 
   // Initialize pool ratios to empty strings when activePools changes
   useEffect(() => {
@@ -41,12 +53,12 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
   const handleCreate = async () => {
     if (!signer || !poolName || !stakeTokenAddress) {
-      toast.error('Please fill in all fields');
+      toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
 
     if (!ethers.isAddress(stakeTokenAddress)) {
-      toast.error('Invalid token address');
+      toast.error(language === 'zh' ? '代币地址无效' : 'Invalid token address');
       return;
     }
 
@@ -56,12 +68,12 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     for (let i = 0; i < inputRatios.length; i++) {
       const valStr = inputRatios[i];
       if (valStr === '') {
-        toast.error('Please enter a ratio for all pools');
+        toast.error(language === 'zh' ? '请输入所有矿池的收益比例' : 'Please enter a ratio for all pools');
         return;
       }
       const pct = parseFloat(valStr);
       if (isNaN(pct) || pct < 0) {
-        toast.error('Each ratio must be a non-negative number');
+        toast.error(language === 'zh' ? '每个比例必须是非负数' : 'Each ratio must be a non-negative number');
         return;
       }
       // Convert percent back to uint16 PPM (0 ~ 10000)
@@ -71,7 +83,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     }
 
     if (sumVal !== 10000 && sumVal !== 0) {
-      toast.error(`Ratios must sum to 100% or 0% (current sum: ${(sumVal/100).toFixed(2)}%)`);
+      toast.error(language === 'zh' ? `所有比例之和必须为 100% 或 0%（当前和：${(sumVal/100).toFixed(2)}%）` : `Ratios must sum to 100% or 0% (current sum: ${(sumVal/100).toFixed(2)}%)`);
       return;
     }
 
@@ -95,7 +107,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
         factoryAddress = CONTRACTS.ERC20LockingFactory;
         // meta: [address stakeToken (20 bytes)][uint256 lockDuration (32 bytes)]
         if (!lockDuration || parseInt(lockDuration) <= 0) {
-          toast.error('Lock duration must be positive');
+          toast.error(language === 'zh' ? '锁仓时长必须为正数' : 'Lock duration must be positive');
           setLoading(false);
           return;
         }
@@ -111,13 +123,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
         { value: fee }
       );
 
-      toast.info('Creating pool...');
+      toast.info(t('addPool.toastCreating'));
       await tx.wait();
-      toast.success('Pool created successfully!');
+      toast.success(t('addPool.toastSuccess'));
       onSuccess?.();
     } catch (err) {
       console.error('Create pool failed:', err);
-      toast.error(err.reason || err.message || 'Failed to create pool');
+      toast.error(err.reason || err.message || (language === 'zh' ? '添加矿池失败' : 'Failed to create pool'));
     } finally {
       setLoading(false);
     }
@@ -130,23 +142,23 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h2 className="modal-title">Add New Pool</h2>
+          <h2 className="modal-title">{t('addPool.title')}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
           {/* Pool Type */}
           <div className="input-group">
-            <label>Pool Type</label>
+            <label>{t('addPool.fieldType')}</label>
             <select className="input" value={poolType} onChange={e => setPoolType(e.target.value)}>
-              <option value="staking">ERC20 Staking</option>
-              <option value="locking">ERC20 Locking</option>
+              <option value="staking">{t('addPool.fieldTypeNameStaking')}</option>
+              <option value="locking">{t('addPool.fieldTypeNameLocking')}</option>
             </select>
           </div>
 
           {/* Pool Name */}
           <div className="input-group">
-            <label>Pool Name</label>
+            <label>{t('addPool.fieldName')}</label>
             <input
               className="input"
               placeholder="e.g. Stake USDT for rewards"
@@ -157,7 +169,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
           {/* Stake Token */}
           <div className="input-group">
-            <label>Stake Token Address</label>
+            <label>{t('addPool.fieldStakeToken')}</label>
             <input
               className="input"
               placeholder="0x..."
@@ -169,7 +181,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
           {/* Lock Duration (only for locking) */}
           {poolType === 'locking' && (
             <div className="input-group">
-              <label>Lock Duration (days)</label>
+              <label>{t('addPool.fieldLockDuration')}</label>
               <input
                 type="number"
                 className="input"
@@ -184,10 +196,10 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
           {/* Pool Ratios Section */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
             <h3 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
-              📐 Set Pool Ratios (比例分配)
+              {t('addPool.ratioSectionTitle')}
             </h3>
             <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, marginBottom: 'var(--space-4)', lineHeight: 1.4 }}>
-              Set the reward percentage for all pools. The total sum must be exactly 100% (or 0% to pause distribution).
+              {t('addPool.ratioSectionDesc')}
             </p>
             
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -198,12 +210,12 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                     <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {pool.name || `Pool #${idx + 1}`}
                     </span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: '2px' }}>
                       <span className={getPoolTypeBadgeClass(pool.poolType)} style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal' }}>
                         {getPoolTypeLabel(pool.poolType)}
                       </span>
                       <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.8, color: 'var(--color-primary)', fontWeight: 500 }}>
-                        Current: {((pool.ratio || 0) / 100).toFixed(1)}%
+                        {t('addPool.ratioCurrentLabel')}: {((pool.ratio || 0) / 100).toFixed(1)}%
                       </span>
                     </div>
                   </div>
@@ -229,7 +241,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '8px' }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, display: 'block', color: 'var(--color-success)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                    ✨ {poolName || 'New Pool (新矿池)'}
+                    ✨ {poolName || t('addPool.ratioNewPoolLabel')}
                   </span>
                   <span className="badge badge-active" style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal', background: 'var(--color-success)', color: '#fff' }}>
                     {poolType === 'staking' ? 'Staking' : 'Locking'}
@@ -264,7 +276,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
               border: `1px solid ${isValidRatios ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
               marginTop: 'var(--space-4)'
             }}>
-              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>New Total Ratio Sum</span>
+              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>{t('addPool.ratioTotalSumLabel')}</span>
               <span style={{
                 fontSize: 'var(--font-size-md)',
                 fontWeight: 700,
@@ -275,6 +287,12 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             </div>
           </div>
 
+          {settingsFee !== null && settingsFee > 0n && (
+            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', padding: 'var(--space-3)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
+              {t('addPool.operationFee', { fee: ethers.formatEther(settingsFee) })}
+            </div>
+          )}
+
           <button
             className={`btn ${isValidRatios ? 'btn-primary' : 'btn-ghost'} btn-lg`}
             onClick={handleCreate}
@@ -282,9 +300,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             style={{ width: '100%' }}
           >
             {loading ? (
-              <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> Creating...</>
+              <><span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} /> {language === 'zh' ? '创建中...' : 'Creating...'}</>
             ) : (
-              'Create Pool'
+              t('addPool.btnCreate')
             )}
           </button>
         </div>

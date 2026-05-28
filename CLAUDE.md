@@ -65,9 +65,11 @@ The app uses **wagmi + RainbowKit** for wallet connection but **ethers.js v6** f
 
 Plain CSS files co-located with components. CSS custom properties for theming (see `src/index.css`). Uses `glass-card` class for card containers. No CSS modules, no Tailwind.
 
-### Context Providers (app root order)
+### Context Providers (app root order, see `src/App.jsx`)
 
-`BrowserRouter → Web3Provider → ToastProvider`
+`BrowserRouter → WagmiProvider → QueryClientProvider → RainbowKitProvider → Web3Provider → ToastProvider → LanguageProvider`
+
+`LanguageProvider` exposes `{ language, setLanguage, t }` via `useLanguage()`. `t(key, params)` does nested-key lookup with auto-fallback to English and `{param}` interpolation. Language persisted to `localStorage` (`walnut_language`).
 
 ### Environment Variables
 

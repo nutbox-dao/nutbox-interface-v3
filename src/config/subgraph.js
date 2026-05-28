@@ -74,6 +74,43 @@ export async function fetchUserOperations(userAddress, first = 50) {
   };
 }
 
+// ──── Social Curation Claims ────
+
+export async function fetchSocialClaims(communityAddress, userAddress) {
+  try {
+    const data = await fetchAPI(`/communities/${communityAddress}/social-claims/${userAddress}`);
+    return (data.claims || []).map(c => ({
+      orderId: c.orderId,
+      amount: c.amount,
+      deadline: c.deadline,
+      signature: c.signature,
+      reason: c.reason || null,
+    }));
+  } catch (err) {
+    console.error('Failed to fetch social claims:', err);
+    return [];
+  }
+}
+
+export async function fetchSocialClaimHistory(communityAddress, page = 0, size = 20) {
+  try {
+    const data = await fetchAPI(`/communities/${communityAddress}/social-claims/history?page=${page}&size=${size}`);
+    return {
+      claims: (data.claims || []).map(c => ({
+        orderId: c.orderId,
+        user: c.user,
+        amount: c.amount,
+        timestamp: c.timestamp,
+        txHash: c.txHash,
+      })),
+      total: data.total || 0,
+    };
+  } catch (err) {
+    console.error('Failed to fetch social claim history:', err);
+    return { claims: [], total: 0 };
+  }
+}
+
 // ──── Data Mapping Helpers ────
 
 function mapCommunity(raw) {
