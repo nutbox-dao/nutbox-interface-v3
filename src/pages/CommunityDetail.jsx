@@ -51,6 +51,38 @@ export default function CommunityDetail() {
   const loadCommunity = useCallback(async () => {
     try {
       const data = await fetchCommunity(address);
+
+      // Load real-time pool ratios and active statuses on-chain using slot 10 direct query to override indexer lag/bugs
+      if (communityContract && data && data.pools) {
+        try {
+          const updatedPools = await Promise.all(data.pools.map(async (p) => {
+            const poolAddr = p.id;
+            
+            // Check if active on-chain using public view function poolActived
+            const isActive = await communityContract.poolActived(poolAddr);
+            
+            let ratio = 0;
+            if (isActive) {
+              // Read ratio directly from Storage Slot 10
+              const paddedAddress = ethers.zeroPadValue(poolAddr, 32);
+              const paddedSlot = ethers.zeroPadValue(ethers.toBeHex(10), 32);
+              const storageKey = ethers.keccak256(ethers.concat([paddedAddress, paddedSlot]));
+              const rawVal = await readProvider.getStorage(address, storageKey);
+              ratio = Number(BigInt(rawVal));
+            }
+            
+            return {
+              ...p,
+              ratio,
+              status: isActive ? 'OPENED' : 'CLOSED'
+            };
+          }));
+          data.pools = updatedPools;
+        } catch (err) {
+          console.error('Failed to load on-chain ratios via slot 10:', err);
+        }
+      }
+
       setCommunity(data);
 
       // Load token info

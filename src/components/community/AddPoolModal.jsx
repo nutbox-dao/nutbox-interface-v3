@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
@@ -14,8 +14,30 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   const [poolName, setPoolName] = useState('');
   const [stakeTokenAddress, setStakeTokenAddress] = useState('');
   const [lockDuration, setLockDuration] = useState('');
-  const [ratios, setRatios] = useState('');
+  const [inputRatios, setInputRatios] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  // Initialize pool ratios to empty strings when activePools changes
+  useEffect(() => {
+    if (!activePools) return;
+    const numPools = activePools.length + 1;
+    setInputRatios(Array(numPools).fill(''));
+  }, [activePools]);
+
+  const handleRatioChange = (idx, valStr) => {
+    setInputRatios(prev => {
+      const next = [...prev];
+      next[idx] = valStr;
+      return next;
+    });
+  };
+
+  const getSumPercent = () => {
+    return inputRatios.reduce((sum, val) => {
+      const num = parseFloat(val);
+      return sum + (isNaN(num) ? 0 : num);
+    }, 0);
+  };
 
   const handleCreate = async () => {
     if (!signer || !poolName || !stakeTokenAddress) {
@@ -28,6 +50,31 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
       return;
     }
 
+    // Convert and validate ratios
+    const ratioArr = [];
+    let sumVal = 0;
+    for (let i = 0; i < inputRatios.length; i++) {
+      const valStr = inputRatios[i];
+      if (valStr === '') {
+        toast.error('Please enter a ratio for all pools');
+        return;
+      }
+      const pct = parseFloat(valStr);
+      if (isNaN(pct) || pct < 0) {
+        toast.error('Each ratio must be a non-negative number');
+        return;
+      }
+      // Convert percent back to uint16 PPM (0 ~ 10000)
+      const ratioPPM = Math.round(pct * 100);
+      ratioArr.push(ratioPPM);
+      sumVal += ratioPPM;
+    }
+
+    if (sumVal !== 10000 && sumVal !== 0) {
+      toast.error(`Ratios must sum to 100% or 0% (current sum: ${(sumVal/100).toFixed(2)}%)`);
+      return;
+    }
+
     setLoading(true);
     try {
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
@@ -36,34 +83,6 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
       ], readProvider);
 
       const fee = await committeeContract.getCommunitySettingsFee();
-
-      // Parse ratios: new pool ratio is appended
-      // Total active pools + 1 = number of ratio entries needed
-      let ratioArr;
-      if (ratios.trim()) {
-        ratioArr = ratios.split(',').map(r => parseInt(r.trim()));
-      } else {
-        // Default: equal distribution
-        const numPools = activePools.length + 1;
-        const eachRatio = Math.floor(10000 / numPools);
-        ratioArr = Array(numPools).fill(eachRatio);
-        // Fix rounding: add remainder to last pool
-        ratioArr[ratioArr.length - 1] += 10000 - eachRatio * numPools;
-      }
-
-      // Ensure correct length
-      if (ratioArr.length !== activePools.length + 1) {
-        toast.error(`Need ${activePools.length + 1} ratio values (current pools + new pool)`);
-        setLoading(false);
-        return;
-      }
-
-      const ratioSum = ratioArr.reduce((a, b) => a + b, 0);
-      if (ratioSum !== 10000 && ratioSum !== 0) {
-        toast.error(`Ratios must sum to 10000 (currently ${ratioSum})`);
-        setLoading(false);
-        return;
-      }
 
       let factoryAddress;
       let meta;
@@ -103,6 +122,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
       setLoading(false);
     }
   };
+
+  const sumPercent = getSumPercent();
+  const isValidRatios = Math.abs(sumPercent - 100) < 0.001 || sumPercent === 0;
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -159,55 +181,104 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             </div>
           )}
 
-          {/* Current Pools & Ratios */}
-          {activePools && activePools.length > 0 && (
-            <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: '8px' }}>
-              <h3 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                📊 Current Pools & Ratios ({activePools.length})
-              </h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)', maxHeight: '150px', overflowY: 'auto', paddingRight: '4px' }}>
-                {activePools.map((pool, idx) => (
-                  <div key={pool.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--font-size-sm)', padding: 'var(--space-2) var(--space-3)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.02)', borderRadius: '6px' }}>
-                    <span style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <span style={{ color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-xs)' }}>#{idx + 1}</span>
+          {/* Pool Ratios Section */}
+          <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
+            <h3 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
+              📐 Set Pool Ratios (比例分配)
+            </h3>
+            <p style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, marginBottom: 'var(--space-4)', lineHeight: 1.4 }}>
+              Set the reward percentage for all pools. The total sum must be exactly 100% (or 0% to pause distribution).
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
+              {/* Existing Pools Inputs */}
+              {activePools.map((pool, idx) => (
+                <div key={pool.id || idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, display: 'block', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {pool.name || `Pool #${idx + 1}`}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
                       <span className={getPoolTypeBadgeClass(pool.poolType)} style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal' }}>
                         {getPoolTypeLabel(pool.poolType)}
                       </span>
-                    </span>
-                    <span style={{ color: 'var(--color-primary)', fontWeight: 700 }}>
-                      {((pool.ratio || 0) / 100).toFixed(1)}%
-                    </span>
+                      <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.8, color: 'var(--color-primary)', fontWeight: 500 }}>
+                        Current: {((pool.ratio || 0) / 100).toFixed(1)}%
+                      </span>
+                    </div>
                   </div>
-                ))}
-              </div>
-              <div style={{ fontSize: '11px', color: 'var(--color-text-tertiary)', marginTop: 'var(--space-2)', lineHeight: 1.4 }}>
-                💡 <strong>Ratio input guideline</strong>: Enter ratios corresponding to pools #1 to #{activePools.length} in order, plus the new pool as the last value (e.g. <code>3000, 3000, 4000</code>).
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', width: 120 }}>
+                    <input
+                      type="number"
+                      className="input"
+                      value={inputRatios[idx] !== undefined ? inputRatios[idx] : ''}
+                      onChange={e => handleRatioChange(idx, e.target.value)}
+                      style={{ textAlign: 'right', paddingRight: 'var(--space-2)' }}
+                      placeholder="0"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      disabled={loading}
+                    />
+                    <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>%</span>
+                  </div>
+                </div>
+              ))}
+
+              {/* New Pool Input */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', padding: 'var(--space-3)', background: 'rgba(16, 185, 129, 0.03)', border: '1px solid rgba(16, 185, 129, 0.1)', borderRadius: '8px' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 700, display: 'block', color: 'var(--color-success)', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    ✨ {poolName || 'New Pool (新矿池)'}
+                  </span>
+                  <span className="badge badge-active" style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal', background: 'var(--color-success)', color: '#fff' }}>
+                    {poolType === 'staking' ? 'Staking' : 'Locking'}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', width: 120 }}>
+                  <input
+                    type="number"
+                    className="input"
+                    value={inputRatios[activePools.length] !== undefined ? inputRatios[activePools.length] : ''}
+                    onChange={e => handleRatioChange(activePools.length, e.target.value)}
+                    style={{ textAlign: 'right', paddingRight: 'var(--space-2)', border: '1px solid rgba(16, 185, 129, 0.3)' }}
+                    placeholder="0"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    disabled={loading}
+                  />
+                  <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>%</span>
+                </div>
               </div>
             </div>
-          )}
 
-          {/* Ratios */}
-          <div className="input-group">
-            <label>
-              Pool Ratios (comma-separated, must sum to 10000)
-              <br />
-              <span style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', fontWeight: 400 }}>
-                Leave empty for equal distribution. Need {activePools.length + 1} values.
+            {/* Total Sum Indicator */}
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              padding: 'var(--space-3)',
+              borderRadius: 'var(--border-radius-md)',
+              background: isValidRatios ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+              border: `1px solid ${isValidRatios ? 'rgba(16, 185, 129, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`,
+              marginTop: 'var(--space-4)'
+            }}>
+              <span style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600 }}>New Total Ratio Sum</span>
+              <span style={{
+                fontSize: 'var(--font-size-md)',
+                fontWeight: 700,
+                color: isValidRatios ? 'var(--color-success)' : 'var(--color-danger)'
+              }}>
+                {sumPercent.toFixed(1)}%
               </span>
-            </label>
-            <input
-              className="input"
-              placeholder={`e.g. ${Array(activePools.length + 1).fill(Math.floor(10000 / (activePools.length + 1))).join(', ')}`}
-              value={ratios}
-              onChange={e => setRatios(e.target.value)}
-            />
+            </div>
           </div>
 
           <button
-            className="btn btn-primary btn-lg"
+            className={`btn ${isValidRatios ? 'btn-primary' : 'btn-ghost'} btn-lg`}
             onClick={handleCreate}
-            disabled={loading || !poolName || !stakeTokenAddress}
+            disabled={loading || !poolName || !stakeTokenAddress || !isValidRatios}
             style={{ width: '100%' }}
           >
             {loading ? (
