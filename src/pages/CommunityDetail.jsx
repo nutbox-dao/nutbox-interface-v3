@@ -585,7 +585,7 @@ function HistoryTab({ operations, pools = [] }) {
               {/* Case 1: Change Fund Ratio */}
               {opInfo.label === 'Change Fund Ratio' && op.amount !== undefined && (
                 <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
-                  {((parseFloat(op.amount) || 0) / 100).toFixed(1)}%
+                  {(parseFloat(op.amount) * 1e16).toFixed(1)}%
                 </span>
               )}
               
@@ -600,7 +600,7 @@ function HistoryTab({ operations, pools = [] }) {
               {opInfo.label === 'Add Pool' && (() => {
                 const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
                 const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory)) : '');
-                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${((parseFloat(op.amount) || 0) / 100).toFixed(1)}%` : '');
+                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return (
                   <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'inline-flex', gap: 8 }}>
                     {typeLabel && <span>Type: <strong style={{ color: 'var(--color-text-primary)' }}>{typeLabel}</strong></span>}
@@ -612,7 +612,7 @@ function HistoryTab({ operations, pools = [] }) {
               {/* Case 4: Adjust Pool Ratios */}
               {opInfo.label === 'Adjust Pool Ratios' && (() => {
                 const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
-                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${((parseFloat(op.amount) || 0) / 100).toFixed(1)}%` : '');
+                const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return ratioLabel ? (
                   <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
                     Ratio: {ratioLabel}
