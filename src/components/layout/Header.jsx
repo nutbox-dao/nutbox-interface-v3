@@ -1,16 +1,10 @@
-import { Link, useLocation } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { shortenAddress } from '../../utils/helpers';
 import './Header.css';
 
 export default function Header() {
   const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC } = useWeb3();
-  const location = useLocation();
-
-  const navLinks = [
-    { path: '/', label: 'Home' },
-    { path: '/create', label: 'Create' },
-  ];
 
   return (
     <header className="header">
@@ -31,18 +25,6 @@ export default function Header() {
           </div>
           <span className="logo-text">Nutbox</span>
         </Link>
-
-        <nav className="header-nav">
-          {navLinks.map(link => (
-            <Link
-              key={link.path}
-              to={link.path}
-              className={`nav-link ${location.pathname === link.path ? 'active' : ''}`}
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
 
         <div className="header-actions">
           {isConnected ? (

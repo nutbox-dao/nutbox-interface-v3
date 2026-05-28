@@ -44,9 +44,6 @@ export default function Home() {
               <Link to="/create" className="btn btn-primary btn-lg">
                 Create Community
               </Link>
-              <a href="https://bscscan.com/address/0x5597e814399906095ecaA5769A40394F58E5E0Cf" target="_blank" rel="noopener noreferrer" className="btn btn-secondary btn-lg">
-                View Contracts ↗
-              </a>
             </div>
           </div>
 
