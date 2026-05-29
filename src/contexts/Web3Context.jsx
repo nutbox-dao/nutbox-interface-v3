@@ -7,7 +7,7 @@
  * files need to change after migrating to RainbowKit.
  */
 import { createContext, useContext, useMemo, useEffect, useState } from 'react';
-import { useAccount, useConnect, useDisconnect, useWalletClient, usePublicClient, useSwitchChain } from 'wagmi';
+import { useAccount, useConnect, useDisconnect, useWalletClient, useSwitchChain } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { ethers } from 'ethers';
 import { bsc } from 'wagmi/chains';
@@ -33,14 +33,12 @@ function walletClientToEthersSigner(walletClient) {
 
 export function Web3Provider({ children }) {
   const { address: account, isConnected, chainId } = useAccount();
-  const { connectAsync, isPending: connecting, error: connectError } = useConnect();
+  const { isPending: connecting, error: connectError } = useConnect();
   const { disconnectAsync } = useDisconnect();
   const { data: walletClient } = useWalletClient();
-  const publicClient = usePublicClient({ chainId: CHAIN_ID });
   const { switchChainAsync } = useSwitchChain();
   const { openConnectModal } = useConnectModal();
 
-  const [signerPromise, setSignerPromise] = useState(null);
   const [signer, setSigner] = useState(null);
 
   // Build ethers Signer whenever walletClient changes

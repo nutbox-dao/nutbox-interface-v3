@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
-import { formatTokenAmount, shortenAddress, formatCompact } from '../utils/helpers';
+import { shortenAddress } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import './Home.css';
 

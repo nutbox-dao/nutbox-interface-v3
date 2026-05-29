@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Cell, Brush } from 'recharts';
-import { useWeb3 } from '../../contexts/Web3Context';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
 import { useCommunityRead, useLinearCalculator, useLinearTimeCalculator, useHourlyTickCalculator } from '../../hooks/useContract';
 import { CONTRACTS, BLOCK_TIME_SECONDS } from '../../config/contracts';
-import { formatTokenAmount, formatDate } from '../../utils/helpers';
+import { formatTokenAmount } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
 import './DistributionDisplay.css';
 
@@ -20,13 +19,6 @@ function getCalculatorType(address) {
   return CALCULATOR_ADDRESSES[address.toLowerCase()] || 'UNKNOWN';
 }
 
-const CALCULATOR_LABELS = {
-  LINEAR_BLOCK: 'Linear (Block-based)',
-  LINEAR_TIME: 'Linear (Time-based)',
-  HOURLY_TICK: 'Hourly Tick (Injection-based)',
-  UNKNOWN: 'Unknown Calculator',
-};
-
 const CALCULATOR_ICONS = {
   LINEAR_BLOCK: '⛓️',
   LINEAR_TIME: '⏱️',
@@ -37,7 +29,6 @@ const CALCULATOR_ICONS = {
 // ── Colors ──
 const COLOR_ACTUAL = '#FF8F40';
 const COLOR_FORECAST = '#9B83FA';
-const COLOR_TIMELINE_GRADIENT = ['#7c3aed', '#3b82f6', '#06b6d4'];
 
 export default function DistributionDisplay({ communityAddress, tokenInfo, community }) {
   const { t, language } = useLanguage();
@@ -54,7 +45,6 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
   // Linear era data
   const [eras, setEras] = useState([]);
-  const [currentRewardRate, setCurrentRewardRate] = useState(null);
 
   // Hourly tick data
   const [dailyChartData, setDailyChartData] = useState([]);
@@ -89,38 +79,71 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
     return () => { cancelled = true; };
   }, [communityContract]);
 
-  // Step 2: Load distribution data based on calculator type
-  useEffect(() => {
-    if (!calculatorType || !communityAddress) return;
-    let cancelled = false;
+  // ── Helpers ──
+  function getTodayElapsedRatio() {
+    const now = new Date();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    return Math.min(1, Math.max(0, (now.getTime() - dayStart.getTime()) / (24 * 3600 * 1000)));
+  }
 
-    async function loadData() {
-      setLoading(true);
-      setError(null);
+  function isCurrentPeriod(startCursor, stopCursor) {
+    const now = calculatorType === 'LINEAR_BLOCK'
+      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS)) // rough estimate
+      : BigInt(Math.floor(Date.now() / 1000));
+    return startCursor <= now && stopCursor >= now;
+  }
 
-      try {
-        if (calculatorType === 'LINEAR_BLOCK' || calculatorType === 'LINEAR_TIME') {
-          await loadLinearEras(cancelled);
-        } else if (calculatorType === 'HOURLY_TICK') {
-          await loadHourlyData(cancelled);
-        } else {
-          // Unknown calculator: try to load from community distribution JSON
-          loadFromCommunityInfo();
-        }
-      } catch (err) {
-        console.error('Failed to load distribution data:', err);
-        if (!cancelled) setError(t('detail.distLoadingError') || 'Failed to load distribution data');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+  function isPastPeriod(stopCursor) {
+    const now = calculatorType === 'LINEAR_BLOCK'
+      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS))
+      : BigInt(Math.floor(Date.now() / 1000));
+    return stopCursor < now;
+  }
+
+  function formatCursorToDate(cursor) {
+    if (calculatorType === 'LINEAR_BLOCK') {
+      // Estimate: current block ~= Date.now()/1000/3, so cursor * 3 * 1000 = ms
+      const estimatedMs = Number(cursor) * BLOCK_TIME_SECONDS * 1000;
+      const d = new Date(estimatedMs);
+      // This is a rough estimate, show with a hint
+      return d.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ` (${t('detail.distEst')})`;
     }
+    // Time-based: cursor is unix timestamp
+    return new Date(Number(cursor) * 1000).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
 
-    loadData();
-    return () => { cancelled = true; };
-  }, [calculatorType, communityAddress, linearCalc, linearTimeCalc, hourlyCalc, language]);
+  function getRewardPerDay(amount) {
+    if (calculatorType === 'LINEAR_BLOCK') {
+      // amount is per block, ~28800 blocks/day (86400/3)
+      const blocksPerDay = 86400 / BLOCK_TIME_SECONDS;
+      return Number(ethers.formatUnits(amount, tokenInfo?.decimals || 18)) * blocksPerDay;
+    }
+    // Time-based: amount is per second
+    return Number(ethers.formatUnits(amount, tokenInfo?.decimals || 18)) * 86400;
+  }
+
+  // ── Load from community info JSON (fallback) ──
+  const loadFromCommunityInfo = useCallback(() => {
+    if (!community?.distribution || community.distribution.length === 0) return;
+
+    const parsed = community.distribution;
+    const mappedEras = parsed.map(d => ({
+      amount: BigInt(Math.round(d.amount)),
+      startCursor: BigInt(d.start),
+      stopCursor: BigInt(d.end),
+    }));
+    setEras(mappedEras);
+  }, [community]);
 
   // ── Load linear eras from chain ──
-  const loadLinearEras = async (cancelled) => {
+  const loadLinearEras = useCallback(async (cancelled) => {
     const calc = calculatorType === 'LINEAR_BLOCK' ? linearCalc : linearTimeCalc;
     if (!calc) return;
 
@@ -138,38 +161,18 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         });
       }
 
-      // Also get current reward rate
-      let rate = 0n;
-      try {
-        rate = await calc.getCurrentRewardRate(communityAddress);
-      } catch { /* might be 0 */ }
-
       if (!cancelled) {
         setEras(loadedEras);
-        setCurrentRewardRate(rate);
       }
     } catch (err) {
       // Fallback: try to load from community.distribution JSON field
       console.warn('Chain read failed, trying community info distribution:', err);
       loadFromCommunityInfo();
     }
-  };
-
-  // ── Load from community info JSON (fallback) ──
-  const loadFromCommunityInfo = () => {
-    if (!community?.distribution || community.distribution.length === 0) return;
-
-    const parsed = community.distribution;
-    const mappedEras = parsed.map(d => ({
-      amount: BigInt(Math.round(d.amount)),
-      startCursor: BigInt(d.start),
-      stopCursor: BigInt(d.end),
-    }));
-    setEras(mappedEras);
-  };
+  }, [calculatorType, communityAddress, linearCalc, linearTimeCalc, loadFromCommunityInfo]);
 
   // ── Load hourly tick data ──
-  const loadHourlyData = async (cancelled) => {
+  const loadHourlyData = useCallback(async (cancelled) => {
     if (!hourlyCalc) return;
 
     try {
@@ -238,9 +241,6 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       const hours = [];
       const now = Math.floor(Date.now() / 1000);
       const currentHourSec = Math.floor(now / 3600) * 3600;
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
-      const todayStartSec = Math.floor(todayStart.getTime() / 1000);
 
       for (let i = 0; i < rewards.length; i++) {
         const hourStartSec = rangeStart + i * 3600;
@@ -298,57 +298,37 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       console.error('Failed to load hourly rewards:', err);
       if (!cancelled) setError('Failed to load hourly reward data');
     }
-  };
+  }, [communityAddress, hourlyCalc, t, tokenInfo?.decimals]);
 
-  // ── Helpers ──
-  function getTodayElapsedRatio() {
-    const now = new Date();
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
-    return Math.min(1, Math.max(0, (now.getTime() - dayStart.getTime()) / (24 * 3600 * 1000)));
-  }
+  // Step 2: Load distribution data based on calculator type
+  useEffect(() => {
+    if (!calculatorType || !communityAddress) return;
+    let cancelled = false;
 
-  function isCurrentPeriod(startCursor, stopCursor) {
-    const now = calculatorType === 'LINEAR_BLOCK'
-      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS)) // rough estimate
-      : BigInt(Math.floor(Date.now() / 1000));
-    return startCursor <= now && stopCursor >= now;
-  }
+    async function loadData() {
+      setLoading(true);
+      setError(null);
 
-  function isPastPeriod(stopCursor) {
-    const now = calculatorType === 'LINEAR_BLOCK'
-      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS))
-      : BigInt(Math.floor(Date.now() / 1000));
-    return stopCursor < now;
-  }
-
-  function formatCursorToDate(cursor) {
-    if (calculatorType === 'LINEAR_BLOCK') {
-      // Estimate: current block ~= Date.now()/1000/3, so cursor * 3 * 1000 = ms
-      const estimatedMs = Number(cursor) * BLOCK_TIME_SECONDS * 1000;
-      const d = new Date(estimatedMs);
-      // This is a rough estimate, show with a hint
-      return d.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ` (${t('detail.distEst')})`;
+      try {
+        if (calculatorType === 'LINEAR_BLOCK' || calculatorType === 'LINEAR_TIME') {
+          await loadLinearEras(cancelled);
+        } else if (calculatorType === 'HOURLY_TICK') {
+          await loadHourlyData(cancelled);
+        } else {
+          // Unknown calculator: try to load from community distribution JSON
+          loadFromCommunityInfo();
+        }
+      } catch (err) {
+        console.error('Failed to load distribution data:', err);
+        if (!cancelled) setError(t('detail.distLoadingError') || 'Failed to load distribution data');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
-    // Time-based: cursor is unix timestamp
-    return new Date(Number(cursor) * 1000).toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  }
 
-  function getRewardPerDay(amount) {
-    if (calculatorType === 'LINEAR_BLOCK') {
-      // amount is per block, ~28800 blocks/day (86400/3)
-      const blocksPerDay = 86400 / BLOCK_TIME_SECONDS;
-      return Number(ethers.formatUnits(amount, tokenInfo?.decimals || 18)) * blocksPerDay;
-    }
-    // Time-based: amount is per second
-    return Number(ethers.formatUnits(amount, tokenInfo?.decimals || 18)) * 86400;
-  }
+    loadData();
+    return () => { cancelled = true; };
+  }, [calculatorType, communityAddress, loadFromCommunityInfo, loadHourlyData, loadLinearEras, t]);
 
   // ── Scroll to current era ──
   useEffect(() => {
@@ -590,7 +570,7 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
 }
 
 function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMode, avgRewardPerDay, totalInjected, tokenInfo, CustomTooltip }) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   if (!chartData || chartData.length === 0) {
     return <div className="distribution-empty">{t('detail.distNoInjectionData')}</div>;
   }

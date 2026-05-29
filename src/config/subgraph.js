@@ -1,11 +1,18 @@
 // Nutbox Backend API (replaces The Graph subgraph)
-// Uses Vite proxy in dev: /nutbox -> http://localhost:5001/nutbox
-const API_BASE = '/nutbox';
+// Uses Vite proxy in dev: /nutbox -> https://bsc-api.tagai.fun/nutbox
+// Production static hosting does not include the Vite dev proxy, so call the API directly.
+const API_BASE = import.meta.env.VITE_NUTBOX_API_BASE
+  || (import.meta.env.DEV ? '/nutbox' : 'https://bsc-api.tagai.fun/nutbox');
 
 async function fetchAPI(path) {
   const response = await fetch(`${API_BASE}${path}`);
+  const contentType = response.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error(`API returned ${contentType || 'unknown content type'}`);
+  }
+
   const json = await response.json();
-  if (!json.success && !response.ok) {
+  if (!response.ok || json.success === false) {
     throw new Error(json.message || 'API request failed');
   }
   return json;
@@ -65,7 +72,8 @@ export async function fetchPoolsForCommunity(communityAddress) {
 }
 
 // ──── User operation history ────
-export async function fetchUserOperations(userAddress, first = 50) {
+export async function fetchUserOperations(userAddress) {
+  void userAddress;
   // Current API doesn't have per-user history endpoint
   // Return empty for now
   return {

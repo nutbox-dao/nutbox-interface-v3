@@ -4,7 +4,7 @@ import { ethers } from 'ethers';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
 import { CONTRACTS } from '../config/contracts';
-import { CommunityFactoryABI, ERC20ABI } from '../config/abis';
+import { CommunityFactoryABI } from '../config/abis';
 import { encodeMintableTokenMeta, encodeDistributionPolicy } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import './CreateCommunity.css';

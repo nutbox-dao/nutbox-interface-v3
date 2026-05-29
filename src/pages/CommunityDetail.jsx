@@ -6,17 +6,14 @@ import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import {
-  useCommunity,
   useCommunityRead,
-  useCommittee,
   useLinearCalculator,
   useLinearTimeCalculator,
   useHourlyTickCalculator,
-  useERC20Read
 } from '../hooks/useContract';
-import { CONTRACTS, BLOCKS_PER_YEAR } from '../config/contracts';
-import { ERC20StakingABI, ERC20LockingABI, ERC20ABI } from '../config/abis';
-import { formatTokenAmount, shortenAddress, formatDate, formatDuration, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
+import { CONTRACTS } from '../config/contracts';
+import { ERC20ABI } from '../config/abis';
+import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
 import AddPoolModal from '../components/community/AddPoolModal';
@@ -166,7 +163,7 @@ export default function CommunityDetail() {
     } finally {
       setLoading(false);
     }
-  }, [address, readProvider, communityContract, linearCalc, linearTimeCalc, hourlyCalc]);
+  }, [address, readProvider, communityContract, linearCalc, linearTimeCalc, hourlyCalc, toast]);
 
   useEffect(() => {
     loadCommunity();
@@ -605,7 +602,7 @@ function guessPoolType(factoryAddress) {
 }
 
 function HistoryTab({ operations, pools = [] }) {
-  const { t, language } = useLanguage();
+  const { t } = useLanguage();
   if (!operations || operations.length === 0) {
     return (
       <div className="empty-state">

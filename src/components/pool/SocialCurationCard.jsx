@@ -54,7 +54,6 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
   }, [pool.id, communityAddress, readProvider, communityToken]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadPoolData();
     const interval = setInterval(loadPoolData, 15000);
     return () => clearInterval(interval);
@@ -80,7 +79,6 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
   }, [communityAddress]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadHistory(0);
   }, [loadHistory]);
 

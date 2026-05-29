@@ -7,7 +7,7 @@ import { CONTRACTS, BLOCKS_PER_YEAR } from '../../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDuration, getBscScanUrl, getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
 import './PoolCard.css';
 
-export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, isOwner, onRefresh }) {
+export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
   const { account, signer, readProvider, isConnected } = useWeb3();
   const toast = useToast();
 
@@ -116,7 +116,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     } finally {
       setLoading(false);
     }
-  }, [pool.id, communityAddress, account, readProvider, isLocking]);
+  }, [pool.id, poolABI, communityAddress, account, readProvider, isLocking]);
 
   useEffect(() => {
     loadPoolData();
