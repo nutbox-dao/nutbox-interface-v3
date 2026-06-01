@@ -215,13 +215,24 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
         const label = isToday ? `${dateStr} (${t('detail.distToday')})` : isTomorrow ? `${dateStr} (${t('detail.distTomorrow')})` : dateStr;
 
-        // Split today's bar into actual/forecast
+        // Split today's bar into actual/forecast using hourly data
         let actual = dayTotalNum;
         let forecast = 0;
         if (isToday) {
-          const elapsedRatio = getTodayElapsedRatio();
-          actual = dayTotalNum * elapsedRatio;
-          forecast = dayTotalNum * (1 - elapsedRatio);
+          const currentHour = new Date().getHours();
+          const todayHourStart = d * 24;
+          let actualSum = 0;
+          let forecastSum = 0;
+          for (let h = 0; h < 24; h++) {
+            const hourReward = Number(ethers.formatUnits(rewards[todayHourStart + h], tokenInfo?.decimals || 18));
+            if (h < currentHour) {
+              actualSum += hourReward;
+            } else {
+              forecastSum += hourReward;
+            }
+          }
+          actual = actualSum;
+          forecast = forecastSum;
         } else if (isTomorrow || d > todayIdx) {
           actual = 0;
           forecast = dayTotalNum;
@@ -258,11 +269,6 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
         if (isPast) {
           actual = hourTotal;
-        } else if (isCurrent) {
-          const elapsedMins = new Date().getMinutes();
-          const ratio = elapsedMins / 60;
-          actual = hourTotal * ratio;
-          forecast = hourTotal * (1 - ratio);
         } else {
           forecast = hourTotal;
         }
