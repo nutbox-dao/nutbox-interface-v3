@@ -35,6 +35,22 @@ export function formatTokenAmount(weiAmount, decimals = 18, displayDecimals = 4)
 }
 
 /**
+ * Format an already-human-readable token amount (not wei).
+ * Handles fractional values that cannot be converted to BigInt directly.
+ * Values below 0.1 are shown with up to 4 fraction digits so tiny amounts
+ * are not collapsed to 0 or rounded up to 0.01.
+ */
+export function formatTokenValue(value, displayDecimals = 2) {
+  const num = typeof value === 'string' ? parseFloat(value) : Number(value);
+  if (!isFinite(num) || num === 0) return '0';
+  const maximumFractionDigits = num < 0.1 ? Math.max(4, displayDecimals) : displayDecimals;
+  return num.toLocaleString('en-US', {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  });
+}
+
+/**
  * Shorten an Ethereum address for display
  */
 export function shortenAddress(address, chars = 4) {

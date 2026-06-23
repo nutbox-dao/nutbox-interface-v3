@@ -3,7 +3,7 @@ import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { CommunityABI, ERC20ABI } from '../../config/abis';
 import { fetchSocialClaimHistory } from '../../config/subgraph';
-import { formatTokenAmount, shortenAddress, formatDate, getBscScanUrl } from '../../utils/helpers';
+import { formatTokenAmount, formatTokenValue, shortenAddress, formatDate, getBscScanUrl } from '../../utils/helpers';
 import './PoolCard.css';
 
 const SocialCurationABI = [
@@ -185,7 +185,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                       </a>
                     </td>
                     <td style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 600 }}>
-                      {formatTokenAmount(BigInt(c.amount || 0), decimals, 2)} {symbol}
+                      {formatTokenValue(c.amount, 2)} {symbol}
                     </td>
                     <td style={{ padding: '6px 4px', textAlign: 'right', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
                       {formatDate(c.timestamp)}

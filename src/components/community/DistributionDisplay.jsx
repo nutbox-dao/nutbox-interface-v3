@@ -30,6 +30,30 @@ const CALCULATOR_ICONS = {
 const COLOR_ACTUAL = '#FF8F40';
 const COLOR_FORECAST = '#9B83FA';
 
+/**
+ * Round a reward amount for storage in chart data.
+ * Values below 0.1 are kept at 4 decimal places so tiny hourly/daily rewards
+ * are not collapsed to 0 or bumped up to 0.01 by 2-decimal rounding.
+ */
+function roundReward(value) {
+  const num = Number(value) || 0;
+  if (num < 0.1) return Math.round(num * 10000) / 10000;
+  return Math.round(num * 100) / 100;
+}
+
+/**
+ * Format a reward amount for display, mirroring roundReward's precision:
+ * below 0.1 shows up to 4 fraction digits, otherwise up to 2.
+ */
+function formatReward(value) {
+  const num = Number(value) || 0;
+  const maximumFractionDigits = num < 0.1 ? 4 : 2;
+  return num.toLocaleString(undefined, {
+    maximumFractionDigits,
+    minimumFractionDigits: 0,
+  });
+}
+
 export default function DistributionDisplay({ communityAddress, tokenInfo, community }) {
   const { t, language } = useLanguage();
   const communityContract = useCommunityRead(communityAddress);
@@ -240,9 +264,9 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
         days.push({
           label,
-          actual: Math.round(actual * 100) / 100,
-          forecast: Math.round(forecast * 100) / 100,
-          total: Math.round(dayTotalNum * 100) / 100,
+          actual: roundReward(actual),
+          forecast: roundReward(forecast),
+          total: roundReward(dayTotalNum),
           isToday,
           isTomorrow,
         });
@@ -275,9 +299,9 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
         hours.push({
           label: `${dateStr} ${hourStr}`,
-          actual: Math.round(actual * 100) / 100,
-          forecast: Math.round(forecast * 100) / 100,
-          total: Math.round(hourTotal * 100) / 100,
+          actual: roundReward(actual),
+          forecast: roundReward(forecast),
+          total: roundReward(hourTotal),
         });
       }
 
@@ -353,12 +377,12 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         <div className="dist-chart-tooltip-label">{label}</div>
         {actual && actual.value > 0 && (
           <div className="dist-chart-tooltip-row" style={{ color: COLOR_ACTUAL }}>
-            {t('detail.distDistributed')}: {actual.value.toLocaleString()} {tokenInfo?.symbol || ''}
+            {t('detail.distDistributed')}: {formatReward(actual.value)} {tokenInfo?.symbol || ''}
           </div>
         )}
         {forecast && forecast.value > 0 && (
           <div className="dist-chart-tooltip-row" style={{ color: COLOR_FORECAST }}>
-            {t('detail.distForecast')}: {forecast.value.toLocaleString()} {tokenInfo?.symbol || ''}
+            {t('detail.distForecast')}: {formatReward(forecast.value)} {tokenInfo?.symbol || ''}
           </div>
         )}
       </div>
@@ -683,7 +707,7 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
         <div className="hourly-stat-item">
           <span className="hourly-stat-label">{t('detail.distAvgRewardPerDay')}</span>
           <span className="hourly-stat-value hourly-stat-value--accent">
-            {avgRewardPerDay.toLocaleString(undefined, { maximumFractionDigits: 2 })} {symbol}
+            {formatReward(avgRewardPerDay)} {symbol}
           </span>
         </div>
         {totalInjected && (
