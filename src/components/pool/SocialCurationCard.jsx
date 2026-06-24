@@ -174,24 +174,47 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                   <th style={{ padding: '6px 4px', fontWeight: 500 }}>User</th>
                   <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Amount</th>
                   <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Time</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Tx</th>
                 </tr>
               </thead>
               <tbody>
-                {history.map((c) => (
-                  <tr key={`${c.user}-${c.orderId}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
-                    <td style={{ padding: '6px 4px' }}>
-                      <a href={getBscScanUrl(c.user)} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'monospace', color: 'var(--color-text-secondary)' }}>
-                        {shortenAddress(c.user, 4)}
-                      </a>
-                    </td>
-                    <td style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 600 }}>
-                      {formatTokenValue(c.amount, 2)} {symbol}
-                    </td>
-                    <td style={{ padding: '6px 4px', textAlign: 'right', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
-                      {formatDate(c.timestamp)}
-                    </td>
-                  </tr>
-                ))}
+                {history.map((c) => {
+                  const validTx = typeof c.txHash === 'string' && /^0x[a-fA-F0-9]{64}$/.test(c.txHash);
+                  return (
+                    <tr key={`${c.user}-${c.orderId}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+                      <td style={{ padding: '6px 4px' }}>
+                        <a href={getBscScanUrl(c.user)} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'monospace', color: 'var(--color-text-secondary)' }}>
+                          {shortenAddress(c.user, 4)}
+                        </a>
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right', fontWeight: 600 }}>
+                        {formatTokenValue(c.amount, 2)} {symbol}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
+                        {formatDate(c.timestamp)}
+                      </td>
+                      <td style={{ padding: '6px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        {validTx ? (
+                          <a
+                            href={getBscScanUrl(c.txHash, 'tx')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            title="View transaction on BscScan"
+                            style={{ color: 'var(--color-text-tertiary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                          </a>
+                        ) : (
+                          <span style={{ color: 'var(--color-text-tertiary)', opacity: 0.4 }}>—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
             {hasMore && (
