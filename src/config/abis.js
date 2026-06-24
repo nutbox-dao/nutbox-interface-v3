@@ -94,6 +94,7 @@ export const HourlyTickCalculatorABI = [
   'function getHourlyRewards(address community, uint256 startTimestamp, uint256 numHours) view returns (uint256[])',
   'function totalInjected(address) view returns (uint256)',
   'function registered(address) view returns (bool)',
+  'function inject(address community, uint256 amount)',
 ];
 
 export const MintableERC20FactoryABI = [

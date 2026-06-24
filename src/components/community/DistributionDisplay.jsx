@@ -5,6 +5,7 @@ import { useCommunityRead, useLinearCalculator, useLinearTimeCalculator, useHour
 import { CONTRACTS, BLOCK_TIME_SECONDS } from '../../config/contracts';
 import { formatTokenAmount } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
+import InjectModal from './InjectModal';
 import './DistributionDisplay.css';
 
 // ── Calculator type detection ──
@@ -487,6 +488,8 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
           avgRewardPerDay={avgRewardPerDay}
           totalInjected={totalInjected}
           tokenInfo={tokenInfo}
+          communityAddress={communityAddress}
+          onInjected={() => loadHourlyData(false)}
           CustomTooltip={CustomTooltip}
         />
       )}
@@ -599,8 +602,9 @@ function LinearEraTimeline({ eras, calculatorType, tokenInfo, isCurrentPeriod, i
   );
 }
 
-function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMode, avgRewardPerDay, totalInjected, tokenInfo, CustomTooltip }) {
+function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMode, avgRewardPerDay, totalInjected, tokenInfo, communityAddress, onInjected, CustomTooltip }) {
   const { t } = useLanguage();
+  const [showInject, setShowInject] = useState(false);
   if (!chartData || chartData.length === 0) {
     return <div className="distribution-empty">{t('detail.distNoInjectionData')}</div>;
   }
@@ -718,7 +722,25 @@ function HourlyTickChart({ chartData, hourlyData, chartViewMode, setChartViewMod
             </span>
           </div>
         )}
+        <div className="hourly-stat-item hourly-stat-item--action">
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => setShowInject(true)}
+            style={{ width: '100%' }}
+          >
+            {t('inject.btnInject')}
+          </button>
+        </div>
       </div>
+
+      {showInject && (
+        <InjectModal
+          communityAddress={communityAddress}
+          tokenInfo={tokenInfo}
+          onClose={() => setShowInject(false)}
+          onSuccess={onInjected}
+        />
+      )}
     </div>
   );
 }

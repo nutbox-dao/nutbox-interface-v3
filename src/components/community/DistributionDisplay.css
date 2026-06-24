@@ -350,6 +350,10 @@
   gap: var(--space-1);
 }
 
+.hourly-stat-item--action {
+  justify-content: center;
+}
+
 .hourly-stat-label {
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
