@@ -3,13 +3,12 @@ import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { CONTRACTS } from '../../config/contracts';
 import { HourlyTickCalculatorABI, ERC20ABI } from '../../config/abis';
 import { formatTokenAmount } from '../../utils/helpers';
 
 export default function InjectModal({ communityAddress, tokenInfo, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, isConnected, isCorrectChain, switchToBSC } = useWeb3();
+  const { account, signer, readProvider, isConnected, isCorrectChain, switchToBSC, contracts, network } = useWeb3();
   const toast = useToast();
 
   const tokenAddress = tokenInfo?.address;
@@ -27,14 +26,14 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
       const token = new ethers.Contract(tokenAddress, ERC20ABI, readProvider);
       const [bal, allow] = await Promise.all([
         token.balanceOf(account),
-        token.allowance(account, CONTRACTS.HourlyTickCalculator),
+        token.allowance(account, contracts.HourlyTickCalculator),
       ]);
       setBalance(bal);
       setAllowance(allow);
     } catch (err) {
       console.error('Failed to load inject balance/allowance:', err);
     }
-  }, [readProvider, account, tokenAddress]);
+  }, [readProvider, account, tokenAddress, contracts]);
 
   useEffect(() => {
     refresh();
@@ -60,7 +59,7 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
         setLoading('approve');
         const token = new ethers.Contract(tokenAddress, ERC20ABI, signer);
         toast.info(t('inject.toastApproving', { symbol }));
-        const approveTx = await token.approve(CONTRACTS.HourlyTickCalculator, ethers.MaxUint256);
+        const approveTx = await token.approve(contracts.HourlyTickCalculator, ethers.MaxUint256);
         await approveTx.wait();
         toast.success(t('inject.toastApproveSuccess'));
         setAllowance(ethers.MaxUint256);
@@ -68,7 +67,7 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
 
       // Step 2: inject
       setLoading('inject');
-      const calc = new ethers.Contract(CONTRACTS.HourlyTickCalculator, HourlyTickCalculatorABI, signer);
+      const calc = new ethers.Contract(contracts.HourlyTickCalculator, HourlyTickCalculatorABI, signer);
       toast.info(t('inject.toastInjecting', { amount: amount.trim(), symbol }));
       const tx = await calc.inject(communityAddress, parsedAmount);
       await tx.wait();
@@ -116,7 +115,7 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
             </div>
           ) : !isCorrectChain ? (
             <button className="btn btn-ghost btn-lg" onClick={switchToBSC} style={{ width: '100%' }}>
-              {t('inject.wrongChain')}
+              {t('inject.wrongChain', { network: network.shortName })}
             </button>
           ) : (
             <>

@@ -104,8 +104,8 @@ export function sleep(ms) {
 /**
  * Get BSCScan link for address
  */
-export function getBscScanUrl(addressOrTx, type = 'address') {
-  return `https://bscscan.com/${type}/${addressOrTx}`;
+export function getBscScanUrl(addressOrTx, type = 'address', explorerUrl = 'https://bscscan.com') {
+  return `${explorerUrl}/${type}/${addressOrTx}`;
 }
 
 /**

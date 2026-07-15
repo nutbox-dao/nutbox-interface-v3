@@ -2,22 +2,20 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { ethers } from 'ethers';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, Legend, ResponsiveContainer, Brush } from 'recharts';
 import { useCommunityRead, useLinearCalculator, useLinearTimeCalculator, useHourlyTickCalculator } from '../../hooks/useContract';
-import { CONTRACTS, BLOCK_TIME_SECONDS } from '../../config/contracts';
+import { useWeb3 } from '../../contexts/Web3Context';
 import { formatTokenAmount } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
 import InjectModal from './InjectModal';
 import './DistributionDisplay.css';
 
 // ── Calculator type detection ──
-const CALCULATOR_ADDRESSES = {
-  [CONTRACTS.LinearCalculator.toLowerCase()]: 'LINEAR_BLOCK',
-  [CONTRACTS.LinearTimeCalculator.toLowerCase()]: 'LINEAR_TIME',
-  [CONTRACTS.HourlyTickCalculator.toLowerCase()]: 'HOURLY_TICK',
-};
-
-function getCalculatorType(address) {
+function getCalculatorType(address, contracts) {
   if (!address) return null;
-  return CALCULATOR_ADDRESSES[address.toLowerCase()] || 'UNKNOWN';
+  const normalized = address.toLowerCase();
+  if (contracts.LinearCalculator?.toLowerCase() === normalized) return 'LINEAR_BLOCK';
+  if (contracts.LinearTimeCalculator?.toLowerCase() === normalized) return 'LINEAR_TIME';
+  if (contracts.HourlyTickCalculator?.toLowerCase() === normalized) return 'HOURLY_TICK';
+  return 'UNKNOWN';
 }
 
 const CALCULATOR_ICONS = {
@@ -57,6 +55,8 @@ function formatReward(value) {
 
 export default function DistributionDisplay({ communityAddress, tokenInfo, community }) {
   const { t, language } = useLanguage();
+  const { contracts, network } = useWeb3();
+  const blockTimeSeconds = network.blockTimeSeconds;
   const communityContract = useCommunityRead(communityAddress);
   const linearCalc = useLinearCalculator();
   const linearTimeCalc = useLinearTimeCalculator();
@@ -90,7 +90,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         const addr = await communityContract.rewardCalculator();
         if (cancelled) return;
         setCalculatorAddress(addr);
-        setCalculatorType(getCalculatorType(addr));
+        setCalculatorType(getCalculatorType(addr, contracts));
       } catch (err) {
         console.error('Failed to read rewardCalculator:', err);
         if (!cancelled) {
@@ -102,26 +102,19 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
 
     detectCalculator();
     return () => { cancelled = true; };
-  }, [communityContract]);
+  }, [communityContract, contracts]);
 
   // ── Helpers ──
-  function getTodayElapsedRatio() {
-    const now = new Date();
-    const dayStart = new Date(now);
-    dayStart.setHours(0, 0, 0, 0);
-    return Math.min(1, Math.max(0, (now.getTime() - dayStart.getTime()) / (24 * 3600 * 1000)));
-  }
-
   function isCurrentPeriod(startCursor, stopCursor) {
     const now = calculatorType === 'LINEAR_BLOCK'
-      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS)) // rough estimate
+      ? BigInt(Math.floor(Date.now() / 1000 / blockTimeSeconds)) // rough estimate
       : BigInt(Math.floor(Date.now() / 1000));
     return startCursor <= now && stopCursor >= now;
   }
 
   function isPastPeriod(stopCursor) {
     const now = calculatorType === 'LINEAR_BLOCK'
-      ? BigInt(Math.floor(Date.now() / 1000 / BLOCK_TIME_SECONDS))
+      ? BigInt(Math.floor(Date.now() / 1000 / blockTimeSeconds))
       : BigInt(Math.floor(Date.now() / 1000));
     return stopCursor < now;
   }
@@ -129,7 +122,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
   function formatCursorToDate(cursor) {
     if (calculatorType === 'LINEAR_BLOCK') {
       // Estimate: current block ~= Date.now()/1000/3, so cursor * 3 * 1000 = ms
-      const estimatedMs = Number(cursor) * BLOCK_TIME_SECONDS * 1000;
+      const estimatedMs = Number(cursor) * blockTimeSeconds * 1000;
       const d = new Date(estimatedMs);
       // This is a rough estimate, show with a hint
       return d.toLocaleDateString(language === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: 'short', day: 'numeric' }) + ` (${t('detail.distEst')})`;
@@ -147,7 +140,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
   function getRewardPerDay(amount) {
     if (calculatorType === 'LINEAR_BLOCK') {
       // amount is per block, ~28800 blocks/day (86400/3)
-      const blocksPerDay = 86400 / BLOCK_TIME_SECONDS;
+      const blocksPerDay = 86400 / blockTimeSeconds;
       return Number(ethers.formatUnits(amount, tokenInfo?.decimals || 18)) * blocksPerDay;
     }
     // Time-based: amount is per second
@@ -287,8 +280,6 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
         const hourStr = hourDate.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
 
         const isPast = hourStartSec < currentHourSec;
-        const isCurrent = hourStartSec === currentHourSec;
-
         let actual = 0;
         let forecast = 0;
 
@@ -329,7 +320,7 @@ export default function DistributionDisplay({ communityAddress, tokenInfo, commu
       console.error('Failed to load hourly rewards:', err);
       if (!cancelled) setError('Failed to load hourly reward data');
     }
-  }, [communityAddress, hourlyCalc, t, tokenInfo?.decimals]);
+  }, [communityAddress, hourlyCalc, t, tokenInfo]);
 
   // Step 2: Load distribution data based on calculator type
   useEffect(() => {

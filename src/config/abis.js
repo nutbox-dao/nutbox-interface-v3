@@ -41,6 +41,9 @@ export const CommunityABI = [
   'event AdminClosePool(address indexed pool)',
   'event AdminSetPoolRatio(address[] pools, uint16[] ratios)',
   'event WithdrawRewards(address[] pool, address indexed who, uint256 amount)',
+  'event PoolUpdated(address indexed who, uint256 amount)',
+  'event DevChanged(address indexed oldDev, address indexed newDev)',
+  'event RevenueWithdrawn(address indexed devFund, uint256 amount)',
 ];
 
 export const ERC20StakingABI = [

@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
-import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function CommunitySettingsModal({ communityAddress, community, retainedRevenue, communityToken, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider } = useWeb3();
+  const { signer, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [devFund, setDevFund] = useState('');
@@ -30,7 +29,7 @@ export default function CommunitySettingsModal({ communityAddress, community, re
     if (!readProvider) return;
     async function loadFee() {
       try {
-        const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+        const committeeContract = new ethers.Contract(contracts.Committee, [
           'function getCommunitySettingsFee() view returns (uint256)',
         ], readProvider);
         const fee = await committeeContract.getCommunitySettingsFee();
@@ -40,7 +39,7 @@ export default function CommunitySettingsModal({ communityAddress, community, re
       }
     }
     loadFee();
-  }, [readProvider]);
+  }, [readProvider, contracts]);
 
   const handleUpdateDevFund = async () => {
     if (!signer) {
@@ -180,7 +179,7 @@ export default function CommunitySettingsModal({ communityAddress, community, re
                 {t('settings.ratioFieldPercent')}
                 {settingsFee > 0n && (
                   <span style={{ float: 'right', fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)' }}>
-                    {t('settings.ratioOperationFee')}: {ethers.formatEther(settingsFee)} BNB
+                    {t('settings.ratioOperationFee')}: {ethers.formatEther(settingsFee)} {network.nativeCurrency.symbol}
                   </span>
                 )}
               </label>

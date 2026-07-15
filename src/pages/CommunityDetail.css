@@ -45,14 +45,16 @@
   font-size: var(--font-size-xl);
   color: white;
   flex-shrink: 0;
+  position: relative;
+  overflow: hidden;
 }
 
 .community-header-avatar-img {
-  width: 64px;
-  height: 64px;
-  border-radius: var(--radius-lg);
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
-  flex-shrink: 0;
 }
 
 .community-header-info {

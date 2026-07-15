@@ -2,13 +2,12 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
-import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function AdjustRatiosModal({ communityAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider } = useWeb3();
+  const { signer, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
   
   const [loading, setLoading] = useState(false);
@@ -19,11 +18,11 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
   // Load operation fee on mount
   useEffect(() => {
     if (!readProvider) return;
-    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+    const committeeContract = new ethers.Contract(contracts.Committee, [
       'function getCommunitySettingsFee() view returns (uint256)',
     ], readProvider);
     committeeContract.getCommunitySettingsFee().then(fee => setSettingsFee(fee)).catch(() => {});
-  }, [readProvider]);
+  }, [readProvider, contracts]);
 
   useEffect(() => {
     if (!activePools) return;
@@ -80,7 +79,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
     setLoading(true);
     try {
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      const committeeContract = new ethers.Contract(contracts.Committee, [
         'function getCommunitySettingsFee() view returns (uint256)',
       ], readProvider);
 
@@ -171,7 +170,7 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
 
           {settingsFee !== null && settingsFee > 0n && (
             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', padding: 'var(--space-3)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
-              {t('adjustRatios.operationFee', { fee: ethers.formatEther(settingsFee) })}
+              {t('adjustRatios.operationFee', { fee: ethers.formatEther(settingsFee), symbol: network.nativeCurrency.symbol })}
             </div>
           )}
 

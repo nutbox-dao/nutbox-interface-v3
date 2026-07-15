@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
 import { shortenAddress } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useWeb3 } from '../contexts/Web3Context';
 import './Home.css';
 
 export default function Home() {
@@ -10,13 +11,14 @@ export default function Home() {
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
   const { t } = useLanguage();
+  const { activeChainId, network } = useWeb3();
 
   useEffect(() => {
     async function load() {
       try {
         const [walnutStats, communityList] = await Promise.all([
-          fetchWalnutStats(),
-          fetchCommunities(50),
+          fetchWalnutStats(activeChainId),
+          fetchCommunities(50, 0, activeChainId),
         ]);
         setStats(walnutStats);
         setCommunities(communityList);
@@ -27,7 +29,7 @@ export default function Home() {
       }
     }
     load();
-  }, []);
+  }, [activeChainId]);
 
   return (
     <div className="page">
@@ -35,12 +37,12 @@ export default function Home() {
       <section className="hero">
         <div className="container">
           <div className="hero-content">
-            <div className="hero-badge">{t('home.heroBadge')}</div>
+            <div className="hero-badge">{t('home.heroBadge', { network: network.shortName })}</div>
             <h1 className="hero-title">
               {t('home.heroTitle1')}<span className="gradient-text">{t('home.heroTitle2')}</span>
             </h1>
             <p className="hero-subtitle">
-              {t('home.heroSubtitle')}
+              {t('home.heroSubtitle', { network: network.name })}
             </p>
             <div className="hero-actions">
               <Link to="/create" className="btn btn-primary btn-lg">
@@ -111,19 +113,24 @@ export default function Home() {
 
 function CommunityCard({ community }) {
   const activePools = community.pools?.filter(p => p.status === 'OPENED') || [];
+  const tags = Array.isArray(community.tags) ? community.tags : [];
   const displayName = community.name || `Community #${community.index?.toString() || '?'}`;
   const { t } = useLanguage();
 
   return (
     <Link to={`/community/${community.id}`} className="community-card glass-card" id={`community-${community.id}`}>
       <div className="community-card-header">
-        {community.logo ? (
-          <img src={community.logo} alt={displayName} className="community-avatar-img" />
-        ) : (
-          <div className="community-avatar">
-            {community.tick?.slice(0, 2) || community.cToken?.slice(2, 4).toUpperCase() || 'N'}
-          </div>
-        )}
+        <div className="community-avatar">
+          {community.tick?.slice(0, 2) || community.cToken?.slice(2, 4).toUpperCase() || 'N'}
+          {community.logo && (
+            <img
+              src={community.logo}
+              alt={displayName}
+              className="community-avatar-img"
+              onError={({ currentTarget }) => { currentTarget.style.display = 'none'; }}
+            />
+          )}
+        </div>
         <div className="community-meta">
           <div className="community-name">
             {displayName}
@@ -154,9 +161,9 @@ function CommunityCard({ community }) {
         </div>
       </div>
 
-      {community.tags?.length > 0 && (
+      {tags.length > 0 && (
         <div className="community-pools-preview">
-          {community.tags.map(tag => (
+          {tags.map(tag => (
             <span key={tag} className="badge badge-staking">#{tag}</span>
           ))}
         </div>

@@ -2,14 +2,13 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
-import { CONTRACTS } from '../../config/contracts';
 import { CommunityABI } from '../../config/abis';
 import { getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function AddPoolModal({ communityAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider } = useWeb3();
+  const { signer, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [poolType, setPoolType] = useState('staking');
@@ -23,11 +22,11 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   // Load operation fee on mount
   useEffect(() => {
     if (!readProvider) return;
-    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+    const committeeContract = new ethers.Contract(contracts.Committee, [
       'function getCommunitySettingsFee() view returns (uint256)',
     ], readProvider);
     committeeContract.getCommunitySettingsFee().then(fee => setSettingsFee(fee)).catch(() => {});
-  }, [readProvider]);
+  }, [readProvider, contracts]);
 
   // Initialize pool ratios to empty strings when activePools changes
   useEffect(() => {
@@ -90,7 +89,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     setLoading(true);
     try {
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      const committeeContract = new ethers.Contract(contracts.Committee, [
         'function getCommunitySettingsFee() view returns (uint256)',
       ], readProvider);
 
@@ -100,11 +99,11 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
       let meta;
 
       if (poolType === 'staking') {
-        factoryAddress = CONTRACTS.ERC20StakingFactory;
+        factoryAddress = contracts.ERC20StakingFactory;
         // meta: just the stake token address (20 bytes)
         meta = stakeTokenAddress.toLowerCase();
       } else {
-        factoryAddress = CONTRACTS.ERC20LockingFactory;
+        factoryAddress = contracts.ERC20LockingFactory;
         // meta: [address stakeToken (20 bytes)][uint256 lockDuration (32 bytes)]
         if (!lockDuration || parseInt(lockDuration) <= 0) {
           toast.error(language === 'zh' ? '锁仓时长必须为正数' : 'Lock duration must be positive');
@@ -289,7 +288,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
           {settingsFee !== null && settingsFee > 0n && (
             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', padding: 'var(--space-3)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-sm)', textAlign: 'center' }}>
-              {t('addPool.operationFee', { fee: ethers.formatEther(settingsFee) })}
+              {t('addPool.operationFee', { fee: ethers.formatEther(settingsFee), symbol: network.nativeCurrency.symbol })}
             </div>
           )}
 

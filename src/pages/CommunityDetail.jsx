@@ -11,7 +11,6 @@ import {
   useLinearTimeCalculator,
   useHourlyTickCalculator,
 } from '../hooks/useContract';
-import { CONTRACTS } from '../config/contracts';
 import { ERC20ABI } from '../config/abis';
 import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
@@ -24,7 +23,7 @@ import './CommunityDetail.css';
 
 export default function CommunityDetail() {
   const { address } = useParams();
-  const { account, isConnected, readProvider, signer } = useWeb3();
+  const { account, isConnected, readProvider, signer, contracts, activeChainId, network } = useWeb3();
   const toast = useToast();
   const { t, language } = useLanguage();
 
@@ -50,7 +49,7 @@ export default function CommunityDetail() {
   // Load community data from subgraph
   const loadCommunity = useCallback(async () => {
     try {
-      const data = await fetchCommunity(address);
+      const data = await fetchCommunity(address, activeChainId);
 
       // Load real-time pool ratios and active statuses on-chain using slot 10 direct query to override indexer lag/bugs
       if (communityContract && data && data.pools) {
@@ -109,17 +108,17 @@ export default function CommunityDetail() {
           let rate = 0n;
           let unit = '/block';
           
-          if (calcAddrLower === CONTRACTS.LinearCalculator.toLowerCase()) {
+          if (contracts.LinearCalculator && calcAddrLower === contracts.LinearCalculator.toLowerCase()) {
             if (linearCalc) {
               rate = await linearCalc.getCurrentRewardRate(address);
             }
             unit = '/block';
-          } else if (calcAddrLower === CONTRACTS.LinearTimeCalculator.toLowerCase()) {
+          } else if (calcAddrLower === contracts.LinearTimeCalculator.toLowerCase()) {
             if (linearTimeCalc) {
               rate = await linearTimeCalc.getCurrentRewardRate(address);
             }
             unit = '/sec';
-          } else if (calcAddrLower === CONTRACTS.HourlyTickCalculator.toLowerCase()) {
+          } else if (calcAddrLower === contracts.HourlyTickCalculator.toLowerCase()) {
             if (hourlyCalc) {
               rate = await hourlyCalc.getCurrentRewardRate(address);
             }
@@ -163,7 +162,7 @@ export default function CommunityDetail() {
     } finally {
       setLoading(false);
     }
-  }, [address, readProvider, communityContract, linearCalc, linearTimeCalc, hourlyCalc, toast]);
+  }, [address, activeChainId, readProvider, communityContract, linearCalc, linearTimeCalc, hourlyCalc, contracts, toast]);
 
   useEffect(() => {
     loadCommunity();
@@ -239,13 +238,17 @@ export default function CommunityDetail() {
       {/* ── Community Header ── */}
       <div className="community-header glass-card">
         <div className="community-header-top">
-          {community.logo ? (
-            <img src={community.logo} alt={community.name} className="community-header-avatar-img" />
-          ) : (
-            <div className="community-header-avatar">
-              {community.tick?.slice(0, 2) || tokenInfo?.symbol?.slice(0, 2) || 'N'}
-            </div>
-          )}
+          <div className="community-header-avatar">
+            {community.tick?.slice(0, 2) || tokenInfo?.symbol?.slice(0, 2) || 'N'}
+            {community.logo && (
+              <img
+                src={community.logo}
+                alt={community.name}
+                className="community-header-avatar-img"
+                onError={({ currentTarget }) => { currentTarget.style.display = 'none'; }}
+              />
+            )}
+          </div>
           <div className="community-header-info">
             <h1 className="community-header-title">
               {community.name || `Community #${community.index?.toString()}`}
@@ -267,8 +270,8 @@ export default function CommunityDetail() {
             {community.telegram && (
               <a href={`https://t.me/${community.telegram}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">TG</a>
             )}
-            <a href={getBscScanUrl(address)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
-              BscScan ↗
+            <a href={getBscScanUrl(address, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">
+              {network.shortName} Explorer ↗
             </a>
           </div>
         </div>
@@ -278,7 +281,7 @@ export default function CommunityDetail() {
             <span className="info-label">{t('detail.tokenAddress')}</span>
             <span className="info-value ctoken-address">
               <a
-                href={getBscScanUrl(community.cToken)}
+                href={getBscScanUrl(community.cToken, 'address', network.explorerUrl)}
                 target="_blank"
                 rel="noopener noreferrer"
                 style={{ fontFamily: 'monospace', fontSize: 'var(--font-size-xs)' }}
@@ -422,7 +425,7 @@ export default function CommunityDetail() {
                 <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6, display: 'block', marginBottom: 'var(--space-1)' }}>{t('detail.daoFundAddressLabel')}</span>
                 <span style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 'var(--font-size-sm)', wordBreak: 'break-all' }}>
                   {displayDaoFund ? (
-                    <a href={getBscScanUrl(displayDaoFund)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
+                    <a href={getBscScanUrl(displayDaoFund, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)' }}>
                       {displayDaoFund}
                     </a>
                   ) : (
@@ -588,21 +591,22 @@ function getOperationDisplay(type) {
   return { label: formattedLabel, isKey: false, isAdmin: isFallbackAdmin };
 }
 
-function guessPoolType(factoryAddress) {
+function guessPoolType(factoryAddress, contracts) {
   if (!factoryAddress) return '';
   const addr = factoryAddress.toLowerCase();
-  const map = {
-    '0xdc3f940ac6da516d5c9cc59c8afe0f85a576e2a4': 'ERC20_STAKING',
-    '0x8189a03cfa3d8919a2eb8f08e4f88c21cf78ca01': 'ERC20_LOCKING',
-    '0x398ea6db014595f23d0c9cb1390a10472cdd43ba': 'ERC1155_STAKING',
-    '0x47738e3420be8ced8a9476cf4daf84c549835d44': 'SP_STAKING',
-    '0xc4674d3fbbd201ea401a8b7e7285f956178593d8': 'SOCIAL_CURATION',
-  };
+  const map = Object.fromEntries([
+    [contracts.ERC20StakingFactory, 'ERC20_STAKING'],
+    [contracts.ERC20LockingFactory, 'ERC20_LOCKING'],
+    [contracts.ERC1155StakingFactory, 'ERC1155_STAKING'],
+    [contracts.SPStakingFactory, 'SP_STAKING'],
+    [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
+  ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || '';
 }
 
 function HistoryTab({ operations, pools = [] }) {
   const { t } = useLanguage();
+  const { network, contracts } = useWeb3();
   if (!operations || operations.length === 0) {
     return (
       <div className="empty-state">
@@ -630,21 +634,23 @@ function HistoryTab({ operations, pools = [] }) {
               {/* Case 1: Change Fund Ratio */}
               {opInfo.label === 'detail.historyTitleChangeRatio' && op.amount !== undefined && (
                 <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>
-                  {(parseFloat(op.amount) * 1e16).toFixed(1)}%
+                  {op.ratioBps !== undefined
+                    ? `${(Number(op.ratioBps) / 100).toFixed(1)}%`
+                    : `${(parseFloat(op.amount) * 1e16).toFixed(1)}%`}
                 </span>
               )}
               
               {/* Case 2: Change Fund Address */}
               {opInfo.label === 'detail.historyTitleChangeAddr' && op.asset && (
                 <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                  ➡️ {t('detail.historyNewAddr')}: <a href={getBscScanUrl(op.asset)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text-accent)', textDecoration: 'underline' }}>{shortenAddress(op.asset, 6)}</a>
+                  ➡️ {t('detail.historyNewAddr')}: <a href={getBscScanUrl(op.asset, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-text-accent)', textDecoration: 'underline' }}>{shortenAddress(op.asset, 6)}</a>
                 </span>
               )}
               
               {/* Case 3: Add Pool */}
               {opInfo.label === 'detail.historyTitleAddPool' && (() => {
                 const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
-                const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory)) : '');
+                const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory, contracts)) : '');
                 const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return (
                   <span className="history-amount" style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-secondary)', display: 'inline-flex', gap: 8 }}>
@@ -683,7 +689,7 @@ function HistoryTab({ operations, pools = [] }) {
             </div>
             <div className="history-meta">
               <span>{formatDate(op.timestamp)}</span>
-              <a href={getBscScanUrl(op.tx, 'tx')} target="_blank" rel="noopener noreferrer" className="history-tx">
+              <a href={getBscScanUrl(op.tx, 'tx', network.explorerUrl)} target="_blank" rel="noopener noreferrer" className="history-tx">
                 {shortenAddress(op.tx, 6)} ↗
               </a>
             </div>

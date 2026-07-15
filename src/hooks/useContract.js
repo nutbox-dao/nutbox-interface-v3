@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../contexts/Web3Context';
-import { CONTRACTS } from '../config/contracts';
 import {
   CommitteeABI,
   CommunityFactoryABI,
@@ -46,11 +45,13 @@ export function useReadContract(address, abi) {
 // ──── Pre-configured contract hooks ────
 
 export function useCommittee() {
-  return useReadContract(CONTRACTS.Committee, CommitteeABI);
+  const { contracts } = useWeb3();
+  return useReadContract(contracts.Committee, CommitteeABI);
 }
 
 export function useCommunityFactory() {
-  return useContract(CONTRACTS.CommunityFactory, CommunityFactoryABI);
+  const { contracts } = useWeb3();
+  return useContract(contracts.CommunityFactory, CommunityFactoryABI);
 }
 
 export function useCommunity(address) {
@@ -70,15 +71,18 @@ export function useERC20Locking(address) {
 }
 
 export function useLinearCalculator() {
-  return useReadContract(CONTRACTS.LinearCalculator, LinearCalculatorABI);
+  const { contracts } = useWeb3();
+  return useReadContract(contracts.LinearCalculator, LinearCalculatorABI);
 }
 
 export function useLinearTimeCalculator() {
-  return useReadContract(CONTRACTS.LinearTimeCalculator, LinearCalculatorABI);
+  const { contracts } = useWeb3();
+  return useReadContract(contracts.LinearTimeCalculator, LinearCalculatorABI);
 }
 
 export function useHourlyTickCalculator() {
-  return useReadContract(CONTRACTS.HourlyTickCalculator, HourlyTickCalculatorABI);
+  const { contracts } = useWeb3();
+  return useReadContract(contracts.HourlyTickCalculator, HourlyTickCalculatorABI);
 }
 
 export function useERC20(address) {

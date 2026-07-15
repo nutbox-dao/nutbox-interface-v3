@@ -3,12 +3,11 @@ import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { ERC20StakingABI, ERC20LockingABI, ERC20ABI, CommunityABI } from '../../config/abis';
-import { CONTRACTS, BLOCKS_PER_YEAR } from '../../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDuration, getBscScanUrl, getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
 import './PoolCard.css';
 
 export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
-  const { account, signer, readProvider, isConnected } = useWeb3();
+  const { account, signer, readProvider, isConnected, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [stakeTokenInfo, setStakeTokenInfo] = useState(null);
@@ -128,11 +127,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   // Load pool operation fee once
   useEffect(() => {
     if (!readProvider) return;
-    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+    const committeeContract = new ethers.Contract(contracts.Committee, [
       'function getPoolOperationFee() view returns (uint256)',
     ], readProvider);
     committeeContract.getPoolOperationFee().then(fee => setPoolOperationFee(fee)).catch(() => {});
-  }, [readProvider]);
+  }, [readProvider, contracts]);
 
   // Calculate APR
   const apr = (() => {
@@ -141,7 +140,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
       const poolRatio = BigInt(pool.ratio || 10000);
 
       // Determine the multiplier based on the reward rate unit
-      let multiplier = BigInt(BLOCKS_PER_YEAR); // default '/block'
+      let multiplier = BigInt(network.blocksPerYear); // default '/block'
       if (rewardRateUnit === '/sec') {
         multiplier = 31_536_000n; // 365 * 24 * 3600
       } else if (rewardRateUnit === '/hour') {
@@ -185,7 +184,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     setActionLoading('deposit');
     try {
       const poolContract = new ethers.Contract(pool.id, poolABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
+      const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(stakeAmount, decimals);
       const tx = await poolContract.deposit(amount, { value: fee });
@@ -208,7 +207,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     setActionLoading('withdraw');
     try {
       const poolContract = new ethers.Contract(pool.id, poolABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
+      const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(withdrawAmount, decimals);
       const tx = await poolContract.withdraw(amount, { value: fee });
@@ -231,7 +230,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     setActionLoading('claim');
     try {
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
+      const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const tx = await communityContract.withdrawPoolsRewards([pool.id], { value: fee });
       toast.info('Claiming rewards...');
@@ -341,7 +340,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
           {/* Operation fee hint */}
           {poolOperationFee !== null && poolOperationFee > 0n && (
             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'right', marginBottom: 4 }}>
-              Network fee per operation: {ethers.formatEther(poolOperationFee)} BNB
+              Network fee per operation: {ethers.formatEther(poolOperationFee)} {network.nativeCurrency.symbol}
             </div>
           )}
 
@@ -405,7 +404,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
               </div>
               {poolOperationFee !== null && poolOperationFee > 0n && (
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'center', marginTop: 4 }}>
-                  Network fee: {ethers.formatEther(poolOperationFee)} BNB
+                  Network fee: {ethers.formatEther(poolOperationFee)} {network.nativeCurrency.symbol}
                 </div>
               )}
               {needsApproval ? (
@@ -450,7 +449,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
               </div>
               {poolOperationFee !== null && poolOperationFee > 0n && (
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'center', marginTop: 4 }}>
-                  Network fee: {ethers.formatEther(poolOperationFee)} BNB
+                  Network fee: {ethers.formatEther(poolOperationFee)} {network.nativeCurrency.symbol}
                 </div>
               )}
               <button
@@ -498,7 +497,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
 
       {/* Pool address footer */}
       <div className="pool-card-footer">
-        <a href={getBscScanUrl(pool.id)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
+        <a href={getBscScanUrl(pool.id, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
           {shortenAddress(pool.id)} ↗
         </a>
       </div>

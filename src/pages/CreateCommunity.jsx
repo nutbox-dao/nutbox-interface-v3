@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
-import { CONTRACTS } from '../config/contracts';
 import { CommunityFactoryABI } from '../config/abis';
 import { encodeMintableTokenMeta, encodeDistributionPolicy } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -26,7 +25,7 @@ function getNextFullHour() {
 
 export default function CreateCommunity() {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, isConnected } = useWeb3();
+  const { account, signer, readProvider, isConnected, contracts, network } = useWeb3();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -103,11 +102,11 @@ export default function CreateCommunity() {
   // Load creation fee on mount
   useEffect(() => {
     if (!readProvider) return;
-    const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+    const committeeContract = new ethers.Contract(contracts.Committee, [
       'function getCreateCommunityFee() view returns (uint256)',
     ], readProvider);
     committeeContract.getCreateCommunityFee().then(fee => setCreateFee(fee)).catch(() => {});
-  }, [readProvider]);
+  }, [readProvider, contracts]);
 
   const handleCreate = async () => {
     if (!signer || !account) {
@@ -120,7 +119,7 @@ export default function CreateCommunity() {
     let policy;
 
     if (calculatorType === 'time') {
-      calculatorAddr = CONTRACTS.LinearTimeCalculator;
+      calculatorAddr = contracts.LinearTimeCalculator;
       
       // Validate time eras
       for (let i = 0; i < eras.length; i++) {
@@ -146,7 +145,11 @@ export default function CreateCommunity() {
       policy = encodeDistributionPolicy(policyEras);
 
     } else if (calculatorType === 'block') {
-      calculatorAddr = CONTRACTS.LinearCalculator;
+      calculatorAddr = contracts.LinearCalculator;
+      if (!calculatorAddr) {
+        toast.error(language === 'zh' ? `${network.name} 不支持按区块奖励` : `${network.name} does not support block-based rewards`);
+        return;
+      }
       
       // Validate block eras
       for (let i = 0; i < blockEras.length; i++) {
@@ -173,14 +176,14 @@ export default function CreateCommunity() {
 
     } else {
       // Hourly Vesting (ignores scheduled policy)
-      calculatorAddr = CONTRACTS.HourlyTickCalculator;
+      calculatorAddr = contracts.HourlyTickCalculator;
       policy = '0x';
     }
 
     setLoading(true);
     try {
-      const factory = new ethers.Contract(CONTRACTS.CommunityFactory, CommunityFactoryABI, signer);
-      const committeeContract = new ethers.Contract(CONTRACTS.Committee, [
+      const factory = new ethers.Contract(contracts.CommunityFactory, CommunityFactoryABI, signer);
+      const committeeContract = new ethers.Contract(contracts.Committee, [
         'function getCreateCommunityFee() view returns (uint256)',
       ], readProvider);
 
@@ -196,7 +199,7 @@ export default function CreateCommunity() {
         }
         isMintable = true;
         communityToken = ethers.ZeroAddress;
-        communityTokenFactory = CONTRACTS.MintableERC20Factory;
+        communityTokenFactory = contracts.MintableERC20Factory;
         tokenMeta = encodeMintableTokenMeta(newTokenName, newTokenSymbol, newTokenSupply, account);
       } else {
         if (!existingToken || !ethers.isAddress(existingToken)) {
@@ -365,7 +368,7 @@ export default function CreateCommunity() {
                 <span className="token-mode-label">{t('create.strategyTimeLabel')}</span>
                 <span className="token-mode-desc">{t('create.strategyTimeDesc')}</span>
               </button>
-              <button
+              {contracts.LinearCalculator && <button
                 className={`token-mode-btn ${calculatorType === 'block' ? 'active' : ''}`}
                 onClick={() => setCalculatorType('block')}
                 style={{ textAlign: 'center' }}
@@ -373,7 +376,7 @@ export default function CreateCommunity() {
                 <span className="token-mode-icon">🧱</span>
                 <span className="token-mode-label">{t('create.strategyBlockLabel')}</span>
                 <span className="token-mode-desc">{t('create.strategyBlockDesc')}</span>
-              </button>
+              </button>}
               <button
                 className={`token-mode-btn ${calculatorType === 'hourly' ? 'active' : ''}`}
                 onClick={() => setCalculatorType('hourly')}
@@ -647,7 +650,7 @@ export default function CreateCommunity() {
 
             <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', padding: 'var(--space-3)', background: 'var(--color-bg-glass)', borderRadius: 'var(--radius-sm)', marginTop: 'var(--space-4)' }}>
               {createFee !== null
-                ? t('create.confirmFeeWarning', { fee: ethers.formatEther(createFee) })
+                ? t('create.confirmFeeWarning', { fee: ethers.formatEther(createFee), symbol: network.nativeCurrency.symbol })
                 : '...'}
             </div>
 

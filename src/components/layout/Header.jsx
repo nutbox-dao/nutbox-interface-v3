@@ -3,9 +3,10 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { shortenAddress } from '../../utils/helpers';
 import './Header.css';
+import { NETWORKS } from '../../config/contracts';
 
 export default function Header() {
-  const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC } = useWeb3();
+  const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC, activeChainId, switchNetwork, network } = useWeb3();
   const { language, setLanguage, t } = useLanguage();
 
   return (
@@ -23,11 +24,16 @@ export default function Header() {
         </Link>
 
         <div className="header-actions">
+          <select className="network-select" value={activeChainId} onChange={event => switchNetwork(Number(event.target.value))} aria-label="Network">
+            {Object.values(NETWORKS).map(item => (
+              <option key={item.id} value={item.id}>{item.shortName}</option>
+            ))}
+          </select>
           {isConnected ? (
             <>
               {!isCorrectChain && (
                 <button className="btn btn-danger btn-sm" onClick={switchToBSC}>
-                  {t('header.switchToBSC')}
+                  {t('header.switchNetwork', { network: network.shortName })}
                 </button>
               )}
               <div className="wallet-info" onClick={disconnect} title={t('header.disconnect')}>

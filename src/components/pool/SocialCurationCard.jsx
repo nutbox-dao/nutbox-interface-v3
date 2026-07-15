@@ -13,7 +13,7 @@ const SocialCurationABI = [
 const PAGE_SIZE = 20;
 
 export default function SocialCurationCard({ pool, communityAddress, communityToken, rewardRate, feeRatio = 0 }) {
-  const { readProvider } = useWeb3();
+  const { readProvider, activeChainId, network } = useWeb3();
 
   const [loading, setLoading] = useState(true);
   const [totalClaimed, setTotalClaimed] = useState(0n);
@@ -63,7 +63,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
   const loadHistory = useCallback(async (page) => {
     setHistoryLoading(true);
     try {
-      const result = await fetchSocialClaimHistory(communityAddress, page, PAGE_SIZE);
+      const result = await fetchSocialClaimHistory(communityAddress, page, PAGE_SIZE, activeChainId);
       if (page === 0) {
         setHistory(result.claims);
       } else {
@@ -76,7 +76,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
     } finally {
       setHistoryLoading(false);
     }
-  }, [communityAddress]);
+  }, [communityAddress, activeChainId]);
 
   useEffect(() => {
     loadHistory(0);
@@ -183,7 +183,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                   return (
                     <tr key={`${c.user}-${c.orderId}`} style={{ borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
                       <td style={{ padding: '6px 4px' }}>
-                        <a href={getBscScanUrl(c.user)} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'monospace', color: 'var(--color-text-secondary)' }}>
+                        <a href={getBscScanUrl(c.user, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ fontFamily: 'monospace', color: 'var(--color-text-secondary)' }}>
                           {shortenAddress(c.user, 4)}
                         </a>
                       </td>
@@ -196,10 +196,10 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                       <td style={{ padding: '6px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {validTx ? (
                           <a
-                            href={getBscScanUrl(c.txHash, 'tx')}
+                            href={getBscScanUrl(c.txHash, 'tx', network.explorerUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            title="View transaction on BscScan"
+                            title={`View transaction on ${network.shortName}`}
                             style={{ color: 'var(--color-text-tertiary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -235,7 +235,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
 
       {/* Pool address footer */}
       <div className="pool-card-footer" style={{ marginTop: 'auto' }}>
-        <a href={getBscScanUrl(pool.id)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
+        <a href={getBscScanUrl(pool.id, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
           {shortenAddress(pool.id)} ↗
         </a>
       </div>
