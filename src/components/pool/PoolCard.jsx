@@ -273,11 +273,17 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
           <h3 className="pool-card-name">{pool.name || 'Pool'}</h3>
           <span className={getPoolTypeBadgeClass(pool.poolType)}>{getPoolTypeLabel(pool.poolType)}</span>
         </div>
-        {pool.status === 'OPENED' ? (
-          <span className="badge badge-active">Active</span>
-        ) : (
-          <span className="badge badge-closed">Closed</span>
-        )}
+        <div className="pool-card-header-meta">
+          <div className="pool-ratio-highlight">
+            <span className="pool-ratio-label">Pool Ratio</span>
+            <span className="pool-ratio-value">{((pool.ratio || 0) / 100).toFixed(1)}%</span>
+          </div>
+          {pool.status === 'OPENED' ? (
+            <span className="badge badge-active">Active</span>
+          ) : (
+            <span className="badge badge-closed">Closed</span>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -294,10 +300,6 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
           <div className="pool-stat-value pool-apr">
             {apr !== null ? (apr > 0 ? `${apr.toFixed(1)}%` : '0%') : '—'}
           </div>
-        </div>
-        <div className="pool-stat">
-          <div className="pool-stat-label">Pool Ratio</div>
-          <div className="pool-stat-value">{((pool.ratio || 0) / 100).toFixed(1)}%</div>
         </div>
         {isLocking && (
           <div className="pool-stat">

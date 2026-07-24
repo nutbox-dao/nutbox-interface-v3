@@ -319,7 +319,13 @@ async function fetchOnChainCommunities(chainId) {
 async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID) {
   const apiBase = getNetworkConfig(chainId).apiBase;
   if (!apiBase) throw new Error(`Nutbox API is not configured for chain ${chainId}`);
-  const response = await fetch(`${apiBase}${path}`);
+  return fetchAPIFromBase(apiBase, path, chainId);
+}
+
+async function fetchAPIFromBase(apiBase, path, chainId) {
+  const response = await fetch(`${apiBase}${path}`, {
+    headers: { 'X-Chain-Id': String(chainId) },
+  });
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
     throw new Error(`API returned ${contentType || 'unknown content type'}`);
@@ -330,6 +336,13 @@ async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID) {
     throw new Error(json.message || 'API request failed');
   }
   return json;
+}
+
+function getSocialClaimsApiBase(chainId) {
+  const network = getNetworkConfig(chainId);
+  if (network.apiBase) return network.apiBase;
+  if (!network.communityMetadataApiBase) return null;
+  return `${network.communityMetadataApiBase.replace(/\/$/, '')}/nutbox`;
 }
 
 // ──── Global stats ────
@@ -420,9 +433,14 @@ export async function fetchUserOperations(userAddress) {
 // ──── Social Curation Claims ────
 
 export async function fetchSocialClaims(communityAddress, userAddress, chainId = DEFAULT_CHAIN_ID) {
-  if (!getNetworkConfig(chainId).apiBase) return [];
+  const apiBase = getSocialClaimsApiBase(chainId);
+  if (!apiBase) return [];
   try {
-    const data = await fetchAPI(`/communities/${communityAddress}/social-claims/${userAddress}`, chainId);
+    const data = await fetchAPIFromBase(
+      apiBase,
+      `/communities/${communityAddress}/social-claims/${userAddress}`,
+      chainId
+    );
     return (data.claims || []).map(c => ({
       orderId: c.orderId,
       amount: c.amount,
@@ -437,9 +455,14 @@ export async function fetchSocialClaims(communityAddress, userAddress, chainId =
 }
 
 export async function fetchSocialClaimHistory(communityAddress, page = 0, size = 20, chainId = DEFAULT_CHAIN_ID) {
-  if (!getNetworkConfig(chainId).apiBase) return { claims: [], total: 0 };
+  const apiBase = getSocialClaimsApiBase(chainId);
+  if (!apiBase) return { claims: [], total: 0 };
   try {
-    const data = await fetchAPI(`/communities/${communityAddress}/social-claims/history?page=${page}&size=${size}`, chainId);
+    const data = await fetchAPIFromBase(
+      apiBase,
+      `/communities/${communityAddress}/social-claims/history?page=${page}&size=${size}`,
+      chainId
+    );
     return {
       claims: (data.claims || []).map(c => ({
         orderId: c.orderId,

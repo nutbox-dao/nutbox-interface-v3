@@ -106,11 +106,17 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
             Social Curation
           </span>
         </div>
-        {pool.status === 'OPENED' ? (
-          <span className="badge badge-active">Active</span>
-        ) : (
-          <span className="badge badge-closed">Closed</span>
-        )}
+        <div className="pool-card-header-meta">
+          <div className="pool-ratio-highlight">
+            <span className="pool-ratio-label">Pool Ratio</span>
+            <span className="pool-ratio-value">{((pool.ratio || 0) / 100).toFixed(1)}%</span>
+          </div>
+          {pool.status === 'OPENED' ? (
+            <span className="badge badge-active">Active</span>
+          ) : (
+            <span className="badge badge-closed">Closed</span>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
@@ -134,10 +140,6 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
           <div className="pool-stat-value">
             {formattedRate}
           </div>
-        </div>
-        <div className="pool-stat">
-          <div className="pool-stat-label">Pool Ratio</div>
-          <div className="pool-stat-value">{((pool.ratio || 0) / 100).toFixed(1)}%</div>
         </div>
         <div className="pool-stat">
           <div className="pool-stat-label">How It Works</div>

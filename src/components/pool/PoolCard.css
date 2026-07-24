@@ -33,6 +33,42 @@
   text-overflow: ellipsis;
 }
 
+.pool-card-header-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.pool-ratio-highlight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid rgba(139, 92, 246, 0.42);
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.12));
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.1);
+}
+
+.pool-ratio-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+
+.pool-ratio-value {
+  font-size: var(--font-size-lg);
+  font-weight: 800;
+  line-height: 1;
+  color: #c4b5fd;
+  white-space: nowrap;
+}
+
 /* ── Pool Stats Grid ── */
 .pool-stats-grid {
   display: grid;
@@ -176,6 +212,20 @@
 }
 
 @media (max-width: 768px) {
+  .pool-card-header {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .pool-card-title-row {
+    flex-basis: 100%;
+  }
+
+  .pool-card-header-meta {
+    width: 100%;
+    justify-content: space-between;
+  }
+
   .pool-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }
