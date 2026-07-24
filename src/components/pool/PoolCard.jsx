@@ -188,9 +188,9 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(stakeAmount, decimals);
       const tx = await poolContract.deposit(amount, { value: fee });
-      toast.info(isLocking ? 'Locking...' : 'Staking...');
+      toast.info('Staking...');
       await tx.wait();
-      toast.success(isLocking ? 'Locked successfully!' : 'Staked successfully!');
+      toast.success('Staked successfully!');
       setStakeAmount('');
       setShowStake(false);
       loadPoolData();
@@ -211,9 +211,9 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(withdrawAmount, decimals);
       const tx = await poolContract.withdraw(amount, { value: fee });
-      toast.info(isLocking ? 'Unlocking...' : 'Withdrawing...');
+      toast.info('Unstaking...');
       await tx.wait();
-      toast.success(isLocking ? 'Unlock initiated!' : 'Withdrawn!');
+      toast.success(isLocking ? 'Unstake initiated!' : 'Unstaked successfully!');
       setWithdrawAmount('');
       setShowWithdraw(false);
       loadPoolData();
@@ -354,7 +354,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                 onClick={() => setShowStake(!showStake)}
                 disabled={!!actionLoading}
               >
-                {isLocking ? '🔒 Lock' : '📥 Stake'}
+                📥 Stake
               </button>
             )}
             {userStaked > 0n && (
@@ -363,7 +363,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                 onClick={() => setShowWithdraw(!showWithdraw)}
                 disabled={!!actionLoading}
               >
-                {isLocking ? '🔓 Unlock' : '📤 Withdraw'}
+                📤 Unstake
               </button>
             )}
             {pendingRewards > 0n && (
@@ -425,7 +425,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                   disabled={!stakeAmount || parseFloat(stakeAmount) <= 0 || actionLoading === 'deposit'}
                   style={{ width: '100%' }}
                 >
-                  {actionLoading === 'deposit' ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : (isLocking ? 'Lock Tokens' : 'Stake Tokens')}
+                  {actionLoading === 'deposit' ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : 'Stake Tokens'}
                 </button>
               )}
             </div>
@@ -460,7 +460,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
                 disabled={!withdrawAmount || parseFloat(withdrawAmount) <= 0 || actionLoading === 'withdraw'}
                 style={{ width: '100%' }}
               >
-                {actionLoading === 'withdraw' ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : (isLocking ? 'Initiate Unlock' : 'Withdraw')}
+                {actionLoading === 'withdraw' ? <span className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : 'Unstake Tokens'}
               </button>
               {isLocking && (
                 <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', marginTop: 4 }}>
