@@ -80,6 +80,45 @@ export const ERC20LockingABI = [
   'event Redeemed(address indexed who, uint256 amount)',
 ];
 
+export const NFTMiningPoolABI = [
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function owner() view returns (address)',
+  'function factory() view returns (address)',
+  'function community() view returns (address)',
+  'function fundsReceiver() view returns (address)',
+  'function currentBatchId() view returns (uint256)',
+  'function batchCount() view returns (uint256)',
+  'function nextTokenId() view returns (uint256)',
+  'function totalSupply() view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
+  'function levelCount() view returns (uint256)',
+  'function levelThresholds(uint256) view returns (uint256)',
+  'function levelWeights(uint256) view returns (uint256)',
+  'function batches(uint256) view returns (address paymentAsset, uint16 referralBps, uint8 paletteId, bool active, bool paused, uint256 mintPrice, uint256 maxSupply, uint256 minted)',
+  'function getUserStakedAmount(address) view returns (uint256)',
+  'function getTotalStakedAmount() view returns (uint256)',
+  'function getNFTInfo(uint256) view returns (tuple(address owner, uint32 level, uint32 batchId, uint256 referrerTokenId, uint256 referralCount, uint256 miningWeight, uint256 seed))',
+  'function tokensOfOwner(address account, uint256 offset, uint256 limit) view returns (uint256[])',
+  'function tokenSVG(uint256 tokenId) view returns (string)',
+  'function mint(uint256 referrerTokenId) payable returns (uint256)',
+  'function createBatch(uint256 maxSupply, address paymentAsset, uint256 mintPrice, uint16 referralBps) returns (uint256)',
+  'function setCurrentBatchPaused(bool paused)',
+  'function closeCurrentBatch()',
+  'function setFundsReceiver(address newReceiver)',
+  'event NFTMinted(address indexed buyer, uint256 indexed tokenId, uint256 indexed batchId, uint256 referrerTokenId, address paymentAsset, uint256 mintPrice)',
+  'event MiningWeightMoved(uint256 indexed tokenId, address indexed from, address indexed to, uint256 weight)',
+];
+
+export const NFTMiningPoolFactoryABI = [
+  'function defaultRenderer() view returns (address)',
+  'event NFTMiningPoolCreated(address indexed pool, address indexed community, address indexed admin, address renderer, string name, string symbol, address paymentAsset, uint256 mintPrice, uint256 firstBatchSupply, uint16 referralBps, uint8 paletteId)',
+];
+
+export const NFTMiningRendererABI = [
+  'function renderSVG((string collectionName, uint256 tokenId, uint256 seed, uint256 referralCount, uint256 miningWeight, uint32 batchId, uint32 level, uint8 paletteId) params) view returns (string)',
+];
+
 export const LinearCalculatorABI = [
   'function rewardHead() view returns (uint256)',
   'function getCurrentRewardRate(address community) view returns (uint256)',

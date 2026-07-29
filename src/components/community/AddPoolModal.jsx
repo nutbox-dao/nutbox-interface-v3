@@ -2,19 +2,63 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
-import { CommunityABI } from '../../config/abis';
-import { getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
+import {
+  CommunityABI,
+  NFTMiningPoolFactoryABI,
+  NFTMiningRendererABI,
+} from '../../config/abis';
+import { getPoolTypeLabel, getPoolTypeBadgeClass, shortenAddress } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
+
+function parseIntegerList(value) {
+  return value.split(',').map(item => item.trim()).filter(Boolean).map(item => BigInt(item));
+}
+
+function previewInteger(value, fallback, min, max) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+function previewWeightForLevel(weightsValue, levelValue) {
+  try {
+    const weights = parseIntegerList(weightsValue);
+    if (weights.length === 0) return 10000n;
+    const level = previewInteger(levelValue, 1, 1, 16);
+    return weights[Math.min(level - 1, weights.length - 1)] || weights[0];
+  } catch {
+    return 10000n;
+  }
+}
 
 export default function AddPoolModal({ communityAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider, contracts, network } = useWeb3();
+  const { account, signer, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [poolType, setPoolType] = useState('staking');
   const [poolName, setPoolName] = useState('');
   const [stakeTokenAddress, setStakeTokenAddress] = useState('');
   const [lockDuration, setLockDuration] = useState('');
+  const [nftSymbol, setNftSymbol] = useState('');
+  const [fundsReceiver, setFundsReceiver] = useState(account || '');
+  const [renderer, setRenderer] = useState('');
+  const [levelThresholds, setLevelThresholds] = useState('0, 2, 4, 6');
+  const [levelWeights, setLevelWeights] = useState('10000, 12000, 15000, 20000');
+  const [paymentAsset, setPaymentAsset] = useState('');
+  const [mintPrice, setMintPrice] = useState('');
+  const [batchSupply, setBatchSupply] = useState('');
+  const [referralPercent, setReferralPercent] = useState('10');
+  const [paymentTokenPreview, setPaymentTokenPreview] = useState({ loading: false, symbol: '', error: '' });
+  const [rendererPreview, setRendererPreview] = useState({ loading: false, image: '', address: '', error: '' });
+  const [previewSeed, setPreviewSeed] = useState(() => BigInt(ethers.hexlify(ethers.randomBytes(32))));
+  const [previewParams, setPreviewParams] = useState({
+    tokenId: '1',
+    referralCount: '0',
+    level: '1',
+    batchId: '1',
+    paletteId: '1',
+  });
   const [inputRatios, setInputRatios] = useState([]);
   const [loading, setLoading] = useState(false);
   const [settingsFee, setSettingsFee] = useState(null);
@@ -35,6 +79,132 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     setInputRatios(Array(numPools).fill(''));
   }, [activePools]);
 
+  useEffect(() => {
+    if (!fundsReceiver && account) setFundsReceiver(account);
+  }, [account, fundsReceiver]);
+
+  useEffect(() => {
+    if (poolType !== 'nft-mining') return undefined;
+    const address = paymentAsset.trim();
+    if (!address) {
+      setPaymentTokenPreview({ loading: false, symbol: network.nativeCurrency.symbol, error: '' });
+      return undefined;
+    }
+    if (!ethers.isAddress(address)) {
+      setPaymentTokenPreview({ loading: false, symbol: '', error: language === 'zh' ? '请输入有效的代币地址' : 'Enter a valid token address' });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setPaymentTokenPreview({ loading: true, symbol: '', error: '' });
+    const timer = setTimeout(async () => {
+      try {
+        const token = new ethers.Contract(address, ['function symbol() view returns (string)'], readProvider);
+        const symbol = await token.symbol();
+        if (!cancelled) setPaymentTokenPreview({ loading: false, symbol, error: '' });
+      } catch {
+        if (!cancelled) {
+          setPaymentTokenPreview({
+            loading: false,
+            symbol: '',
+            error: language === 'zh' ? '无法读取代币 Symbol，请检查合约地址' : 'Could not read token symbol; check the contract address',
+          });
+        }
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [language, network.nativeCurrency.symbol, paymentAsset, poolType, readProvider]);
+
+  useEffect(() => {
+    if (poolType !== 'nft-mining' || !contracts.NFTMiningPoolFactory || !readProvider) return undefined;
+    const customRenderer = renderer.trim();
+    if (customRenderer && !ethers.isAddress(customRenderer)) {
+      setRendererPreview({
+        loading: false,
+        image: '',
+        address: '',
+        error: language === 'zh' ? '请输入有效的 Renderer 地址' : 'Enter a valid renderer address',
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setRendererPreview(previous => ({ ...previous, loading: true, error: '' }));
+    const timer = setTimeout(async () => {
+      try {
+        let rendererAddress = customRenderer;
+        if (!rendererAddress) {
+          const factory = new ethers.Contract(
+            contracts.NFTMiningPoolFactory,
+            NFTMiningPoolFactoryABI,
+            readProvider,
+          );
+          rendererAddress = await factory.defaultRenderer();
+        }
+        const code = await readProvider.getCode(rendererAddress);
+        if (code === '0x') throw new Error('Renderer has no contract code');
+
+        let previewMaxLevel = 16;
+        try {
+          previewMaxLevel = Math.max(1, Math.min(16, parseIntegerList(levelWeights).length));
+        } catch {
+          // Allow the preview to keep working while the level list is incomplete.
+        }
+        const previewLevel = previewInteger(previewParams.level, 1, 1, previewMaxLevel);
+        const previewWeight = previewWeightForLevel(levelWeights, previewParams.level);
+        const previewRenderer = new ethers.Contract(rendererAddress, NFTMiningRendererABI, readProvider);
+        const svg = await previewRenderer.renderSVG({
+          collectionName: poolName.trim() || 'NFT Mining Preview',
+          tokenId: BigInt(previewInteger(previewParams.tokenId, 1, 1, Number.MAX_SAFE_INTEGER)),
+          seed: previewSeed,
+          referralCount: BigInt(previewInteger(previewParams.referralCount, 0, 0, Number.MAX_SAFE_INTEGER)),
+          miningWeight: previewWeight,
+          batchId: previewInteger(previewParams.batchId, 1, 1, 4294967295),
+          level: previewLevel,
+          paletteId: previewInteger(previewParams.paletteId, 1, 1, 6),
+        });
+        if (!cancelled) {
+          setRendererPreview({
+            loading: false,
+            image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+            address: rendererAddress,
+            error: '',
+          });
+        }
+      } catch {
+        if (!cancelled) {
+          setRendererPreview({
+            loading: false,
+            image: '',
+            address: customRenderer,
+            error: language === 'zh'
+              ? '无法调用该 Renderer 生成 SVG，请确认它实现了 renderSVG 接口'
+              : 'Could not generate SVG; verify that this contract implements renderSVG',
+          });
+        }
+      }
+    }, 550);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    contracts.NFTMiningPoolFactory,
+    language,
+    levelWeights,
+    poolName,
+    poolType,
+    previewParams,
+    previewSeed,
+    readProvider,
+    renderer,
+  ]);
+
   const handleRatioChange = (idx, valStr) => {
     setInputRatios(prev => {
       const next = [...prev];
@@ -51,12 +221,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   };
 
   const handleCreate = async () => {
-    if (!signer || !poolName || !stakeTokenAddress) {
+    const isNFTMining = poolType === 'nft-mining';
+    if (!signer || !poolName || (!isNFTMining && !stakeTokenAddress)) {
       toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
 
-    if (!ethers.isAddress(stakeTokenAddress)) {
+    if (!isNFTMining && !ethers.isAddress(stakeTokenAddress)) {
       toast.error(language === 'zh' ? '代币地址无效' : 'Invalid token address');
       return;
     }
@@ -102,7 +273,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
         factoryAddress = contracts.ERC20StakingFactory;
         // meta: just the stake token address (20 bytes)
         meta = stakeTokenAddress.toLowerCase();
-      } else {
+      } else if (poolType === 'locking') {
         factoryAddress = contracts.ERC20LockingFactory;
         // meta: [address stakeToken (20 bytes)][uint256 lockDuration (32 bytes)]
         if (!lockDuration || parseInt(lockDuration) <= 0) {
@@ -112,6 +283,60 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
         }
         const durationSeconds = parseInt(lockDuration) * 86400; // Convert days to seconds
         meta = stakeTokenAddress.toLowerCase() + ethers.toBeHex(durationSeconds, 32).replace('0x', '');
+      } else {
+        factoryAddress = contracts.NFTMiningPoolFactory;
+        if (!factoryAddress) {
+          throw new Error(language === 'zh' ? '当前网络未配置 NFT 矿池工厂' : 'NFT mining factory is not configured');
+        }
+        if (!nftSymbol.trim() || !ethers.isAddress(fundsReceiver)) {
+          throw new Error(language === 'zh' ? '请填写 NFT Symbol 和有效收款地址' : 'Enter an NFT symbol and valid funds receiver');
+        }
+        if (renderer && !ethers.isAddress(renderer)) {
+          throw new Error(language === 'zh' ? 'Renderer 地址无效' : 'Invalid renderer address');
+        }
+        const thresholds = parseIntegerList(levelThresholds);
+        const weights = parseIntegerList(levelWeights);
+        if (
+          thresholds.length === 0 || thresholds.length !== weights.length || thresholds[0] !== 0n
+          || weights[0] <= 0n || thresholds.some((value, index) => index > 0 && value <= thresholds[index - 1])
+          || weights.some((value, index) => index > 0 && value <= weights[index - 1])
+        ) {
+          throw new Error(language === 'zh'
+            ? '等级阈值必须从 0 开始，且阈值和权重数量相同并严格递增'
+            : 'Thresholds must start at 0; thresholds and weights must have equal length and strictly increase');
+        }
+        if (!mintPrice || Number(mintPrice) <= 0 || !batchSupply || BigInt(batchSupply) <= 0n) {
+          throw new Error(language === 'zh' ? 'Mint 价格和发行量必须大于 0' : 'Mint price and supply must be greater than zero');
+        }
+        const referralBps = Math.round(Number(referralPercent) * 100);
+        if (!Number.isInteger(referralBps) || referralBps < 0 || referralBps > 10000) {
+          throw new Error(language === 'zh' ? '推荐比例必须在 0% 到 100% 之间' : 'Referral rate must be between 0% and 100%');
+        }
+
+        const paymentAddress = paymentAsset.trim() || ethers.ZeroAddress;
+        if (paymentAddress !== ethers.ZeroAddress && !ethers.isAddress(paymentAddress)) {
+          throw new Error(language === 'zh' ? '支付代币地址无效' : 'Invalid payment token address');
+        }
+        let paymentDecimals = 18;
+        if (paymentAddress !== ethers.ZeroAddress) {
+          const paymentToken = new ethers.Contract(paymentAddress, ['function decimals() view returns (uint8)'], readProvider);
+          paymentDecimals = Number(await paymentToken.decimals());
+        }
+        const price = ethers.parseUnits(mintPrice, paymentDecimals);
+        meta = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['tuple(string,address,address,uint256[],uint256[],address,uint256,uint256,uint16)'],
+          [[
+            nftSymbol.trim(),
+            fundsReceiver,
+            renderer || ethers.ZeroAddress,
+            thresholds,
+            weights,
+            paymentAddress,
+            price,
+            BigInt(batchSupply),
+            referralBps,
+          ]]
+        );
       }
 
       const tx = await communityContract.adminAddPool(
@@ -136,6 +361,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
   const sumPercent = getSumPercent();
   const isValidRatios = Math.abs(sumPercent - 100) < 0.001 || sumPercent === 0;
+  let previewLevelCount;
+  try {
+    previewLevelCount = Math.max(1, Math.min(16, parseIntegerList(levelWeights).length));
+  } catch {
+    previewLevelCount = 16;
+  }
+  const previewCalculatedWeight = previewWeightForLevel(levelWeights, previewParams.level);
 
   return (
     <div className="modal-overlay" onClick={onClose}>
@@ -152,6 +384,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             <select className="input" value={poolType} onChange={e => setPoolType(e.target.value)}>
               <option value="staking">{t('addPool.fieldTypeNameStaking')}</option>
               <option value="locking">{t('addPool.fieldTypeNameLocking')}</option>
+              {Number(network.id) === 4663 && (
+                <option value="nft-mining">{language === 'zh' ? 'NFT 挖矿' : 'NFT Mining'}</option>
+              )}
             </select>
           </div>
 
@@ -166,16 +401,17 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             />
           </div>
 
-          {/* Stake Token */}
-          <div className="input-group">
-            <label>{t('addPool.fieldStakeToken')}</label>
-            <input
-              className="input"
-              placeholder="0x..."
-              value={stakeTokenAddress}
-              onChange={e => setStakeTokenAddress(e.target.value)}
-            />
-          </div>
+          {poolType !== 'nft-mining' && (
+            <div className="input-group">
+              <label>{t('addPool.fieldStakeToken')}</label>
+              <input
+                className="input"
+                placeholder="0x..."
+                value={stakeTokenAddress}
+                onChange={e => setStakeTokenAddress(e.target.value)}
+              />
+            </div>
+          )}
 
           {/* Lock Duration (only for locking) */}
           {poolType === 'locking' && (
@@ -189,6 +425,160 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                 onChange={e => setLockDuration(e.target.value)}
                 min="1"
               />
+            </div>
+          )}
+
+          {poolType === 'nft-mining' && (
+            <div className="nft-pool-config">
+              <div className="nft-pool-config-heading">
+                <strong>{language === 'zh' ? 'NFT 发行配置' : 'NFT issuance'}</strong>
+                <span>{language === 'zh' ? '留空支付代币表示使用 ETH' : 'Leave payment token blank to use ETH'}</span>
+              </div>
+              <div className="nft-pool-form-grid">
+                <div className="input-group">
+                  <label>NFT Symbol</label>
+                  <input className="input" placeholder="e.g. NBXNFT" value={nftSymbol} onChange={e => setNftSymbol(e.target.value)} maxLength={16} />
+                </div>
+                <div className="input-group">
+                  <label>{language === 'zh' ? '首批发行量' : 'First batch supply'}</label>
+                  <input type="number" className="input" placeholder="1000" min="1" step="1" value={batchSupply} onChange={e => setBatchSupply(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>{language === 'zh' ? '支付代币（可选）' : 'Payment token (optional)'}</label>
+                  <input className="input" placeholder={language === 'zh' ? '留空使用 ETH，或输入 0x...' : 'Blank for ETH, or 0x...'} value={paymentAsset} onChange={e => setPaymentAsset(e.target.value)} />
+                  <div className={`contract-field-feedback ${paymentTokenPreview.error ? 'is-error' : 'is-success'}`}>
+                    {paymentTokenPreview.loading
+                      ? (language === 'zh' ? '正在读取代币...' : 'Reading token...')
+                      : paymentTokenPreview.error || (
+                        paymentTokenPreview.symbol
+                          ? `${language === 'zh' ? '支付币种' : 'Payment symbol'}: ${paymentTokenPreview.symbol}`
+                          : ''
+                      )}
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label>{language === 'zh' ? '单个 Mint 价格' : 'Mint price'}</label>
+                  <input type="number" className="input" placeholder="0.01" min="0" step="any" value={mintPrice} onChange={e => setMintPrice(e.target.value)} />
+                </div>
+                <div className="input-group">
+                  <label>{language === 'zh' ? '推荐佣金比例' : 'Referral commission'}</label>
+                  <div className="input-with-suffix">
+                    <input type="number" className="input" min="0" max="100" step="0.1" value={referralPercent} onChange={e => setReferralPercent(e.target.value)} />
+                    <span>%</span>
+                  </div>
+                </div>
+                <div className="input-group">
+                  <label>{language === 'zh' ? 'Mint 收款地址' : 'Funds receiver'}</label>
+                  <input className="input" placeholder="0x..." value={fundsReceiver} onChange={e => setFundsReceiver(e.target.value)} />
+                </div>
+                <div className="input-group nft-pool-form-wide">
+                  <label>{language === 'zh' ? '等级推荐阈值（逗号分隔）' : 'Level thresholds (comma-separated)'}</label>
+                  <input className="input" value={levelThresholds} onChange={e => setLevelThresholds(e.target.value)} />
+                </div>
+                <div className="input-group nft-pool-form-wide">
+                  <label>{language === 'zh' ? '对应挖矿权重（逗号分隔）' : 'Mining weights (comma-separated)'}</label>
+                  <input className="input" value={levelWeights} onChange={e => setLevelWeights(e.target.value)} />
+                </div>
+                <div className="input-group nft-pool-form-wide">
+                  <label>Renderer ({language === 'zh' ? '可选' : 'optional'})</label>
+                  <input className="input" placeholder={language === 'zh' ? '留空使用默认链上 SVG Renderer' : 'Blank for the default on-chain SVG renderer'} value={renderer} onChange={e => setRenderer(e.target.value)} />
+                </div>
+                <div className="renderer-preview nft-pool-form-wide">
+                  <div className="renderer-preview-copy">
+                    <div>
+                      <strong>{language === 'zh' ? 'Renderer 图片预览' : 'Renderer image preview'}</strong>
+                      <span>
+                        {rendererPreview.address
+                          ? `${renderer.trim() ? (language === 'zh' ? '自定义' : 'Custom') : (language === 'zh' ? '平台默认' : 'Platform default')} · ${shortenAddress(rendererPreview.address)}`
+                          : (language === 'zh' ? '正在解析 Renderer' : 'Resolving renderer')}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setPreviewSeed(BigInt(ethers.hexlify(ethers.randomBytes(32))))}
+                      disabled={rendererPreview.loading}
+                    >
+                      {language === 'zh' ? '换一个随机样例' : 'New random sample'}
+                    </button>
+                  </div>
+                  <div className="renderer-preview-parameters">
+                    <div className="input-group">
+                      <label>{language === 'zh' ? 'NFT 等级' : 'NFT level'}</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        max={previewLevelCount}
+                        step="1"
+                        value={previewParams.level}
+                        onChange={event => setPreviewParams(value => ({ ...value, level: event.target.value }))}
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>{language === 'zh' ? '推荐数量' : 'Referral count'}</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="0"
+                        step="1"
+                        value={previewParams.referralCount}
+                        onChange={event => setPreviewParams(value => ({ ...value, referralCount: event.target.value }))}
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>{language === 'zh' ? '批次 ID' : 'Batch ID'}</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        step="1"
+                        value={previewParams.batchId}
+                        onChange={event => setPreviewParams(value => ({ ...value, batchId: event.target.value }))}
+                      />
+                    </div>
+                    <div className="input-group">
+                      <label>{language === 'zh' ? '配色' : 'Palette'}</label>
+                      <select
+                        className="input"
+                        value={previewParams.paletteId}
+                        onChange={event => setPreviewParams(value => ({ ...value, paletteId: event.target.value }))}
+                      >
+                        {[1, 2, 3, 4, 5, 6].map(palette => (
+                          <option key={palette} value={palette}>Palette {palette}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="input-group">
+                      <label>Token ID</label>
+                      <input
+                        type="number"
+                        className="input"
+                        min="1"
+                        step="1"
+                        value={previewParams.tokenId}
+                        onChange={event => setPreviewParams(value => ({ ...value, tokenId: event.target.value }))}
+                      />
+                    </div>
+                    <div className="renderer-preview-weight">
+                      <span>{language === 'zh' ? '对应挖矿权重' : 'Mining weight'}</span>
+                      <strong>{previewCalculatedWeight.toString()}</strong>
+                    </div>
+                  </div>
+                  <div className="renderer-preview-stage">
+                    {rendererPreview.loading ? (
+                      <div className="renderer-preview-status">
+                        <span className="spinner" />
+                        {language === 'zh' ? '正在从链上生成图片...' : 'Generating image on-chain...'}
+                      </div>
+                    ) : rendererPreview.error ? (
+                      <div className="renderer-preview-status is-error">{rendererPreview.error}</div>
+                    ) : rendererPreview.image ? (
+                      <img src={rendererPreview.image} alt={language === 'zh' ? 'Renderer 随机 NFT 预览' : 'Random NFT renderer preview'} />
+                    ) : null}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -243,7 +633,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                     ✨ {poolName || t('addPool.ratioNewPoolLabel')}
                   </span>
                   <span className="badge badge-active" style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal', background: 'var(--color-success)', color: '#fff' }}>
-                    {poolType === 'staking' ? 'Staking' : 'Locking'}
+                    {poolType === 'staking' ? 'Staking' : poolType === 'locking' ? 'Locking' : 'NFT Mining'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', width: 120 }}>
@@ -295,7 +685,15 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
           <button
             className={`btn ${isValidRatios ? 'btn-primary' : 'btn-ghost'} btn-lg`}
             onClick={handleCreate}
-            disabled={loading || !poolName || !stakeTokenAddress || !isValidRatios}
+            disabled={
+              loading || !poolName || !isValidRatios
+              || (poolType !== 'nft-mining' && !stakeTokenAddress)
+              || (poolType === 'nft-mining' && (
+                !nftSymbol || !fundsReceiver || !mintPrice || !batchSupply || !contracts.NFTMiningPoolFactory
+                || paymentTokenPreview.loading || rendererPreview.loading
+                || Boolean(paymentTokenPreview.error) || Boolean(rendererPreview.error)
+              ))
+            }
             style={{ width: '100%' }}
           >
             {loading ? (

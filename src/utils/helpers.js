@@ -61,10 +61,10 @@ export function shortenAddress(address, chars = 4) {
 /**
  * Format a timestamp to human-readable date
  */
-export function formatDate(timestamp) {
+export function formatDate(timestamp, locale = 'en-US') {
   if (!timestamp) return '';
   const d = new Date(Number(timestamp) * 1000);
-  return d.toLocaleDateString('en-US', {
+  return d.toLocaleDateString(locale, {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -119,6 +119,7 @@ export function getPoolTypeLabel(poolType) {
   if (t.includes('ERC1155')) return 'ERC1155 Staking';
   if (t.includes('SP_STAKING')) return 'SP Staking';
   if (t.includes('SOCIAL')) return 'Social Curation';
+  if (t.includes('NFT_MINING')) return 'NFT Mining';
   return poolType;
 }
 
@@ -128,6 +129,7 @@ export function getPoolTypeLabel(poolType) {
 export function getPoolTypeBadgeClass(poolType) {
   if (!poolType) return 'badge';
   const t = poolType.toUpperCase();
+  if (t.includes('NFT_MINING')) return 'badge badge-nft';
   if (t.includes('LOCKING')) return 'badge badge-locking';
   return 'badge badge-staking';
 }

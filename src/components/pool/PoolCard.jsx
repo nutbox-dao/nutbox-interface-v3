@@ -2,13 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
+import { useLanguage } from '../../contexts/LanguageContext';
 import { ERC20StakingABI, ERC20LockingABI, ERC20ABI, CommunityABI } from '../../config/abis';
-import { formatTokenAmount, shortenAddress, formatDuration, getBscScanUrl, getPoolTypeLabel, getPoolTypeBadgeClass } from '../../utils/helpers';
+import { formatTokenAmount, shortenAddress, formatDuration, getPoolTypeBadgeClass } from '../../utils/helpers';
+import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './PoolCard.css';
 
 export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
   const { account, signer, readProvider, isConnected, contracts, network } = useWeb3();
   const toast = useToast();
+  const { t } = useLanguage();
 
   const [stakeTokenInfo, setStakeTokenInfo] = useState(null);
   const [totalStaked, setTotalStaked] = useState(0n);
@@ -267,24 +270,13 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
 
   return (
     <div className="pool-card glass-card" id={`pool-${pool.id}`}>
-      {/* Header */}
-      <div className="pool-card-header">
-        <div className="pool-card-title-row">
-          <h3 className="pool-card-name">{pool.name || 'Pool'}</h3>
-          <span className={getPoolTypeBadgeClass(pool.poolType)}>{getPoolTypeLabel(pool.poolType)}</span>
-        </div>
-        <div className="pool-card-header-meta">
-          <div className="pool-ratio-highlight">
-            <span className="pool-ratio-label">Pool Ratio</span>
-            <span className="pool-ratio-value">{((pool.ratio || 0) / 100).toFixed(1)}%</span>
-          </div>
-          {pool.status === 'OPENED' ? (
-            <span className="badge badge-active">Active</span>
-          ) : (
-            <span className="badge badge-closed">Closed</span>
-          )}
-        </div>
-      </div>
+      <PoolCardHeader
+        name={pool.name || t('poolCard.fallbackName')}
+        typeLabel={isLocking ? t('poolCard.lockingType') : t('poolCard.stakingType')}
+        typeClassName={getPoolTypeBadgeClass(pool.poolType)}
+        ratio={pool.ratio}
+        status={pool.status}
+      />
 
       {/* Stats */}
       <div className="pool-stats-grid">
@@ -497,12 +489,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
         </div>
       )}
 
-      {/* Pool address footer */}
-      <div className="pool-card-footer">
-        <a href={getBscScanUrl(pool.id, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
-          {shortenAddress(pool.id)} ↗
-        </a>
-      </div>
+      <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl} />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { CommunityABI, ERC20ABI } from '../../config/abis';
 import { fetchSocialClaimHistory } from '../../config/subgraph';
 import { formatTokenAmount, formatTokenValue, shortenAddress, formatDate, getBscScanUrl } from '../../utils/helpers';
+import { useLanguage } from '../../contexts/LanguageContext';
+import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './PoolCard.css';
 
 const SocialCurationABI = [
@@ -14,6 +16,7 @@ const PAGE_SIZE = 20;
 
 export default function SocialCurationCard({ pool, communityAddress, communityToken, rewardRate, feeRatio = 0 }) {
   const { readProvider, activeChainId, network } = useWeb3();
+  const { language, t } = useLanguage();
 
   const [loading, setLoading] = useState(true);
   const [totalClaimed, setTotalClaimed] = useState(0n);
@@ -92,57 +95,44 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
     const poolRatio = BigInt(pool.ratio || 10000);
     const actualRate = rewardRate * stakerRatio / 10000n * poolRatio / 10000n;
     const perHour = Number(ethers.formatUnits(actualRate, decimals));
-    if (perHour < 0.0001) return '<0.0001/hr';
-    return `${perHour.toFixed(4)}/hr`;
+    if (perHour < 0.0001) return `<0.0001${t('socialPool.perHour')}`;
+    return `${perHour.toFixed(4)}${t('socialPool.perHour')}`;
   })();
 
   return (
     <div className="pool-card glass-card" id={`pool-${pool.id}`}>
-      {/* Header */}
-      <div className="pool-card-header">
-        <div className="pool-card-title-row">
-          <h3 className="pool-card-name">{pool.name || 'Social Curation'}</h3>
-          <span className="badge" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#a78bfa', fontSize: 11, padding: '2px 8px', borderRadius: 999 }}>
-            Social Curation
-          </span>
-        </div>
-        <div className="pool-card-header-meta">
-          <div className="pool-ratio-highlight">
-            <span className="pool-ratio-label">Pool Ratio</span>
-            <span className="pool-ratio-value">{((pool.ratio || 0) / 100).toFixed(1)}%</span>
-          </div>
-          {pool.status === 'OPENED' ? (
-            <span className="badge badge-active">Active</span>
-          ) : (
-            <span className="badge badge-closed">Closed</span>
-          )}
-        </div>
-      </div>
+      <PoolCardHeader
+        name={pool.name || t('socialPool.fallbackName')}
+        typeLabel={t('socialPool.typeName')}
+        typeClassName="badge badge-social"
+        ratio={pool.ratio}
+        status={pool.status}
+      />
 
       {/* Stats */}
       <div className="pool-stats-grid">
         <div className="pool-stat">
-          <div className="pool-stat-label">Total Distributed</div>
+          <div className="pool-stat-label">{t('socialPool.totalDistributed')}</div>
           <div className="pool-stat-value">
             {loading ? <span className="skeleton" style={{ width: 80, height: 20, display: 'inline-block' }} /> :
               `${formatTokenAmount(totalClaimed, decimals)} ${symbol}`}
           </div>
         </div>
         <div className="pool-stat">
-          <div className="pool-stat-label">Total Available</div>
+          <div className="pool-stat-label">{t('socialPool.totalAvailable')}</div>
           <div className="pool-stat-value" style={{ color: 'var(--color-green)' }}>
             {loading ? <span className="skeleton" style={{ width: 80, height: 20, display: 'inline-block' }} /> :
               `${formatTokenAmount(totalAvailable, decimals)} ${symbol}`}
           </div>
         </div>
         <div className="pool-stat">
-          <div className="pool-stat-label">Reward Rate</div>
+          <div className="pool-stat-label">{t('socialPool.rewardRate')}</div>
           <div className="pool-stat-value">
             {formattedRate}
           </div>
         </div>
         <div className="pool-stat">
-          <div className="pool-stat-label">How It Works</div>
+          <div className="pool-stat-label">{t('socialPool.howItWorks')}</div>
           <div className="pool-stat-value" style={{ fontSize: 'var(--font-size-xs)' }}>
             <a href={`https://tagai.fun/tag-detail/${symbol}`} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--color-primary)', textDecoration: 'underline' }}>
               TagAI ↗
@@ -150,9 +140,9 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
           </div>
         </div>
         <div className="pool-stat">
-          <div className="pool-stat-label">Vesting</div>
+          <div className="pool-stat-label">{t('socialPool.vesting')}</div>
           <div className="pool-stat-value" style={{ fontSize: 'var(--font-size-xs)' }}>
-            1+2 Day
+            {t('socialPool.vestingValue')}
           </div>
         </div>
       </div>
@@ -160,23 +150,23 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
       {/* Claim History */}
       <div className="pool-user-section" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
         <div style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, marginBottom: 'var(--space-3)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span>Claim History</span>
-          {historyTotal > 0 && <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6 }}>{historyTotal} claims</span>}
+          <span>{t('socialPool.claimHistory')}</span>
+          {historyTotal > 0 && <span style={{ fontSize: 'var(--font-size-xs)', opacity: 0.6 }}>{t('socialPool.claimCount', { count: historyTotal })}</span>}
         </div>
 
         {history.length === 0 && !historyLoading ? (
           <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-tertiary)', textAlign: 'center', padding: 'var(--space-4)' }}>
-            No claims yet
+            {t('socialPool.noClaims')}
           </div>
         ) : (
           <div style={{ overflowY: 'auto', flex: 1, maxHeight: 240 }}>
             <table style={{ width: '100%', fontSize: 'var(--font-size-xs)', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ color: 'var(--color-text-tertiary)', textAlign: 'left', borderBottom: '1px solid var(--color-border)' }}>
-                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>User</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Amount</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Time</th>
-                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>Tx</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500 }}>{t('socialPool.user')}</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>{t('socialPool.amount')}</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>{t('socialPool.time')}</th>
+                  <th style={{ padding: '6px 4px', fontWeight: 500, textAlign: 'right' }}>{t('socialPool.transaction')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -193,7 +183,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                         {formatTokenValue(c.amount, 2)} {symbol}
                       </td>
                       <td style={{ padding: '6px 4px', textAlign: 'right', color: 'var(--color-text-tertiary)', whiteSpace: 'nowrap' }}>
-                        {formatDate(c.timestamp)}
+                        {formatDate(c.timestamp, language === 'zh' ? 'zh-CN' : 'en-US')}
                       </td>
                       <td style={{ padding: '6px 4px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                         {validTx ? (
@@ -201,7 +191,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                             href={getBscScanUrl(c.txHash, 'tx', network.explorerUrl)}
                             target="_blank"
                             rel="noopener noreferrer"
-                            title={`View transaction on ${network.shortName}`}
+                            title={t('socialPool.viewTransaction', { network: network.shortName })}
                             style={{ color: 'var(--color-text-tertiary)', textDecoration: 'none', display: 'inline-flex', alignItems: 'center' }}
                           >
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -227,7 +217,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
                   disabled={historyLoading}
                   style={{ fontSize: 11 }}
                 >
-                  {historyLoading ? 'Loading...' : 'Load more'}
+                  {historyLoading ? t('common.loading') : t('socialPool.loadMore')}
                 </button>
               </div>
             )}
@@ -235,12 +225,7 @@ export default function SocialCurationCard({ pool, communityAddress, communityTo
         )}
       </div>
 
-      {/* Pool address footer */}
-      <div className="pool-card-footer" style={{ marginTop: 'auto' }}>
-        <a href={getBscScanUrl(pool.id, 'address', network.explorerUrl)} target="_blank" rel="noopener noreferrer" style={{ fontSize: 'var(--font-size-xs)', fontFamily: 'monospace', color: 'var(--color-text-tertiary)' }}>
-          {shortenAddress(pool.id)} ↗
-        </a>
-      </div>
+      <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl} />
     </div>
   );
 }

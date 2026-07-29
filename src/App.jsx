@@ -10,6 +10,7 @@ import Header from './components/layout/Header';
 import Home from './pages/Home';
 import CommunityDetail from './pages/CommunityDetail';
 import CreateCommunity from './pages/CreateCommunity';
+import NFTMiningPoolDetail from './pages/NFTMiningPoolDetail';
 
 import '@rainbow-me/rainbowkit/styles.css';
 import { useWeb3 } from './contexts/Web3Context';
@@ -41,6 +42,7 @@ export default function App() {
                   <Routes>
                     <Route path="/" element={<Home />} />
                     <Route path="/community/:address" element={<CommunityDetail />} />
+                    <Route path="/community/:communityAddress/pool/:poolAddress" element={<NFTMiningPoolDetail />} />
                     <Route path="/create" element={<CreateCommunity />} />
                   </Routes>
                   <Footer />

@@ -15,6 +15,8 @@ import { ERC20ABI } from '../config/abis';
 import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
+import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
+import { PoolCardFooter, PoolCardHeader } from '../components/pool/PoolCardTemplate';
 import AddPoolModal from '../components/community/AddPoolModal';
 import AdjustRatiosModal from '../components/community/AdjustRatiosModal';
 import CommunitySettingsModal from '../components/community/CommunitySettingsModal';
@@ -220,8 +222,12 @@ export default function CommunityDetail() {
   const socialCurationPools = displayPools.filter(p =>
     p.poolType === 'SOCIAL_CURATION'
   );
+  const nftMiningPools = displayPools.filter(p =>
+    p.poolType === 'NFT_MINING'
+  );
   const otherPools = displayPools.filter(p =>
-    p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING' && p.poolType !== 'SOCIAL_CURATION'
+    p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
+    && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'NFT_MINING'
   );
   const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
   const displayDaoFund = daoFundAddress || community.daoFund;
@@ -454,7 +460,7 @@ export default function CommunityDetail() {
               </div>
             </div>
           </div>
-        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && otherPools.length === 0 ? (
+        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && nftMiningPools.length === 0 && otherPools.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">{t('detail.noPoolsTitle')}</div>
@@ -490,15 +496,29 @@ export default function CommunityDetail() {
                 feeRatio={displayFeeRatio}
               />
             ))}
+            {nftMiningPools.map(pool => (
+              <NFTMiningPoolCard
+                key={pool.id}
+                pool={pool}
+                communityAddress={address}
+                communityToken={tokenInfo}
+                isOwner={isOwner}
+                onRefresh={loadCommunity}
+              />
+            ))}
             {otherPools.map(pool => (
-              <div key={pool.id} className="glass-card" style={{ padding: 'var(--space-6)', opacity: 0.6 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontWeight: 600 }}>{pool.name || 'Pool'}</span>
-                  <span className={getPoolTypeBadgeClass(pool.poolType)}>{getPoolTypeLabel(pool.poolType)}</span>
-                </div>
+              <div key={pool.id} className="pool-card glass-card" style={{ opacity: 0.6 }}>
+                <PoolCardHeader
+                  name={pool.name || t('poolCard.fallbackName')}
+                  typeLabel={getPoolTypeLabel(pool.poolType)}
+                  typeClassName={getPoolTypeBadgeClass(pool.poolType)}
+                  ratio={pool.ratio}
+                  status={pool.status}
+                />
                 <div style={{ fontSize: 'var(--font-size-sm)', color: 'var(--color-text-tertiary)' }}>
                   {t('detail.unsupportedPool')}
                 </div>
+                <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl} />
               </div>
             ))}
           </div>
@@ -600,6 +620,7 @@ function guessPoolType(factoryAddress, contracts) {
     [contracts.ERC1155StakingFactory, 'ERC1155_STAKING'],
     [contracts.SPStakingFactory, 'SP_STAKING'],
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
+    [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || '';
 }

@@ -42,12 +42,14 @@ const poolHistoryInterface = new ethers.Interface([
   'event Unlocked(address indexed who, uint256 amount)',
   'event Redeemed(address indexed who, uint256 amount)',
   'event SocialClaimed(address indexed user, uint256 indexed orderId, uint256 amount, bool harvested)',
+  'event NFTMinted(address indexed buyer, uint256 indexed tokenId, uint256 indexed batchId, uint256 referrerTokenId, address paymentAsset, uint256 mintPrice)',
 ]);
 
 const poolFactoryEvents = [
   ['ERC20StakingFactory', 'event ERC20StakingCreated(address indexed pool, address indexed community, string name, address erc20Token)'],
   ['ERC20LockingFactory', 'event ERC20LockingCreated(address indexed pool, address indexed community, string name, address erc20Token, uint256 lockDuration)'],
   ['SocialCurationFactory', 'event SocialCurationCreated(address indexed pool, address indexed community, string name)'],
+  ['NFTMiningPoolFactory', 'event NFTMiningPoolCreated(address indexed pool, address indexed community, address indexed admin, address renderer, string name, string symbol, address paymentAsset, uint256 mintPrice, uint256 firstBatchSupply, uint16 referralBps, uint8 paletteId)'],
 ];
 
 function historyId(log) {
@@ -132,7 +134,7 @@ async function fetchOnChainOperationHistory({
         account: { id: owner },
         pool: { id: parsed.args.pool, name: parsed.args.name || '' },
         poolFactory,
-        asset: parsed.args.erc20Token || null,
+        asset: parsed.args.erc20Token || parsed.args.paymentAsset || null,
         amount: null,
         tx: log.transactionHash,
         blockNumber: log.blockNumber,
@@ -154,17 +156,17 @@ async function fetchOnChainOperationHistory({
       const decimals = pool?.assetDecimals ?? communityTokenDecimals;
       const typeMap = {
         Deposited: 'DEPOSIT', Withdrawn: 'WITHDRAW', Locked: 'LOCK',
-        Unlocked: 'UNLOCK', Redeemed: 'REDEEM', SocialClaimed: 'SOCIALCLAIMED',
+        Unlocked: 'UNLOCK', Redeemed: 'REDEEM', SocialClaimed: 'SOCIALCLAIMED', NFTMinted: 'NFTMINT',
       };
-      const who = parsed.args.who || parsed.args.user;
+      const who = parsed.args.who || parsed.args.user || parsed.args.buyer;
       operations.push({
         id: historyId(log),
         type: typeMap[parsed.name],
         account: { id: who },
         pool: { id: log.address, name: pool?.name || '' },
         poolFactory: pool?.poolFactory || null,
-        asset: pool?.asset || null,
-        amount: ethers.formatUnits(parsed.args.amount, decimals),
+        asset: parsed.args.paymentAsset || pool?.asset || null,
+        amount: parsed.name === 'NFTMinted' ? null : ethers.formatUnits(parsed.args.amount ?? 0n, decimals),
         tx: log.transactionHash,
         blockNumber: log.blockNumber,
         logIndex: log.index,
@@ -520,7 +522,9 @@ function mapPool(raw, chainId) {
     poolIndex: raw.index,
     name: raw.name || '',
     status: raw.status || 'OPENED',
-    poolType: raw.poolType || guessPoolType(raw.poolFactory, chainId),
+    poolType: raw.poolType && raw.poolType !== 'UNKNOWN'
+      ? raw.poolType
+      : guessPoolType(raw.poolFactory, chainId),
     totalAmount: '0', // Will be read from chain
     asset: raw.asset,
     ratio: raw.ratio,
@@ -555,6 +559,7 @@ function guessPoolType(factoryAddress, chainId) {
     [contracts.ERC1155StakingFactory, 'ERC1155_STAKING'],
     [contracts.SPStakingFactory, 'SP_STAKING'],
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
+    [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || 'UNKNOWN';
 }
