@@ -1,22 +1,37 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { fetchCommunity } from '../config/subgraph';
 import { CommunityABI, ERC20ABI } from '../config/abis';
+import { SUPPORTED_CHAIN_IDS } from '../config/contracts';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useLanguage } from '../contexts/LanguageContext';
 import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
 
 export default function NFTMiningPoolDetail() {
   const { communityAddress, poolAddress } = useParams();
-  const { account, activeChainId, readProvider } = useWeb3();
+  const [searchParams] = useSearchParams();
+  const { account, activeChainId, readProvider, switchNetwork } = useWeb3();
   const { t } = useLanguage();
   const [pool, setPool] = useState(null);
   const [communityToken, setCommunityToken] = useState(null);
   const [communityOwner, setCommunityOwner] = useState('');
   const [loading, setLoading] = useState(true);
+  const requestedChainId = Number(searchParams.get('chainId'));
+  const hasRequestedNetwork = SUPPORTED_CHAIN_IDS.includes(requestedChainId);
+
+  useEffect(() => {
+    if (hasRequestedNetwork && activeChainId !== requestedChainId) {
+      switchNetwork(requestedChainId);
+    }
+  }, [activeChainId, hasRequestedNetwork, requestedChainId, switchNetwork]);
 
   const loadDetail = useCallback(async () => {
+    if (hasRequestedNetwork && activeChainId !== requestedChainId) {
+      setLoading(true);
+      return;
+    }
+
     setLoading(true);
     try {
       const community = await fetchCommunity(communityAddress, activeChainId);
@@ -66,7 +81,7 @@ export default function NFTMiningPoolDetail() {
     } finally {
       setLoading(false);
     }
-  }, [activeChainId, communityAddress, poolAddress, readProvider]);
+  }, [activeChainId, communityAddress, hasRequestedNetwork, poolAddress, readProvider, requestedChainId]);
 
   useEffect(() => {
     loadDetail();

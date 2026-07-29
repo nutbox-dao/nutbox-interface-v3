@@ -291,6 +291,7 @@ export default function NFTMiningPoolCard({
   const copyReferralLink = async (tokenId) => {
     const url = new URL(window.location.href);
     url.hash = '';
+    url.searchParams.set('chainId', String(network.id));
     if (tokenId) {
       url.searchParams.set('referrerTokenId', tokenId.toString());
     } else {
