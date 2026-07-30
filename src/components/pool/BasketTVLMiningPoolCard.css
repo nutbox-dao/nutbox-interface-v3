@@ -579,6 +579,20 @@
   font-size: var(--font-size-sm);
 }
 
+.basket-nft-reward .basket-nft-claim-button {
+  border: 1px solid rgba(115, 251, 211, 0.72);
+  background: rgba(115, 251, 211, 0.08);
+  box-shadow: 0 0 0 2px rgba(115, 251, 211, 0.06);
+  color: #73fbd3;
+  font-weight: 700;
+}
+
+.basket-nft-reward .basket-nft-claim-button:hover:not(:disabled) {
+  border-color: #73fbd3;
+  background: rgba(115, 251, 211, 0.14);
+  box-shadow: 0 6px 20px rgba(115, 251, 211, 0.16);
+}
+
 .basket-child-footer {
   display: flex;
   justify-content: space-between;

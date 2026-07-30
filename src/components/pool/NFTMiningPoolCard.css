@@ -294,6 +294,102 @@
   padding: var(--space-6);
 }
 
+.nft-mining-insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-5);
+  width: 100%;
+  margin-top: var(--space-6);
+}
+
+.nft-insight-panel {
+  min-width: 0;
+  padding: var(--space-5);
+}
+
+.nft-insight-heading h2,
+.nft-insight-heading p {
+  margin: 0;
+}
+
+.nft-insight-heading h2 {
+  font-size: var(--font-size-lg);
+}
+
+.nft-insight-heading p {
+  margin-top: var(--space-1);
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.nft-ranking-list,
+.nft-event-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-4);
+}
+
+.nft-ranking-row {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-glass);
+  font-size: var(--font-size-sm);
+}
+
+.nft-ranking-row > span,
+.nft-ranking-row small {
+  color: var(--color-text-tertiary);
+}
+
+.nft-ranking-row a {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+}
+
+.nft-ranking-row strong {
+  color: #73fbd3;
+}
+
+.nft-event-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-glass);
+  color: var(--color-text-primary);
+}
+
+.nft-event-row > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.nft-event-row span,
+.nft-event-row small {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.nft-insight-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  margin-top: var(--space-4);
+  color: var(--color-text-tertiary);
+}
+
 .owned-nft-heading {
   display: flex;
   align-items: center;
@@ -618,6 +714,18 @@
 }
 
 @media (max-width: 768px) {
+  .nft-mining-insights {
+    grid-template-columns: 1fr;
+  }
+
+  .nft-ranking-row {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+  }
+
+  .nft-ranking-row small {
+    display: none;
+  }
+
   .nft-batch-banner,
   .nft-pool-form-grid,
   .nft-admin-grid {

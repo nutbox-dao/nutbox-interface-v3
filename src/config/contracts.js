@@ -65,7 +65,8 @@ export const NETWORKS = {
     rpcUrls: ['https://rpc.mainnet.chain.robinhood.com/'],
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     explorerUrl: 'https://robinhoodchain.blockscout.com',
-    apiBase: import.meta.env.VITE_RH_NUTBOX_API_BASE || null,
+    apiBase: import.meta.env.VITE_RH_NUTBOX_API_BASE
+      || (import.meta.env.DEV ? '/nutbox' : 'https://bsc-api.tagai.fun/nutbox'),
     communityMetadataApiBase: import.meta.env.VITE_TAGAI_API_BASE || 'https://bsc-api.tagai.fun',
     contracts: RH_CONTRACTS,
     // RH does not deploy the block-based calculator; retained for display helpers.

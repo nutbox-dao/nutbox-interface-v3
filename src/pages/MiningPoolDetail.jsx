@@ -2,12 +2,11 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ethers } from 'ethers';
 import {
-  BasketTVLMiningPoolABI,
-  CommitteeABI,
   CommunityABI,
   ERC20ABI,
 } from '../config/abis';
 import { getChainPath } from '../config/contracts';
+import { fetchCommunity } from '../config/subgraph';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -25,93 +24,62 @@ export default function MiningPoolDetail() {
   const [pool, setPool] = useState(null);
   const [communityToken, setCommunityToken] = useState(null);
   const [communityOwner, setCommunityOwner] = useState('');
-  const [basketInitialData, setBasketInitialData] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const loadDetail = useCallback(async () => {
     setLoading(true);
     setCommunityToken(null);
-    setBasketInitialData(null);
     try {
-      const poolInterface = new ethers.Interface(BasketTVLMiningPoolABI);
-      const communityInterface = new ethers.Interface(CommunityABI);
-      const committeeInterface = new ethers.Interface(CommitteeABI);
-      const detail = await multicallRead(readProvider, contracts.Multicall3, [
-        { key: 'name', target: poolAddress, contractInterface: poolInterface, functionName: 'name' },
-        { key: 'factory', target: poolAddress, contractInterface: poolInterface, functionName: 'factory' },
-        { key: 'poolCommunity', target: poolAddress, contractInterface: poolInterface, functionName: 'community' },
-        { key: 'nftMiningPool', target: poolAddress, contractInterface: poolInterface, functionName: 'nftMiningPool', allowFailure: true },
-        { key: 'lockDuration', target: poolAddress, contractInterface: poolInterface, functionName: 'lockDuration', allowFailure: true },
-        { key: 'nftRewardBps', target: poolAddress, contractInterface: poolInterface, functionName: 'nftRewardBps', allowFailure: true },
-        { key: 'totalNav', target: poolAddress, contractInterface: poolInterface, functionName: 'getTotalStakedAmount', allowFailure: true },
-        { key: 'owner', target: communityAddress, contractInterface: communityInterface, functionName: 'owner' },
-        { key: 'communityToken', target: communityAddress, contractInterface: communityInterface, functionName: 'communityToken' },
-        { key: 'active', target: communityAddress, contractInterface: communityInterface, functionName: 'poolActived', args: [poolAddress] },
-        { key: 'ratio', target: communityAddress, contractInterface: communityInterface, functionName: 'poolRatios', args: [poolAddress] },
-        { key: 'operationFee', target: contracts.Committee, contractInterface: committeeInterface, functionName: 'getPoolOperationFee' },
-      ]);
-
-      if (detail.poolCommunity?.toLowerCase() !== communityAddress.toLowerCase()) {
-        throw new Error('Pool does not belong to this community');
+      const community = await fetchCommunity(
+        communityAddress,
+        activeChainId,
+        { includeHistory: false },
+      );
+      const indexedPool = community?.pools?.find(
+        item => item.id.toLowerCase() === poolAddress.toLowerCase(),
+      );
+      if (!indexedPool || !['BASKET_TVL_MINING', 'NFT_MINING'].includes(indexedPool.poolType)) {
+        throw new Error('Unsupported mining pool type');
       }
 
-      const factory = detail.factory?.toLowerCase();
-      const isBasket = Boolean(
-        contracts.BasketTVLMiningPoolFactory
-        && factory === contracts.BasketTVLMiningPoolFactory.toLowerCase()
-      );
-      const isNft = Boolean(
-        contracts.NFTMiningPoolFactory
-        && factory === contracts.NFTMiningPoolFactory.toLowerCase()
-      );
-      if (!isBasket && !isNft) throw new Error('Unsupported mining pool type');
-
-      setPool({
-        id: ethers.getAddress(poolAddress),
-        name: detail.name,
-        poolType: isBasket ? 'BASKET_TVL_MINING' : 'NFT_MINING',
-        ratio: Number(detail.ratio || 0),
-        status: detail.active ? 'OPENED' : 'CLOSED',
-      });
-      setCommunityOwner(detail.owner || '');
-      if (isBasket) {
-        setBasketInitialData({
-          name: detail.name,
-          nftMiningPool: detail.nftMiningPool,
-          lockDuration: detail.lockDuration || 0n,
-          nftRewardBps: Number(detail.nftRewardBps || 0),
-          totalNav: detail.totalNav || 0n,
-          operationFee: detail.operationFee || 0n,
-        });
-      }
+      setPool(indexedPool);
+      setCommunityOwner(community.owner?.id || '');
       setLoading(false);
 
-      const tokenInterface = new ethers.Interface(ERC20ABI);
-      multicallRead(readProvider, contracts.Multicall3, [
-        { key: 'name', target: detail.communityToken, contractInterface: tokenInterface, functionName: 'name' },
-        { key: 'symbol', target: detail.communityToken, contractInterface: tokenInterface, functionName: 'symbol' },
-        { key: 'decimals', target: detail.communityToken, contractInterface: tokenInterface, functionName: 'decimals' },
-      ]).then(token => {
+      try {
+        const communityInterface = new ethers.Interface(CommunityABI);
+        const tokenInterface = new ethers.Interface(ERC20ABI);
+        const detail = await multicallRead(readProvider, contracts.Multicall3, [
+          { key: 'active', target: communityAddress, contractInterface: communityInterface, functionName: 'poolActived', args: [poolAddress] },
+          { key: 'ratio', target: communityAddress, contractInterface: communityInterface, functionName: 'poolRatios', args: [poolAddress] },
+          { key: 'name', target: community.cToken, contractInterface: tokenInterface, functionName: 'name' },
+          { key: 'symbol', target: community.cToken, contractInterface: tokenInterface, functionName: 'symbol' },
+          { key: 'decimals', target: community.cToken, contractInterface: tokenInterface, functionName: 'decimals' },
+        ]);
+
+        setPool(current => current ? ({
+          ...current,
+          ratio: Number(detail.ratio || 0),
+          status: detail.active ? 'OPENED' : 'CLOSED',
+        }) : current);
         setCommunityToken({
-          address: detail.communityToken,
-          name: token.name,
-          symbol: token.symbol,
-          decimals: Number(token.decimals),
+          address: community.cToken,
+          name: detail.name,
+          symbol: detail.symbol,
+          decimals: Number(detail.decimals),
         });
-      }).catch(error => {
-        console.error('Failed to load community token metadata:', error);
-      });
+      } catch (error) {
+        console.error('Failed to refresh mining pool chain state:', error);
+      }
     } catch (error) {
       console.error('Failed to load mining pool detail:', error);
       setPool(null);
       setLoading(false);
     }
   }, [
+    activeChainId,
     communityAddress,
-    contracts.BasketTVLMiningPoolFactory,
-    contracts.Committee,
     contracts.Multicall3,
-    contracts.NFTMiningPoolFactory,
     poolAddress,
     readProvider,
   ]);
@@ -177,7 +145,6 @@ export default function MiningPoolDetail() {
           pool={pool}
           communityAddress={communityAddress}
           communityToken={communityToken}
-          initialData={basketInitialData}
           onRefresh={loadDetail}
           detail
         />

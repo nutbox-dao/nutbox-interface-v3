@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import { Link } from 'react-router-dom';
 import { useWeb3 } from '../../contexts/Web3Context';
@@ -6,7 +6,19 @@ import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { CommunityABI, ERC20ABI, NFTMiningPoolABI } from '../../config/abis';
 import { getChainPath } from '../../config/contracts';
-import { copyToClipboard, formatTokenAmount, getPoolTypeBadgeClass } from '../../utils/helpers';
+import {
+  fetchNftMiningAccounts,
+  fetchNftMiningEvents,
+  fetchNftMiningNfts,
+  fetchNftMiningPool,
+} from '../../config/subgraph';
+import {
+  copyToClipboard,
+  formatDate,
+  formatTokenAmount,
+  getPoolTypeBadgeClass,
+  shortenAddress,
+} from '../../utils/helpers';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './NFTMiningPoolCard.css';
 
@@ -21,8 +33,25 @@ const EMPTY_BATCH = {
   minted: 0n,
 };
 
+const NFT_EVENT_LABELS = {
+  NFT_MINTED: 'nftPool.eventMinted',
+  NFT_LEVEL_UP: 'nftPool.eventLevelUp',
+  NFT_REFERRAL_RECORDED: 'nftPool.eventReferralRecorded',
+  NFT_PLATFORM_FEE_PAID: 'nftPool.eventPlatformFeePaid',
+  NFT_MINING_WEIGHT_MOVED: 'nftPool.eventMiningWeightMoved',
+  NFT_TRANSFERRED: 'nftPool.eventTransferred',
+};
+
 function svgDataUrl(svg) {
   return svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : '';
+}
+
+function toBigInt(value, fallback = 0n) {
+  try {
+    return value === null || value === undefined || value === '' ? fallback : BigInt(value);
+  } catch {
+    return fallback;
+  }
 }
 
 export default function NFTMiningPoolCard({
@@ -58,49 +87,59 @@ export default function NFTMiningPoolCard({
   const [showAdmin, setShowAdmin] = useState(false);
   const [newBatch, setNewBatch] = useState({ supply: '', paymentAsset: '', price: '', referralPercent: '10' });
   const [newReceiver, setNewReceiver] = useState('');
+  const [topAccounts, setTopAccounts] = useState([]);
+  const [recentEvents, setRecentEvents] = useState([]);
+  const [insightsLoading, setInsightsLoading] = useState(detail);
+  const loadRequestRef = useRef(0);
 
   const isNativePayment = batch.paymentAsset === ethers.ZeroAddress;
 
   const loadPoolData = useCallback(async () => {
     if (!readProvider) return;
+    const requestId = ++loadRequestRef.current;
     try {
+      const indexedPool = await fetchNftMiningPool(pool.id, network.id);
+      if (!indexedPool) throw new Error('NFT mining pool is not indexed');
       const poolContract = new ethers.Contract(pool.id, NFTMiningPoolABI, readProvider);
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, readProvider);
-      const [name, symbol, currentBatchId, supply, weight, levelCount] = await Promise.all([
-        poolContract.name(),
-        poolContract.symbol(),
-        poolContract.currentBatchId(),
-        poolContract.totalSupply(),
-        poolContract.getTotalStakedAmount(),
-        poolContract.levelCount(),
-      ]);
-      const levelIndexes = Array.from({ length: Number(levelCount) }, (_, index) => index);
-      const [thresholds, weights] = await Promise.all([
-        Promise.all(levelIndexes.map(index => poolContract.levelThresholds(index))),
-        Promise.all(levelIndexes.map(index => poolContract.levelWeights(index))),
-      ]);
-      const rawBatch = currentBatchId > 0n ? await poolContract.batches(currentBatchId) : null;
+      const nextBatchId = toBigInt(indexedPool.currentBatchId);
+      const rawBatch = (indexedPool.batches || []).find(
+        item => toBigInt(item.batchId) === nextBatchId,
+      );
       const nextBatch = rawBatch ? {
         paymentAsset: rawBatch.paymentAsset,
         referralBps: Number(rawBatch.referralBps),
         paletteId: Number(rawBatch.paletteId),
-        active: rawBatch.active,
-        paused: rawBatch.paused,
-        mintPrice: rawBatch.mintPrice,
-        maxSupply: rawBatch.maxSupply,
-        minted: rawBatch.minted,
+        active: Boolean(Number(rawBatch.active)),
+        paused: Boolean(Number(rawBatch.paused)),
+        mintPrice: toBigInt(rawBatch.mintPrice),
+        maxSupply: toBigInt(rawBatch.maxSupply),
+        minted: toBigInt(rawBatch.minted),
       } : EMPTY_BATCH;
 
-      setCollection({ name, symbol });
-      setCurrentBatchId(currentBatchId);
+      if (requestId !== loadRequestRef.current) return;
+      setCollection({
+        name: indexedPool.name || pool.name || t('nftPool.fallbackName'),
+        symbol: indexedPool.symbol || 'NFT',
+      });
+      setCurrentBatchId(nextBatchId);
       setBatch(nextBatch);
-      setTotalSupply(supply);
-      setTotalWeight(weight);
-      setUpgradeLevels(levelIndexes.map(index => ({
-        level: index + 1,
-        threshold: thresholds[index],
-        weight: weights[index],
-      })));
+      setTotalSupply(toBigInt(indexedPool.totalSupply));
+      setTotalWeight(toBigInt(indexedPool.totalMiningWeight));
+      setLoading(false);
+
+      if (detail) {
+        const levelCount = await poolContract.levelCount().catch(() => 0n);
+        const levelIndexes = Array.from({ length: Number(levelCount) }, (_, index) => index);
+        const levels = await Promise.all(levelIndexes.map(async index => {
+          const [threshold, weight] = await Promise.all([
+            poolContract.levelThresholds(index),
+            poolContract.levelWeights(index),
+          ]);
+          return { level: index + 1, threshold, weight };
+        }));
+        if (requestId === loadRequestRef.current) setUpgradeLevels(levels);
+      }
 
       let nextPaymentInfo = { symbol: network.nativeCurrency.symbol, decimals: 18 };
       if (nextBatch.paymentAsset !== ethers.ZeroAddress) {
@@ -111,7 +150,7 @@ export default function NFTMiningPoolCard({
         ]);
         nextPaymentInfo = { symbol: paymentSymbol, decimals: Number(paymentDecimals) };
       }
-      setPaymentInfo(nextPaymentInfo);
+      if (requestId === loadRequestRef.current) setPaymentInfo(nextPaymentInfo);
 
       if (account) {
         const [weightOfUser, pending, ownedBalance] = await Promise.all([
@@ -119,33 +158,57 @@ export default function NFTMiningPoolCard({
           communityContract.getPoolPendingRewards(pool.id, account).catch(() => 0n),
           poolContract.balanceOf(account),
         ]);
+        if (requestId !== loadRequestRef.current) return;
         setUserWeight(weightOfUser);
         setPendingRewards(pending);
         setOwnedNFTCount(ownedBalance);
 
-        const pageSize = 50n;
-        const tokenPages = [];
         if (detail) {
-          for (let offset = 0n; offset < ownedBalance; offset += pageSize) {
-            tokenPages.push(poolContract.tokensOfOwner(account, offset, pageSize));
+          const firstPage = await fetchNftMiningNfts(
+            pool.id,
+            { owner: account, page: 0, size: 100 },
+            network.id,
+          );
+          const pages = [firstPage];
+          const totalPages = Math.ceil((firstPage.total || 0) / 100);
+          if (totalPages > 1) {
+            const remaining = await Promise.all(
+              Array.from({ length: totalPages - 1 }, (_, index) => (
+                fetchNftMiningNfts(
+                  pool.id,
+                  { owner: account, page: index + 1, size: 100 },
+                  network.id,
+                )
+              )),
+            );
+            pages.push(...remaining);
           }
+          const nftItems = pages.flatMap(page => page.list || []).map(item => ({
+            tokenId: toBigInt(item.tokenId),
+            level: Number(item.level || 0),
+            referralCount: toBigInt(item.referralCount),
+            miningWeight: toBigInt(item.miningWeight),
+            image: '',
+          }));
+          if (requestId !== loadRequestRef.current) return;
+          setOwnedNFTs(nftItems);
+          setOwnedNFTAccount(account.toLowerCase());
+
+          Promise.all(nftItems.map(async item => ({
+            tokenId: item.tokenId,
+            image: svgDataUrl(await poolContract.tokenSVG(item.tokenId).catch(() => '')),
+          }))).then(images => {
+            if (requestId !== loadRequestRef.current) return;
+            const imageByToken = new Map(images.map(item => [item.tokenId.toString(), item.image]));
+            setOwnedNFTs(current => current.map(item => ({
+              ...item,
+              image: imageByToken.get(item.tokenId.toString()) || '',
+            })));
+          });
+        } else {
+          setOwnedNFTs([]);
+          setOwnedNFTAccount(account.toLowerCase());
         }
-        const tokenIds = (await Promise.all(tokenPages)).flat();
-        const nftItems = await Promise.all(tokenIds.map(async tokenId => {
-          const [info, svg] = await Promise.all([
-            poolContract.getNFTInfo(tokenId),
-            poolContract.tokenSVG(tokenId).catch(() => ''),
-          ]);
-          return {
-            tokenId,
-            level: Number(info.level),
-            referralCount: info.referralCount,
-            miningWeight: info.miningWeight,
-            image: svgDataUrl(svg),
-          };
-        }));
-        setOwnedNFTs(nftItems);
-        setOwnedNFTAccount(account.toLowerCase());
 
         if (nextBatch.paymentAsset !== ethers.ZeroAddress) {
           const paymentToken = new ethers.Contract(nextBatch.paymentAsset, ERC20ABI, readProvider);
@@ -164,15 +227,46 @@ export default function NFTMiningPoolCard({
     } catch (error) {
       console.error('Failed to load NFT mining pool:', error);
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
-  }, [account, communityAddress, detail, network.nativeCurrency.symbol, pool.id, readProvider]);
+  }, [
+    account,
+    communityAddress,
+    detail,
+    network.id,
+    network.nativeCurrency.symbol,
+    pool.id,
+    pool.name,
+    readProvider,
+    t,
+  ]);
 
   useEffect(() => {
     loadPoolData();
     const timer = setInterval(loadPoolData, 15000);
     return () => clearInterval(timer);
   }, [loadPoolData]);
+
+  useEffect(() => {
+    if (!detail) return undefined;
+    let cancelled = false;
+    setInsightsLoading(true);
+    Promise.all([
+      fetchNftMiningAccounts(pool.id, { page: 0, size: 10 }, network.id),
+      fetchNftMiningEvents(pool.id, { page: 0, size: 10 }, network.id),
+    ]).then(([accountsData, eventsData]) => {
+      if (cancelled) return;
+      setTopAccounts(accountsData.list || []);
+      setRecentEvents(eventsData.list || []);
+    }).catch(error => {
+      console.error('Failed to load NFT mining insights:', error);
+    }).finally(() => {
+      if (!cancelled) setInsightsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail, network.id, pool.id]);
 
   useEffect(() => {
     if (!detail) return;
@@ -602,6 +696,76 @@ export default function NFTMiningPoolCard({
               ))}
             </div>
           )}
+        </section>
+      )}
+
+      {detail && (
+        <section className="nft-mining-insights">
+          <div className="nft-insight-panel glass-card">
+            <div className="nft-insight-heading">
+              <div>
+                <h2>{t('nftPool.holderRanking')}</h2>
+                <p>{t('nftPool.holderRankingDescription')}</p>
+              </div>
+            </div>
+            {insightsLoading ? (
+              <div className="nft-insight-empty"><span className="spinner" /></div>
+            ) : topAccounts.length === 0 ? (
+              <div className="nft-insight-empty">{t('nftPool.noRankingData')}</div>
+            ) : (
+              <div className="nft-ranking-list">
+                {topAccounts.map((item, index) => (
+                  <div className="nft-ranking-row" key={item.account}>
+                    <span>#{index + 1}</span>
+                    <a href={`${network.explorerUrl}/address/${item.account}`} target="_blank" rel="noopener noreferrer">
+                      {shortenAddress(item.account)}
+                    </a>
+                    <strong>{item.miningWeight}</strong>
+                    <small>{t('nftPool.rankingNftCount', { count: item.nftCount })}</small>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="nft-insight-panel glass-card">
+            <div className="nft-insight-heading">
+              <div>
+                <h2>{t('nftPool.recentActivity')}</h2>
+                <p>{t('nftPool.recentActivityDescription')}</p>
+              </div>
+            </div>
+            {insightsLoading ? (
+              <div className="nft-insight-empty"><span className="spinner" /></div>
+            ) : recentEvents.length === 0 ? (
+              <div className="nft-insight-empty">{t('nftPool.noActivityData')}</div>
+            ) : (
+              <div className="nft-event-list">
+                {recentEvents.map(event => {
+                  const txHash = event.transactionHash?.startsWith('0x')
+                    ? event.transactionHash
+                    : `0x${event.transactionHash}`;
+                  return (
+                    <a
+                      className="nft-event-row"
+                      href={`${network.explorerUrl}/tx/${txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      key={event.id}
+                    >
+                      <div>
+                        <strong>{t(NFT_EVENT_LABELS[event.eventType] || 'nftPool.eventOther')}</strong>
+                        <span>
+                          {event.tokenId ? `NFT #${event.tokenId}` : shortenAddress(event.account)}
+                        </span>
+                      </div>
+                      <small>{formatDate(event.blockTimestamp)}</small>
+                    </a>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </section>
       )}
 

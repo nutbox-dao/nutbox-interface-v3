@@ -38,6 +38,7 @@ export default function BasketStakePoolCard({
   const claimable = data?.claimable || 0n;
   const redeemRequests = data?.redeemRequests || [];
   const nftOwner = data?.nftOwner || '';
+  const liveError = data?.liveError || false;
 
   const execute = async (key, pendingMessage, successMessage, transaction) => {
     setActionLoading(key);
@@ -134,6 +135,11 @@ export default function BasketStakePoolCard({
 
       {isConnected && (
         <>
+          {liveError && (
+            <div className="contract-field-feedback is-error">
+              {t('basketPool.liveDataUnavailable')}
+            </div>
+          )}
           <div className="basket-user-rewards">
             <div>
               <span>{t('basketPool.yourStake')}</span>
@@ -276,7 +282,7 @@ export default function BasketStakePoolCard({
         </div>
         {isConnected && pendingNftRewards > 0n && (
           <button
-            className="btn btn-ghost btn-sm"
+            className="btn btn-ghost btn-sm basket-nft-claim-button"
             disabled={Boolean(actionLoading)}
             onClick={() => execute(
               'claim-nft',

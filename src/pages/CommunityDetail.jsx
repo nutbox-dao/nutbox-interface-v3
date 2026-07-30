@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ethers } from 'ethers';
-import { fetchCommunity } from '../config/subgraph';
+import { fetchCommunity, fetchCommunityHistory } from '../config/subgraph';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -53,7 +53,17 @@ export default function CommunityDetail() {
   // Load community data from subgraph
   const loadCommunity = useCallback(async () => {
     try {
-      const data = await fetchCommunity(address, activeChainId);
+      const data = await fetchCommunity(
+        address,
+        activeChainId,
+        { includeHistory: false },
+      );
+      setCommunity(data);
+      setLoading(false);
+
+      fetchCommunityHistory(address, activeChainId).then(operationHistory => {
+        setCommunity(current => current ? ({ ...current, operationHistory }) : current);
+      });
 
       // Load real-time pool ratios and active statuses on-chain using slot 10 direct query to override indexer lag/bugs
       if (communityContract && data && data.pools) {
@@ -80,13 +90,11 @@ export default function CommunityDetail() {
               status: isActive ? 'OPENED' : 'CLOSED'
             };
           }));
-          data.pools = updatedPools;
+          setCommunity(current => current ? ({ ...current, pools: updatedPools }) : current);
         } catch (err) {
           console.error('Failed to load on-chain ratios via slot 10:', err);
         }
       }
-
-      setCommunity(data);
 
       // Load token info
       if (data?.cToken) {

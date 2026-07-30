@@ -12,8 +12,17 @@ import {
   NFTMiningPoolABI,
 } from '../../config/abis';
 import { getChainPath } from '../../config/contracts';
-import { fetchBasketChildPools, registerBasketChildPool } from '../../config/subgraph';
-import { formatDuration, formatTokenAmount, getPoolTypeBadgeClass } from '../../utils/helpers';
+import {
+  fetchBasketChildLive,
+  fetchBasketMiningPool,
+  fetchNftMiningNfts,
+  registerBasketChildPool,
+} from '../../config/subgraph';
+import {
+  formatDuration,
+  formatTokenAmount,
+  getPoolTypeBadgeClass,
+} from '../../utils/helpers';
 import { multicallRead } from '../../utils/multicall';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import BasketStakePoolCard from './BasketStakePoolCard';
@@ -22,6 +31,14 @@ import './BasketTVLMiningPoolCard.css';
 const MAX_BASKET_POOLS_PER_NFT = 3;
 const NAV_MATCH_THRESHOLD_BPS = 100n;
 const NAV_REFRESH_THRESHOLD_BPS = 500n;
+
+function toBigInt(value, fallback = 0n) {
+  try {
+    return value === null || value === undefined || value === '' ? fallback : BigInt(value);
+  } catch {
+    return fallback;
+  }
+}
 
 function getNavStatus(miningAmount, actualNav) {
   if (actualNav === null || actualNav === undefined) return 'unknown';
@@ -73,30 +90,31 @@ export default function BasketTVLMiningPoolCard({
   const loadParentData = useCallback(async () => {
     if (!readProvider) return;
     try {
-      const parentInterface = new ethers.Interface(BasketTVLMiningPoolABI);
       const committeeInterface = new ethers.Interface(CommitteeABI);
-      const data = await multicallRead(readProvider, contracts.Multicall3, [
-        { key: 'name', target: pool.id, contractInterface: parentInterface, functionName: 'name' },
-        { key: 'nftMiningPool', target: pool.id, contractInterface: parentInterface, functionName: 'nftMiningPool' },
-        { key: 'lockDuration', target: pool.id, contractInterface: parentInterface, functionName: 'lockDuration' },
-        { key: 'nftRewardBps', target: pool.id, contractInterface: parentInterface, functionName: 'nftRewardBps' },
-        { key: 'totalNav', target: pool.id, contractInterface: parentInterface, functionName: 'getTotalStakedAmount' },
-        { key: 'operationFee', target: contracts.Committee, contractInterface: committeeInterface, functionName: 'getPoolOperationFee' },
+      const [indexed, feeData] = await Promise.all([
+        fetchBasketMiningPool(pool.id, network.id),
+        detail
+          ? multicallRead(readProvider, contracts.Multicall3, [
+            { key: 'operationFee', target: contracts.Committee, contractInterface: committeeInterface, functionName: 'getPoolOperationFee' },
+          ])
+          : Promise.resolve({ operationFee: 0n }),
       ]);
+      if (!indexed) throw new Error('Basket TVL pool is not indexed');
       setPoolConfig({
-        name: data.name,
-        nftMiningPool: data.nftMiningPool,
-        lockDuration: data.lockDuration,
-        nftRewardBps: Number(data.nftRewardBps),
+        name: indexed.name,
+        nftMiningPool: indexed.nftMiningPool,
+        lockDuration: toBigInt(indexed.lockDuration),
+        nftRewardBps: Number(indexed.nftRewardBps || 0),
       });
-      setTotalNav(data.totalNav);
-      setOperationFee(data.operationFee);
+      setTotalNav(toBigInt(indexed.totalMiningAmount));
+      setBasketCount(Number(indexed.basketCount || indexed.children?.length || 0));
+      setOperationFee(feeData.operationFee || 0n);
     } catch (error) {
       console.error('Failed to load Basket TVL parent pool:', error);
     } finally {
       setLoading(false);
     }
-  }, [contracts.Committee, contracts.Multicall3, pool.id, readProvider]);
+  }, [contracts.Committee, contracts.Multicall3, detail, network.id, pool.id, readProvider]);
 
   useEffect(() => {
     if (initialData) {
@@ -121,13 +139,34 @@ export default function BasketTVLMiningPoolCard({
     setChildrenLoading(true);
     setChildrenError(false);
     try {
+      const indexedParent = await fetchBasketMiningPool(pool.id, network.id);
+      if (!indexedParent) throw new Error('Basket TVL pool is not indexed');
+      const indexedChildrenByBasket = new Map(
+        (indexedParent.children || []).map(child => [child.basket.toLowerCase(), child]),
+      );
       const childrenByBasket = new Map();
-      const indexedChildren = await fetchBasketChildPools(pool.id, network.id);
-      indexedChildren.forEach(child => {
-        childrenByBasket.set(child.basket.toLowerCase(), {
+      (indexedParent.stakes || []).forEach(stake => {
+        const indexedChild = indexedChildrenByBasket.get(stake.basket.toLowerCase()) || {};
+        childrenByBasket.set(stake.basket.toLowerCase(), {
+          basket: ethers.getAddress(stake.basket),
+          childPool: ethers.getAddress(stake.childPool || indexedChild.childPool),
+          basketCreator: stake.creator || indexedChild.basketCreator || '',
+          nftTokenId: toBigInt(stake.nftTokenId ?? indexedChild.nftTokenId),
+          miningAmount: toBigInt(stake.miningAmount),
+          updatedAt: toBigInt(stake.chainUpdatedAt ?? stake.updatedAt),
+          totalStakedAmount: toBigInt(indexedChild.totalStakedAmount),
+        });
+      });
+      indexedChildrenByBasket.forEach((child, key) => {
+        if (childrenByBasket.has(key)) return;
+        childrenByBasket.set(key, {
           basket: ethers.getAddress(child.basket),
           childPool: ethers.getAddress(child.childPool),
-          nftTokenId: BigInt(child.nftTokenId),
+          basketCreator: child.basketCreator || '',
+          nftTokenId: toBigInt(child.nftTokenId),
+          miningAmount: 0n,
+          updatedAt: toBigInt(child.updatedAt),
+          totalStakedAmount: toBigInt(child.totalStakedAmount),
         });
       });
       const children = [...childrenByBasket.values()];
@@ -154,12 +193,10 @@ export default function BasketTVLMiningPoolCard({
       children.forEach(child => {
         const key = child.basket.toLowerCase();
         calls.push(
-          { key: `${key}:stake`, target: pool.id, contractInterface: parentInterface, functionName: 'getBasketStake', args: [child.basket] },
           { key: `${key}:actualNav`, target: pool.id, contractInterface: parentInterface, functionName: 'basketNavWeth', args: [child.basket], allowFailure: true },
           { key: `${key}:name`, target: child.basket, contractInterface: tokenInterface, functionName: 'name', allowFailure: true },
           { key: `${key}:symbol`, target: child.basket, contractInterface: tokenInterface, functionName: 'symbol', allowFailure: true },
           { key: `${key}:decimals`, target: child.basket, contractInterface: tokenInterface, functionName: 'decimals', allowFailure: true },
-          { key: `${key}:totalStaked`, target: child.childPool, contractInterface: childInterface, functionName: 'totalStakedAmount', allowFailure: true },
           { key: `${key}:pendingNftRewards`, target: child.childPool, contractInterface: childInterface, functionName: 'pendingNftRewards', allowFailure: true },
         );
         if (ethers.isAddress(poolConfig.nftMiningPool)) {
@@ -174,18 +211,24 @@ export default function BasketTVLMiningPoolCard({
         }
         if (account) {
           calls.push(
-            { key: `${key}:userStaked`, target: child.childPool, contractInterface: childInterface, functionName: 'getUserStakedAmount', args: [account], allowFailure: true },
             { key: `${key}:userBalance`, target: child.basket, contractInterface: tokenInterface, functionName: 'balanceOf', args: [account], allowFailure: true },
             { key: `${key}:allowance`, target: child.basket, contractInterface: tokenInterface, functionName: 'allowance', args: [account, child.childPool], allowFailure: true },
-            { key: `${key}:pendingRewards`, target: child.childPool, contractInterface: childInterface, functionName: 'pendingRewards', args: [account], allowFailure: true },
-            { key: `${key}:pendingHolderFees`, target: child.childPool, contractInterface: childInterface, functionName: 'pendingHolderFees', args: [account], allowFailure: true },
-            { key: `${key}:claimable`, target: child.childPool, contractInterface: childInterface, functionName: 'claimableAmount', args: [account], allowFailure: true },
-            { key: `${key}:redeemRequests`, target: child.childPool, contractInterface: childInterface, functionName: 'redeemRequests', args: [account], allowFailure: true },
           );
         }
       });
 
-      const data = await multicallRead(readProvider, contracts.Multicall3, calls);
+      const [data, liveResults] = await Promise.all([
+        multicallRead(readProvider, contracts.Multicall3, calls),
+        account
+          ? Promise.all(children.map(child => (
+            fetchBasketChildLive(child.childPool, account, network.id).catch(() => null)
+          )))
+          : Promise.resolve(children.map(() => null)),
+      ]);
+      const liveByChildPool = new Map(children.map((child, index) => [
+        child.childPool.toLowerCase(),
+        liveResults[index],
+      ]));
       const holderFeeInfo = {
         address: contracts.WETH,
         symbol: data.holderSymbol || 'WETH',
@@ -194,20 +237,20 @@ export default function BasketTVLMiningPoolCard({
       const stakes = children
         .map(child => {
           const key = child.basket.toLowerCase();
-          const stake = data[`${key}:stake`];
           const actualNav = data[`${key}:actualNav`];
-          const navStatus = getNavStatus(stake.miningAmount, actualNav);
+          const navStatus = getNavStatus(child.miningAmount, actualNav);
           return {
             basket: child.basket,
-            basketCreator: stake.basketCreator,
-            childPool: stake.childPool,
-            nftTokenId: stake.nftTokenId,
-            miningAmount: stake.miningAmount,
+            basketCreator: child.basketCreator,
+            childPool: child.childPool,
+            nftTokenId: child.nftTokenId,
+            miningAmount: child.miningAmount,
             actualNav,
             navStatus,
             navNeedsRefresh: navStatus === 'stale',
-            updatedAt: stake.updatedAt,
-            exists: stake.exists,
+            updatedAt: child.updatedAt,
+            totalStakedAmount: child.totalStakedAmount,
+            exists: true,
           };
         })
         .filter(stake => stake.exists)
@@ -219,6 +262,8 @@ export default function BasketTVLMiningPoolCard({
       setBasketCount(stakes.length);
       setChildDataByBasket(Object.fromEntries(stakes.map(stake => {
         const key = stake.basket.toLowerCase();
+        const liveResult = liveByChildPool.get(stake.childPool.toLowerCase());
+        const live = liveResult?.live;
         return [key, {
           tokenInfo: {
             address: stake.basket,
@@ -227,16 +272,24 @@ export default function BasketTVLMiningPoolCard({
             decimals: Number(data[`${key}:decimals`] || 18),
           },
           holderFeeInfo,
-          totalStaked: data[`${key}:totalStaked`] || 0n,
-          userStaked: data[`${key}:userStaked`] || 0n,
+          totalStaked: stake.totalStakedAmount,
+          userStaked: toBigInt(live?.userInfo?.amount),
           userBalance: data[`${key}:userBalance`] || 0n,
           allowance: data[`${key}:allowance`] || 0n,
-          pendingRewards: data[`${key}:pendingRewards`] || 0n,
-          pendingHolderFees: data[`${key}:pendingHolderFees`] || 0n,
-          pendingNftRewards: data[`${key}:pendingNftRewards`] || 0n,
-          claimable: data[`${key}:claimable`] || 0n,
-          redeemRequests: [...(data[`${key}:redeemRequests`] || [])],
+          pendingRewards: toBigInt(live?.pendingRewards),
+          pendingHolderFees: toBigInt(live?.pendingHolderFees),
+          pendingNftRewards: live
+            ? toBigInt(live.pendingNftRewards)
+            : (data[`${key}:pendingNftRewards`] || 0n),
+          claimable: toBigInt(live?.claimableAmount),
+          redeemRequests: (live?.redeemRequests || []).map(request => ({
+            tokenAmount: toBigInt(request.tokenAmount),
+            claimed: toBigInt(request.claimed),
+            startTime: toBigInt(request.startTime),
+            endTime: toBigInt(request.endTime),
+          })),
           nftOwner: data[`${key}:nftOwner`] || '',
+          liveError: Boolean(account && !liveResult),
         }];
       })));
     } catch (error) {
@@ -273,16 +326,25 @@ export default function BasketTVLMiningPoolCard({
     let cancelled = false;
     const loadOwnedNfts = async () => {
       try {
-        const nftInterface = new ethers.Interface(NFTMiningPoolABI);
         const parentInterface = new ethers.Interface(BasketTVLMiningPoolABI);
-        const owned = await multicallRead(readProvider, contracts.Multicall3, [{
-          key: 'ids',
-          target: poolConfig.nftMiningPool,
-          contractInterface: nftInterface,
-          functionName: 'tokensOfOwner',
-          args: [account, 0, 50],
-        }]);
-        const ids = [...(owned.ids || [])];
+        const firstPage = await fetchNftMiningNfts(
+          poolConfig.nftMiningPool,
+          { owner: account, page: 0, size: 100 },
+          network.id,
+        );
+        const pageCount = Math.ceil((firstPage.total || 0) / 100);
+        const remainingPages = pageCount > 1
+          ? await Promise.all(Array.from({ length: pageCount - 1 }, (_, index) => (
+            fetchNftMiningNfts(
+              poolConfig.nftMiningPool,
+              { owner: account, page: index + 1, size: 100 },
+              network.id,
+            )
+          )))
+          : [];
+        const ids = [firstPage, ...remainingPages]
+          .flatMap(page => page.list || [])
+          .map(item => toBigInt(item.tokenId));
         const counts = ids.length > 0
           ? await multicallRead(readProvider, contracts.Multicall3, ids.map(id => ({
             key: id.toString(),
@@ -320,6 +382,7 @@ export default function BasketTVLMiningPoolCard({
     detail,
     pool.id,
     poolConfig.nftMiningPool,
+    network.id,
     readProvider,
     showRegister,
   ]);
@@ -608,6 +671,7 @@ export default function BasketTVLMiningPoolCard({
               ))}
             </div>
           </section>
+
         </>
       )}
 

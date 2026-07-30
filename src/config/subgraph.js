@@ -6,6 +6,21 @@ import { ethers } from 'ethers';
 import { CommunityABI, CommunityFactoryABI } from './abis';
 
 const onChainCommunityCache = new Map();
+const miningReadCache = new Map();
+
+async function cachedMiningRead(key, read, ttl = 5_000) {
+  const cached = miningReadCache.get(key);
+  if (cached && cached.expiresAt > Date.now()) return cached.promise;
+
+  const promise = read();
+  miningReadCache.set(key, { promise, expiresAt: Date.now() + ttl });
+  try {
+    return await promise;
+  } catch (error) {
+    miningReadCache.delete(key);
+    throw error;
+  }
+}
 
 function normalizeArray(value) {
   if (Array.isArray(value)) return value;
@@ -379,6 +394,146 @@ export async function registerBasketChildPool(parentPool, txHash, chainId = DEFA
   return data.child;
 }
 
+function buildQuery(params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      query.set(key, String(value));
+    }
+  });
+  const value = query.toString();
+  return value ? `?${value}` : '';
+}
+
+export async function fetchNftMiningPool(pool, chainId = DEFAULT_CHAIN_ID) {
+  const data = await cachedMiningRead(
+    `nft-pool:${chainId}:${pool.toLowerCase()}`,
+    () => fetchAPI(
+      `/mining/nft-pools/${encodeURIComponent(pool)}`,
+      chainId,
+    ),
+  );
+  return data.pool || null;
+}
+
+export async function fetchNftMiningNfts(
+  pool,
+  { owner, page = 0, size = 100 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/nft-pools/${encodeURIComponent(pool)}/nfts${buildQuery({
+      owner,
+      page,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export async function fetchNftMiningAccounts(
+  pool,
+  { page = 0, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/nft-pools/${encodeURIComponent(pool)}/accounts${buildQuery({ page, size })}`,
+    chainId,
+  );
+}
+
+export async function fetchNftMiningEvents(
+  pool,
+  { account, eventType, page = 0, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/nft-pools/${encodeURIComponent(pool)}/events${buildQuery({
+      account,
+      eventType,
+      page,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export async function fetchBasketMiningPool(parentPool, chainId = DEFAULT_CHAIN_ID) {
+  const data = await cachedMiningRead(
+    `basket-pool:${chainId}:${parentPool.toLowerCase()}`,
+    () => fetchAPI(
+      `/mining/basket-pools/${encodeURIComponent(parentPool)}`,
+      chainId,
+    ),
+  );
+  return data.pool || null;
+}
+
+export async function fetchBasketMiningEvents(
+  parentPool,
+  { eventType, page = 0, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/basket-pools/${encodeURIComponent(parentPool)}/events${buildQuery({
+      eventType,
+      page,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export async function fetchBasketChildPool(
+  childPool,
+  { account } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  const data = await fetchAPI(
+    `/mining/basket-child-pools/${encodeURIComponent(childPool)}${buildQuery({ account })}`,
+    chainId,
+  );
+  return data.pool || null;
+}
+
+export async function fetchBasketChildLive(childPool, account, chainId = DEFAULT_CHAIN_ID) {
+  const data = await fetchAPI(
+    `/mining/basket-child-pools/${encodeURIComponent(childPool)}/live${buildQuery({ account })}`,
+    chainId,
+  );
+  return data;
+}
+
+export async function fetchBasketChildPositions(
+  childPool,
+  { page = 0, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/basket-child-pools/${encodeURIComponent(childPool)}/positions${buildQuery({
+      page,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export async function fetchBasketChildEvents(
+  childPool,
+  { account, eventType, page = 0, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/basket-child-pools/${encodeURIComponent(childPool)}/events${buildQuery({
+      account,
+      eventType,
+      page,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
 // ──── Global stats ────
 export async function fetchWalnutStats(chainId = DEFAULT_CHAIN_ID) {
   try {
@@ -415,36 +570,47 @@ export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_
 }
 
 // ──── Single community by address ────
-export async function fetchCommunity(communityAddress, chainId = DEFAULT_CHAIN_ID) {
+export async function fetchCommunity(
+  communityAddress,
+  chainId = DEFAULT_CHAIN_ID,
+  { includeHistory = true } = {},
+) {
   if (!getNetworkConfig(chainId).apiBase) {
     const communities = await fetchOnChainCommunities(chainId);
     const community = communities.find(item => item.id.toLowerCase() === communityAddress.toLowerCase());
-    if (community) return enrichOnChainCommunityHistory(community, chainId);
+    if (community) {
+      return includeHistory ? enrichOnChainCommunityHistory(community, chainId) : community;
+    }
     onChainCommunityCache.delete(chainId);
     const refreshed = await fetchOnChainCommunities(chainId);
     const refreshedCommunity = refreshed.find(item => item.id.toLowerCase() === communityAddress.toLowerCase()) || null;
-    return enrichOnChainCommunityHistory(refreshedCommunity, chainId);
+    return includeHistory
+      ? enrichOnChainCommunityHistory(refreshedCommunity, chainId)
+      : refreshedCommunity;
   }
-  // Fetch from communities list and find the specific one
-  const data = await fetchAPI('/communities?size=1000', chainId);
-  const communities = data.communities || [];
-  const raw = communities.find(
-    c => c.community.toLowerCase() === communityAddress.toLowerCase()
+  // Fetch the requested community and its complete pool list directly from the API.
+  const raw = await fetchAPI(
+    `/communities/${encodeURIComponent(communityAddress)}`,
+    chainId,
   );
-  if (!raw) return null;
-
-  // Also fetch operation history
-  let operationHistory = [];
-  try {
-    const histData = await fetchAPI(`/communities/${communityAddress}/history?size=50`, chainId);
-    operationHistory = (histData.history || []).map(mapOperation);
-  } catch {
-    // history endpoint might not exist for all communities
-  }
 
   const mapped = mapCommunity(raw, chainId);
-  mapped.operationHistory = operationHistory;
+  if (!includeHistory) return mapped;
+
+  mapped.operationHistory = await fetchCommunityHistory(communityAddress, chainId);
   return mapped;
+}
+
+export async function fetchCommunityHistory(communityAddress, chainId = DEFAULT_CHAIN_ID) {
+  try {
+    const data = await fetchAPI(
+      `/communities/${encodeURIComponent(communityAddress)}/history?size=50`,
+      chainId,
+    );
+    return (data.history || []).map(mapOperation);
+  } catch {
+    return [];
+  }
 }
 
 // ──── Pools for a community (extracted from community data) ────
