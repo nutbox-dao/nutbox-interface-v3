@@ -470,7 +470,7 @@ export default function NFTMiningPoolCard({
 
           {canMint && (
             <div className="nft-mint-panel">
-              <div className="input-group">
+              <div className="input-group nft-referrer-field">
                 <label>{t('nftPool.referrerTokenId')}</label>
                 <input
                   type="number"
@@ -483,12 +483,12 @@ export default function NFTMiningPoolCard({
                 />
               </div>
               {needsApproval ? (
-                <button className="btn btn-primary" disabled={busy} onClick={handleApprove}>
+                <button className="btn btn-primary nft-mint-action" disabled={busy} onClick={handleApprove}>
                   {actionLoading === 'approve' ? <span className="spinner" /> : null}
                   {t('nftPool.approve', { symbol: paymentInfo.symbol })}
                 </button>
               ) : (
-                <button className="btn btn-primary" disabled={busy} onClick={handleMint}>
+                <button className="btn btn-primary nft-mint-action" disabled={busy} onClick={handleMint}>
                   {actionLoading === 'mint' ? <span className="spinner" /> : null}
                   {t('nftPool.mintAction')}
                 </button>
