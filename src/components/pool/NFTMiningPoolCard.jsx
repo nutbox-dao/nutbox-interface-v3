@@ -550,13 +550,13 @@ export default function NFTMiningPoolCard({
         </div>
       )}
 
-      <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl}>
-        {!detail && (
+      {!detail && (
+        <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl}>
           <Link className="btn btn-primary btn-sm" to={getChainPath(network.id, `community/${communityAddress}/pool/${pool.id}`)}>
             {t('nftPool.viewDetails')} →
           </Link>
-        )}
-      </PoolCardFooter>
+        </PoolCardFooter>
+      )}
       </div>
 
       {detail && (

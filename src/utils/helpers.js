@@ -120,6 +120,7 @@ export function getPoolTypeLabel(poolType) {
   if (t.includes('SP_STAKING')) return 'SP Staking';
   if (t.includes('SOCIAL')) return 'Social Curation';
   if (t.includes('NFT_MINING')) return 'NFT Mining';
+  if (t.includes('BASKET_TVL')) return 'Basket TVL Mining';
   return poolType;
 }
 
@@ -130,6 +131,7 @@ export function getPoolTypeBadgeClass(poolType) {
   if (!poolType) return 'badge';
   const t = poolType.toUpperCase();
   if (t.includes('NFT_MINING')) return 'badge badge-nft';
+  if (t.includes('BASKET_TVL')) return 'badge badge-basket';
   if (t.includes('LOCKING')) return 'badge badge-locking';
   return 'badge badge-staking';
 }

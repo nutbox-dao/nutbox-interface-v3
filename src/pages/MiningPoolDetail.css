@@ -1,0 +1,71 @@
+.mining-pool-detail-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.mining-pool-detail-topbar .breadcrumb {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.mining-pool-contract-address {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.mining-pool-contract-address a {
+  color: var(--color-text-tertiary);
+  font-family: 'Courier New', monospace;
+  font-size: var(--font-size-xs);
+}
+
+.mining-pool-contract-address a:hover {
+  color: var(--color-text-accent);
+}
+
+.mining-pool-copy-address {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-glass);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1;
+  transition:
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.mining-pool-copy-address:hover {
+  border-color: var(--color-border-focus);
+  background: var(--color-bg-card-hover);
+  color: var(--color-text-accent);
+}
+
+@media (max-width: 700px) {
+  .mining-pool-detail-topbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .mining-pool-detail-topbar .breadcrumb {
+    flex-wrap: wrap;
+  }
+
+  .mining-pool-contract-address {
+    align-self: flex-end;
+  }
+}

@@ -50,6 +50,7 @@ const poolFactoryEvents = [
   ['ERC20LockingFactory', 'event ERC20LockingCreated(address indexed pool, address indexed community, string name, address erc20Token, uint256 lockDuration)'],
   ['SocialCurationFactory', 'event SocialCurationCreated(address indexed pool, address indexed community, string name)'],
   ['NFTMiningPoolFactory', 'event NFTMiningPoolCreated(address indexed pool, address indexed community, address indexed admin, address renderer, string name, string symbol, address paymentAsset, uint256 mintPrice, uint256 firstBatchSupply, uint16 referralBps, uint8 paletteId)'],
+  ['BasketTVLMiningPoolFactory', 'event BasketTVLMiningPoolCreated(address indexed pool, address indexed community, address indexed basketRegistry, address nftMiningPool, uint16 nftRewardBps, uint256 lockDuration, string name)'],
 ];
 
 function historyId(log) {
@@ -134,7 +135,7 @@ async function fetchOnChainOperationHistory({
         account: { id: owner },
         pool: { id: parsed.args.pool, name: parsed.args.name || '' },
         poolFactory,
-        asset: parsed.args.erc20Token || parsed.args.paymentAsset || null,
+        asset: parsed.args.erc20Token || parsed.args.paymentAsset || parsed.args.nftMiningPool || null,
         amount: null,
         tx: log.transactionHash,
         blockNumber: log.blockNumber,
@@ -324,9 +325,13 @@ async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID) {
   return fetchAPIFromBase(apiBase, path, chainId);
 }
 
-async function fetchAPIFromBase(apiBase, path, chainId) {
+async function fetchAPIFromBase(apiBase, path, chainId, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
-    headers: { 'X-Chain-Id': String(chainId) },
+    ...options,
+    headers: {
+      'X-Chain-Id': String(chainId),
+      ...options.headers,
+    },
   });
   const contentType = response.headers.get('content-type') || '';
   if (!contentType.includes('application/json')) {
@@ -345,6 +350,33 @@ function getSocialClaimsApiBase(chainId) {
   if (network.apiBase) return network.apiBase;
   if (!network.communityMetadataApiBase) return null;
   return `${network.communityMetadataApiBase.replace(/\/$/, '')}/nutbox`;
+}
+
+export async function fetchBasketChildPools(parentPool, chainId = DEFAULT_CHAIN_ID) {
+  const apiBase = getSocialClaimsApiBase(chainId);
+  if (!apiBase) throw new Error(`Nutbox API is not configured for chain ${chainId}`);
+  const data = await fetchAPIFromBase(
+    apiBase,
+    `/basket-pools/${encodeURIComponent(parentPool)}/children`,
+    chainId,
+  );
+  return data.children || [];
+}
+
+export async function registerBasketChildPool(parentPool, txHash, chainId = DEFAULT_CHAIN_ID) {
+  const apiBase = getSocialClaimsApiBase(chainId);
+  if (!apiBase) throw new Error(`Nutbox API is not configured for chain ${chainId}`);
+  const data = await fetchAPIFromBase(
+    apiBase,
+    `/basket-pools/${encodeURIComponent(parentPool)}/children`,
+    chainId,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txHash }),
+    },
+  );
+  return data.child;
 }
 
 // ──── Global stats ────
@@ -560,6 +592,7 @@ function guessPoolType(factoryAddress, chainId) {
     [contracts.SPStakingFactory, 'SP_STAKING'],
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
+    [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || 'UNKNOWN';
 }

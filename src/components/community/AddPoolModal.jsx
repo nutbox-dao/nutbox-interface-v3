@@ -49,6 +49,11 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   const [mintPrice, setMintPrice] = useState('');
   const [batchSupply, setBatchSupply] = useState('');
   const [referralPercent, setReferralPercent] = useState('10');
+  const [basketNftMiningPool, setBasketNftMiningPool] = useState('');
+  const [basketNftRewardPercent, setBasketNftRewardPercent] = useState('10');
+  const [basketLockDurationHours, setBasketLockDurationHours] = useState('30');
+  const [showBasketRewardInfo, setShowBasketRewardInfo] = useState(false);
+  const [showBasketUnlockInfo, setShowBasketUnlockInfo] = useState(false);
   const [paymentTokenPreview, setPaymentTokenPreview] = useState({ loading: false, symbol: '', error: '' });
   const [rendererPreview, setRendererPreview] = useState({ loading: false, image: '', address: '', error: '' });
   const [previewSeed, setPreviewSeed] = useState(() => BigInt(ethers.hexlify(ethers.randomBytes(32))));
@@ -82,6 +87,12 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   useEffect(() => {
     if (!fundsReceiver && account) setFundsReceiver(account);
   }, [account, fundsReceiver]);
+
+  useEffect(() => {
+    if (poolType !== 'basket-tvl' || basketNftMiningPool) return;
+    const nftPool = activePools.find(pool => pool.poolType === 'NFT_MINING');
+    if (nftPool) setBasketNftMiningPool(nftPool.id);
+  }, [activePools, basketNftMiningPool, poolType]);
 
   useEffect(() => {
     if (poolType !== 'nft-mining') return undefined;
@@ -222,12 +233,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
   const handleCreate = async () => {
     const isNFTMining = poolType === 'nft-mining';
-    if (!signer || !poolName || (!isNFTMining && !stakeTokenAddress)) {
+    const isBasketTVL = poolType === 'basket-tvl';
+    if (!signer || !poolName || (!isNFTMining && !isBasketTVL && !stakeTokenAddress)) {
       toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
 
-    if (!isNFTMining && !ethers.isAddress(stakeTokenAddress)) {
+    if (!isNFTMining && !isBasketTVL && !ethers.isAddress(stakeTokenAddress)) {
       toast.error(language === 'zh' ? '代币地址无效' : 'Invalid token address');
       return;
     }
@@ -283,6 +295,30 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
         }
         const durationSeconds = parseInt(lockDuration) * 86400; // Convert days to seconds
         meta = stakeTokenAddress.toLowerCase() + ethers.toBeHex(durationSeconds, 32).replace('0x', '');
+      } else if (poolType === 'basket-tvl') {
+        factoryAddress = contracts.BasketTVLMiningPoolFactory;
+        if (!factoryAddress) {
+          throw new Error(language === 'zh' ? '当前网络未配置 Basket TVL 矿池工厂' : 'Basket TVL mining factory is not configured');
+        }
+        const selectedNftPool = activePools.find(
+          pool => pool.id.toLowerCase() === basketNftMiningPool.toLowerCase()
+            && pool.poolType === 'NFT_MINING'
+        );
+        if (!selectedNftPool) {
+          throw new Error(language === 'zh' ? '请选择当前社区中已激活的 NFT 矿池' : 'Select an active NFT mining pool from this community');
+        }
+        const nftRewardBps = Math.round(Number(basketNftRewardPercent) * 100);
+        const durationHours = Number(basketLockDurationHours);
+        if (!Number.isInteger(nftRewardBps) || nftRewardBps < 0 || nftRewardBps > 10000) {
+          throw new Error(language === 'zh' ? '创建者奖励分成必须在 0% 到 100% 之间' : 'Creator reward share must be between 0% and 100%');
+        }
+        if (!Number.isFinite(durationHours) || durationHours <= 0) {
+          throw new Error(language === 'zh' ? '解锁周期必须大于 0 小时' : 'Unlock period must be greater than zero hours');
+        }
+        meta = ethers.AbiCoder.defaultAbiCoder().encode(
+          ['address', 'uint16', 'uint256'],
+          [selectedNftPool.id, nftRewardBps, Math.round(durationHours * 3600)]
+        );
       } else {
         factoryAddress = contracts.NFTMiningPoolFactory;
         if (!factoryAddress) {
@@ -371,7 +407,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal-content" onClick={e => e.stopPropagation()}>
+      <div className="modal-content add-pool-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <h2 className="modal-title">{t('addPool.title')}</h2>
           <button className="modal-close" onClick={onClose}>×</button>
@@ -387,6 +423,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
               {Number(network.id) === 4663 && (
                 <option value="nft-mining">{language === 'zh' ? 'NFT 挖矿' : 'NFT Mining'}</option>
               )}
+              {contracts.BasketTVLMiningPoolFactory && (
+                <option value="basket-tvl">{language === 'zh' ? 'Basket TVL 挖矿' : 'Basket TVL Mining'}</option>
+              )}
             </select>
           </div>
 
@@ -401,7 +440,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             />
           </div>
 
-          {poolType !== 'nft-mining' && (
+          {poolType !== 'nft-mining' && poolType !== 'basket-tvl' && (
             <div className="input-group">
               <label>{t('addPool.fieldStakeToken')}</label>
               <input
@@ -582,6 +621,125 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             </div>
           )}
 
+          {poolType === 'basket-tvl' && (
+            <div className="nft-pool-config">
+              <div className="nft-pool-config-heading">
+                <strong>{language === 'zh' ? 'Basket TVL 挖矿配置' : 'Basket TVL mining configuration'}</strong>
+                <span>
+                  {language === 'zh'
+                    ? 'Basket 按链上 WETH 净值获得挖矿权重；每个 Basket 会创建独立质押子池'
+                    : 'Baskets mine by on-chain WETH NAV; each Basket gets an independent staking pool'}
+                </span>
+              </div>
+              <div className="nft-pool-form-grid">
+                <div className="input-group nft-pool-form-wide">
+                  <label>{language === 'zh' ? '绑定 NFT 矿池' : 'Linked NFT mining pool'}</label>
+                  <select
+                    className="input"
+                    value={basketNftMiningPool}
+                    onChange={event => setBasketNftMiningPool(event.target.value)}
+                  >
+                    <option value="">{language === 'zh' ? '请选择已激活的 NFT 矿池' : 'Select an active NFT mining pool'}</option>
+                    {activePools.filter(item => item.poolType === 'NFT_MINING').map(item => (
+                      <option key={item.id} value={item.id}>{item.name || shortenAddress(item.id)}</option>
+                    ))}
+                  </select>
+                  {activePools.every(item => item.poolType !== 'NFT_MINING') && (
+                    <div className="contract-field-feedback is-error">
+                      {language === 'zh'
+                        ? '请先在本社区创建并激活 NFT 挖矿矿池'
+                        : 'Create and activate an NFT mining pool in this community first'}
+                    </div>
+                  )}
+                </div>
+                <div className="input-group">
+                  <div className="basket-reward-label">
+                    {language === 'zh' ? '创建者奖励分成' : 'Creator reward share'}
+                    <button
+                      type="button"
+                      className="basket-reward-info-trigger"
+                      onClick={() => setShowBasketRewardInfo(value => !value)}
+                      aria-label={language === 'zh' ? '查看创建者奖励分成说明' : 'View creator reward share explanation'}
+                      aria-expanded={showBasketRewardInfo}
+                    >
+                      ⓘ
+                    </button>
+                    {showBasketRewardInfo && (
+                      <span className="basket-reward-info-popover" role="tooltip">
+                        <button
+                          type="button"
+                          className="basket-reward-info-close"
+                          onClick={() => setShowBasketRewardInfo(false)}
+                          aria-label={language === 'zh' ? '关闭说明' : 'Close explanation'}
+                        >
+                          ×
+                        </button>
+                        <strong>{language === 'zh' ? '创建者奖励分成说明' : 'Creator reward share'}</strong>
+                        <span>
+                          {language === 'zh'
+                            ? '该比例表示从矿池挖矿奖励中分配给 Basket 创建者激励的份额，其余奖励分配给 Basket Token 质押者。该份额的领取权由创建子池时绑定的 NFT 承载，实际归属以该 NFT 的当前持有人为准，并随 NFT 转让而转移，并非永久归属于最初的 Basket 创建者。'
+                            : 'This percentage is the portion of mining rewards allocated as the Basket creator incentive; the remainder goes to Basket Token stakers. Entitlement to this share is represented by the NFT linked when the child pool is created. It belongs to the NFT’s current holder and transfers with the NFT, rather than remaining permanently assigned to the original Basket creator.'}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <div className="input-with-suffix">
+                    <input
+                      type="number"
+                      className="input"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={basketNftRewardPercent}
+                      onChange={event => setBasketNftRewardPercent(event.target.value)}
+                    />
+                    <span>%</span>
+                  </div>
+                </div>
+                <div className="input-group">
+                  <div className="basket-reward-label">
+                    {language === 'zh' ? '退出解锁周期（小时）' : 'Unstake unlock period (hours)'}
+                    <button
+                      type="button"
+                      className="basket-reward-info-trigger"
+                      onClick={() => setShowBasketUnlockInfo(value => !value)}
+                      aria-label={language === 'zh' ? '查看退出解锁周期说明' : 'View unstake unlock period explanation'}
+                      aria-expanded={showBasketUnlockInfo}
+                    >
+                      ⓘ
+                    </button>
+                    {showBasketUnlockInfo && (
+                      <span className="basket-reward-info-popover basket-reward-info-popover-right" role="tooltip">
+                        <button
+                          type="button"
+                          className="basket-reward-info-close"
+                          onClick={() => setShowBasketUnlockInfo(false)}
+                          aria-label={language === 'zh' ? '关闭说明' : 'Close explanation'}
+                        >
+                          ×
+                        </button>
+                        <strong>{language === 'zh' ? '退出解锁周期说明' : 'Unstake unlock period'}</strong>
+                        <span>
+                          {language === 'zh'
+                            ? '退出质押后，Basket Token 会在设定的小时周期内线性解锁；已解锁部分可随时赎回。'
+                            : 'After unstaking, Basket Tokens unlock linearly over the configured number of hours; the unlocked portion can be redeemed at any time.'}
+                        </span>
+                      </span>
+                    )}
+                  </div>
+                  <input
+                    type="number"
+                    className="input"
+                    min="1"
+                    step="1"
+                    value={basketLockDurationHours}
+                    onChange={event => setBasketLockDurationHours(event.target.value)}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Pool Ratios Section */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
             <h3 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
@@ -633,7 +791,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                     ✨ {poolName || t('addPool.ratioNewPoolLabel')}
                   </span>
                   <span className="badge badge-active" style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal', background: 'var(--color-success)', color: '#fff' }}>
-                    {poolType === 'staking' ? 'Staking' : poolType === 'locking' ? 'Locking' : 'NFT Mining'}
+                    {poolType === 'staking'
+                      ? 'Staking'
+                      : poolType === 'locking'
+                        ? 'Locking'
+                        : poolType === 'nft-mining'
+                          ? 'NFT Mining'
+                          : 'Basket TVL Mining'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', width: 120 }}>
@@ -687,11 +851,14 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             onClick={handleCreate}
             disabled={
               loading || !poolName || !isValidRatios
-              || (poolType !== 'nft-mining' && !stakeTokenAddress)
+              || (poolType !== 'nft-mining' && poolType !== 'basket-tvl' && !stakeTokenAddress)
               || (poolType === 'nft-mining' && (
                 !nftSymbol || !fundsReceiver || !mintPrice || !batchSupply || !contracts.NFTMiningPoolFactory
                 || paymentTokenPreview.loading || rendererPreview.loading
                 || Boolean(paymentTokenPreview.error) || Boolean(rendererPreview.error)
+              ))
+              || (poolType === 'basket-tvl' && (
+                !basketNftMiningPool || !basketLockDurationHours || !contracts.BasketTVLMiningPoolFactory
               ))
             }
             style={{ width: '100%' }}

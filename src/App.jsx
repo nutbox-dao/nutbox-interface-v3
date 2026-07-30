@@ -19,7 +19,7 @@ import Header from './components/layout/Header';
 import Home from './pages/Home';
 import CommunityDetail from './pages/CommunityDetail';
 import CreateCommunity from './pages/CreateCommunity';
-import NFTMiningPoolDetail from './pages/NFTMiningPoolDetail';
+import MiningPoolDetail from './pages/MiningPoolDetail';
 import {
   SUPPORTED_CHAIN_IDS,
   getChainIdFromSlug,
@@ -105,7 +105,7 @@ export default function App() {
                     <Route path="/:chainSlug" element={<ChainRouteGuard />}>
                       <Route index element={<Home />} />
                       <Route path="community/:address" element={<CommunityDetail />} />
-                      <Route path="community/:communityAddress/pool/:poolAddress" element={<NFTMiningPoolDetail />} />
+                      <Route path="community/:communityAddress/pool/:poolAddress" element={<MiningPoolDetail />} />
                       <Route path="create" element={<CreateCommunity />} />
                     </Route>
 

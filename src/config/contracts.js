@@ -3,6 +3,7 @@ export const RH_CHAIN_ID = 4663;
 export const DEFAULT_CHAIN_ID = BSC_CHAIN_ID;
 
 export const BSC_CONTRACTS = {
+  Multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
   Committee: '0xe10F967DD356504EDB731612789D0D0f0ba2929f',
   MintableERC20Factory: '0x9979989709cE98715f2cA831C4FDb73b22d0408c',
   CommunityFactory: '0x5597e814399906095ecaA5769A40394F58E5E0Cf',
@@ -12,6 +13,9 @@ export const BSC_CONTRACTS = {
   SPStakingFactory: '0x47738e3420Be8ceD8a9476cf4dAf84c549835D44',
   SocialCurationFactory: '0xc4674D3fBbD201Ea401a8B7e7285F956178593D8',
   NFTMiningPoolFactory: null,
+  BasketTVLMiningPoolFactory: null,
+  BasketRegistry: null,
+  WETH: null,
   LinearCalculator: '0x5114966657Bd6209B47aa16eaa4EAfbbC9595ec0',
   LinearTimeCalculator: '0xc76e00e150e13EC95514E9a52Ab0314c7faE8207',
   HourlyTickCalculator: '0x6cCEC02E7D371FED954D7D16eCb7F2f57cccF54d',
@@ -19,6 +23,7 @@ export const BSC_CONTRACTS = {
 
 // Source: TagAI-contract-V2/deployments/4663/addresses.json
 export const RH_CONTRACTS = {
+  Multicall3: '0xcA11bde05977b3631167028862bE2a173976CA11',
   Committee: '0x7B0ddC305C32AAEbabc0FE372a4460e9903e95D0',
   MintableERC20Factory: '0xd52624320654FBEA5F1f988d5F4E55B74C56e67D',
   CommunityFactory: '0x24328DccA1bA54EeE82e2993F021802e64290486',
@@ -28,6 +33,9 @@ export const RH_CONTRACTS = {
   SPStakingFactory: null,
   SocialCurationFactory: '0xddbAba530728b5B8939d7fdDC334432490916e90',
   NFTMiningPoolFactory: '0xb3A547F535bDc1b20Eb6fd97b9524F893A75708C',
+  BasketTVLMiningPoolFactory: '0x9487cF9D3159F9626b9d8770E9981278d2Fa1Dfd',
+  BasketRegistry: '0x1f997dEb6C8Ac7Bb4134Bc7c6bF23F623Cda25C6',
+  WETH: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
   LinearCalculator: null,
   LinearTimeCalculator: '0xf5D8d9402A4603bD67400500E62880eee91cF12C',
   HourlyTickCalculator: '0x3DC52C69C3C8be568372E16d50E9F3FEc796610c',

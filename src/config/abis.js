@@ -25,6 +25,7 @@ export const CommunityABI = [
   'function activedPools(uint256) view returns (address)',
   'function createdPools(uint256) view returns (address)',
   'function poolActived(address) view returns (bool)',
+  'function poolRatios(address) view returns (uint16)',
   'function getShareAcc(address) view returns (uint256)',
   'function getLastRewardCursor() view returns (uint256)',
   'function getPoolPendingRewards(address pool, address user) view returns (uint256)',
@@ -92,6 +93,7 @@ export const NFTMiningPoolABI = [
   'function nextTokenId() view returns (uint256)',
   'function totalSupply() view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
+  'function ownerOf(uint256) view returns (address)',
   'function levelCount() view returns (uint256)',
   'function levelThresholds(uint256) view returns (uint256)',
   'function levelWeights(uint256) view returns (uint256)',
@@ -117,6 +119,59 @@ export const NFTMiningPoolFactoryABI = [
 
 export const NFTMiningRendererABI = [
   'function renderSVG((string collectionName, uint256 tokenId, uint256 seed, uint256 referralCount, uint256 miningWeight, uint32 batchId, uint32 level, uint8 paletteId) params) view returns (string)',
+];
+
+export const BasketTVLMiningPoolABI = [
+  'function name() view returns (string)',
+  'function factory() view returns (address)',
+  'function community() view returns (address)',
+  'function basketRegistry() view returns (address)',
+  'function nftMiningPool() view returns (address)',
+  'function lockDuration() view returns (uint256)',
+  'function nftRewardBps() view returns (uint16)',
+  'function getTotalStakedAmount() view returns (uint256)',
+  'function getUserStakedAmount(address user) view returns (uint256)',
+  'function getBasketStake(address basket) view returns (tuple(address basketCreator, address childPool, uint256 nftTokenId, uint256 miningAmount, uint256 updatedAt, bool exists))',
+  'function basketNavWeth(address basket) view returns (uint256)',
+  'function nftBasketPoolCount(uint256 nftTokenId) view returns (uint256)',
+  'function createBasketStake(address basket, uint256 nftTokenId) returns (address childPool)',
+  'function updateBasketStake(address basket) payable',
+  'event BasketStakeCreated(address indexed basket, address indexed basketCreator, uint256 indexed nftTokenId, uint256 miningAmount, uint256 updatedAt)',
+  'event BasketChildPoolCreated(address indexed basket, address indexed childPool, address indexed basketCreator, uint256 nftTokenId, uint16 nftRewardBps, uint256 lockDuration)',
+  'event BasketStakeUpdated(address indexed basket, address indexed basketCreator, uint256 previousMiningAmount, uint256 newMiningAmount, uint256 updatedAt)',
+];
+
+export const BasketStakePoolABI = [
+  'function parentMiningPool() view returns (address)',
+  'function community() view returns (address)',
+  'function stakeToken() view returns (address)',
+  'function rewardToken() view returns (address)',
+  'function holderFeeToken() view returns (address)',
+  'function nftMiningPool() view returns (address)',
+  'function nftTokenId() view returns (uint256)',
+  'function nftRewardBps() view returns (uint16)',
+  'function lockDuration() view returns (uint256)',
+  'function totalStakedAmount() view returns (uint256)',
+  'function getUserStakedAmount(address user) view returns (uint256)',
+  'function pendingRewards(address account) view returns (uint256)',
+  'function pendingHolderFees(address account) view returns (uint256)',
+  'function pendingNftRewards() view returns (uint256)',
+  'function redeemRequests(address user) view returns (tuple(uint256 tokenAmount, uint256 claimed, uint256 startTime, uint256 endTime)[])',
+  'function claimableAmount(address user) view returns (uint256)',
+  'function deposit(uint256 amount) payable',
+  'function withdraw(uint256 amount) payable',
+  'function redeem()',
+  'function claimRewards() payable returns (uint256 communityAmount, uint256 holderFeeAmount)',
+  'function claimNftRewards() payable returns (uint256 amount)',
+  'event Deposited(address indexed user, uint256 amount)',
+  'event WithdrawRequested(address indexed user, uint256 amount, uint256 startTime, uint256 endTime)',
+  'event Redeemed(address indexed user, uint256 amount)',
+  'event RewardsClaimed(address indexed user, uint256 communityAmount, uint256 holderFeeAmount)',
+  'event NftRewardsClaimed(uint256 indexed nftTokenId, address indexed recipient, uint256 amount)',
+];
+
+export const Multicall3ABI = [
+  'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
 ];
 
 export const LinearCalculatorABI = [
