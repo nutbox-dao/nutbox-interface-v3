@@ -36,6 +36,7 @@ export const RH_CONTRACTS = {
 export const NETWORKS = {
   [BSC_CHAIN_ID]: {
     id: BSC_CHAIN_ID,
+    slug: 'bsc',
     name: 'BNB Smart Chain',
     shortName: 'BSC',
     rpcUrls: ['https://bsc-dataseed.binance.org/', 'https://bsc-dataseed1.defibit.io/'],
@@ -50,6 +51,7 @@ export const NETWORKS = {
   },
   [RH_CHAIN_ID]: {
     id: RH_CHAIN_ID,
+    slug: 'rh',
     name: 'Robinhood Chain',
     shortName: 'RH',
     rpcUrls: ['https://rpc.mainnet.chain.robinhood.com/'],
@@ -68,6 +70,16 @@ export const NETWORKS = {
 export const SUPPORTED_CHAIN_IDS = Object.keys(NETWORKS).map(Number);
 export const getNetworkConfig = (chainId = DEFAULT_CHAIN_ID) => NETWORKS[Number(chainId)] || NETWORKS[DEFAULT_CHAIN_ID];
 export const getContracts = (chainId = DEFAULT_CHAIN_ID) => getNetworkConfig(chainId).contracts;
+export const getChainSlug = (chainId = DEFAULT_CHAIN_ID) => getNetworkConfig(chainId).slug;
+export const getChainIdFromSlug = (slug) => {
+  const normalized = String(slug || '').toLowerCase();
+  const network = Object.values(NETWORKS).find(item => item.slug === normalized);
+  return network?.id ?? null;
+};
+export const getChainPath = (chainId, path = '') => {
+  const suffix = path && path !== '/' ? `/${String(path).replace(/^\/+/, '')}` : '';
+  return `/${getChainSlug(chainId)}${suffix}`;
+};
 
 // Backward-compatible BSC exports. New code should use Web3Context.network/contracts.
 export const CHAIN_ID = DEFAULT_CHAIN_ID;

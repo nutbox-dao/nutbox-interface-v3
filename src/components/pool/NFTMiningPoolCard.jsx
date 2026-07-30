@@ -5,6 +5,7 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { CommunityABI, ERC20ABI, NFTMiningPoolABI } from '../../config/abis';
+import { getChainPath } from '../../config/contracts';
 import { copyToClipboard, formatTokenAmount, getPoolTypeBadgeClass } from '../../utils/helpers';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './NFTMiningPoolCard.css';
@@ -291,7 +292,7 @@ export default function NFTMiningPoolCard({
   const copyReferralLink = async (tokenId) => {
     const url = new URL(window.location.href);
     url.hash = '';
-    url.searchParams.set('chainId', String(network.id));
+    url.searchParams.delete('chainId');
     if (tokenId) {
       url.searchParams.set('referrerTokenId', tokenId.toString());
     } else {
@@ -551,7 +552,7 @@ export default function NFTMiningPoolCard({
 
       <PoolCardFooter address={pool.id} explorerUrl={network.explorerUrl}>
         {!detail && (
-          <Link className="btn btn-primary btn-sm" to={`/community/${communityAddress}/pool/${pool.id}`}>
+          <Link className="btn btn-primary btn-sm" to={getChainPath(network.id, `community/${communityAddress}/pool/${pool.id}`)}>
             {t('nftPool.viewDetails')} →
           </Link>
         )}

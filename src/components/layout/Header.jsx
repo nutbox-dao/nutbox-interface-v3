@@ -1,18 +1,35 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { shortenAddress } from '../../utils/helpers';
 import './Header.css';
-import { NETWORKS } from '../../config/contracts';
+import { NETWORKS, getChainIdFromSlug, getChainPath, getChainSlug } from '../../config/contracts';
 
 export default function Header() {
-  const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC, activeChainId, switchNetwork, network } = useWeb3();
+  const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC, activeChainId, network } = useWeb3();
   const { language, setLanguage, t } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleNetworkChange = (nextChainId) => {
+    const parts = location.pathname.split('/').filter(Boolean);
+    const nextSlug = getChainSlug(nextChainId);
+    if (getChainIdFromSlug(parts[0])) {
+      parts[0] = nextSlug;
+    } else {
+      parts.unshift(nextSlug);
+    }
+    navigate({
+      pathname: `/${parts.join('/')}`,
+      search: location.search,
+      hash: location.hash,
+    });
+  };
 
   return (
     <header className="header">
       <div className="container header-inner">
-        <Link to="/" className="header-logo">
+        <Link to={getChainPath(activeChainId)} className="header-logo">
           <img
             src="/logo_small.png"
             alt="Nutbox"
@@ -24,7 +41,7 @@ export default function Header() {
         </Link>
 
         <div className="header-actions">
-          <select className="network-select" value={activeChainId} onChange={event => switchNetwork(Number(event.target.value))} aria-label="Network">
+          <select className="network-select" value={activeChainId} onChange={event => handleNetworkChange(Number(event.target.value))} aria-label="Network">
             {Object.values(NETWORKS).map(item => (
               <option key={item.id} value={item.id}>{item.shortName}</option>
             ))}

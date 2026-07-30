@@ -4,6 +4,7 @@ import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
 import { shortenAddress } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useWeb3 } from '../contexts/Web3Context';
+import { getChainPath } from '../config/contracts';
 import './Home.css';
 
 export default function Home() {
@@ -45,7 +46,7 @@ export default function Home() {
               {t('home.heroSubtitle', { network: network.name })}
             </p>
             <div className="hero-actions">
-              <Link to="/create" className="btn btn-primary btn-lg">
+              <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary btn-lg">
                 {t('home.createBtn')}
               </Link>
             </div>
@@ -79,7 +80,7 @@ export default function Home() {
       <section className="container" style={{ marginTop: 'var(--space-12)' }}>
         <div className="section-header">
           <h2 className="section-title">{t('home.sectionTitle')}</h2>
-          <Link to="/create" className="btn btn-ghost">{t('home.createNew')}</Link>
+          <Link to={getChainPath(activeChainId, 'create')} className="btn btn-ghost">{t('home.createNew')}</Link>
         </div>
 
         {loading ? (
@@ -97,7 +98,7 @@ export default function Home() {
             <div className="empty-state-icon">🌰</div>
             <div className="empty-state-title">{t('home.noCommunitiesTitle')}</div>
             <div className="empty-state-desc">{t('home.noCommunitiesDesc')}</div>
-            <Link to="/create" className="btn btn-primary">{t('home.createBtn')}</Link>
+            <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>
           </div>
         ) : (
           <div className="grid-communities">
@@ -116,9 +117,10 @@ function CommunityCard({ community }) {
   const tags = Array.isArray(community.tags) ? community.tags : [];
   const displayName = community.name || `Community #${community.index?.toString() || '?'}`;
   const { t } = useLanguage();
+  const { activeChainId } = useWeb3();
 
   return (
-    <Link to={`/community/${community.id}`} className="community-card glass-card" id={`community-${community.id}`}>
+    <Link to={getChainPath(activeChainId, `community/${community.id}`)} className="community-card glass-card" id={`community-${community.id}`}>
       <div className="community-card-header">
         <div className="community-avatar">
           {community.tick?.slice(0, 2) || community.cToken?.slice(2, 4).toUpperCase() || 'N'}

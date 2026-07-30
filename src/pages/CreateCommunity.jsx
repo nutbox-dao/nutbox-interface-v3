@@ -6,6 +6,7 @@ import { useToast } from '../contexts/ToastContext';
 import { CommunityFactoryABI } from '../config/abis';
 import { encodeMintableTokenMeta, encodeDistributionPolicy } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
+import { getChainPath } from '../config/contracts';
 import './CreateCommunity.css';
 
 // Format a Date to datetime-local string (YYYY-MM-DDTHH:mm:ss)
@@ -25,7 +26,7 @@ function getNextFullHour() {
 
 export default function CreateCommunity() {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, isConnected, contracts, network } = useWeb3();
+  const { account, signer, readProvider, isConnected, contracts, network, activeChainId } = useWeb3();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -243,9 +244,9 @@ export default function CreateCommunity() {
       toast.success(t('create.toastSuccess'));
 
       if (communityAddress) {
-        navigate(`/community/${communityAddress}`);
+        navigate(getChainPath(activeChainId, `community/${communityAddress}`));
       } else {
-        navigate('/');
+        navigate(getChainPath(activeChainId));
       }
     } catch (err) {
       console.error('Create community failed:', err);

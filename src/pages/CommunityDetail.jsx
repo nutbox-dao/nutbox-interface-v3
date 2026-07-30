@@ -12,6 +12,7 @@ import {
   useHourlyTickCalculator,
 } from '../hooks/useContract';
 import { ERC20ABI } from '../config/abis';
+import { getChainPath } from '../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
@@ -208,7 +209,7 @@ export default function CommunityDetail() {
           <div className="empty-state-icon">❌</div>
           <div className="empty-state-title">{language === 'zh' ? '未找到社区' : 'Community not found'}</div>
           <div className="empty-state-desc">{language === 'zh' ? '此社区合约地址在链上不存在。' : 'This community address doesn\'t exist on chain.'}</div>
-          <Link to="/" className="btn btn-primary">{language === 'zh' ? '返回首页' : 'Back to Home'}</Link>
+          <Link to={getChainPath(activeChainId)} className="btn btn-primary">{language === 'zh' ? '返回首页' : 'Back to Home'}</Link>
         </div>
       </div>
     );
@@ -236,7 +237,7 @@ export default function CommunityDetail() {
     <div className="page container">
       {/* ── Breadcrumb ── */}
       <nav className="breadcrumb">
-        <Link to="/">{t('detail.breadcrumbHome')}</Link>
+        <Link to={getChainPath(activeChainId)}>{t('detail.breadcrumbHome')}</Link>
         <span className="breadcrumb-sep">/</span>
         <span>{community.name || `Community #${community.index?.toString()}`}</span>
       </nav>
