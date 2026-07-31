@@ -54,6 +54,11 @@ function toBigInt(value, fallback = 0n) {
   }
 }
 
+function normalizeNftLevel(value) {
+  const level = Number(value);
+  return Number.isFinite(level) && level > 0 ? level : 1;
+}
+
 export default function NFTMiningPoolCard({
   pool,
   communityAddress,
@@ -91,6 +96,7 @@ export default function NFTMiningPoolCard({
   const [recentEvents, setRecentEvents] = useState([]);
   const [insightsLoading, setInsightsLoading] = useState(detail);
   const loadRequestRef = useRef(0);
+  const ownedNftImagesRef = useRef(new Map());
 
   const isNativePayment = batch.paymentAsset === ethers.ZeroAddress;
 
@@ -185,10 +191,10 @@ export default function NFTMiningPoolCard({
           }
           const nftItems = pages.flatMap(page => page.list || []).map(item => ({
             tokenId: toBigInt(item.tokenId),
-            level: Number(item.level || 0),
+            level: normalizeNftLevel(item.level),
             referralCount: toBigInt(item.referralCount),
             miningWeight: toBigInt(item.miningWeight),
-            image: '',
+            image: ownedNftImagesRef.current.get(String(item.tokenId)) || '',
           }));
           if (requestId !== loadRequestRef.current) return;
           setOwnedNFTs(nftItems);
@@ -199,10 +205,14 @@ export default function NFTMiningPoolCard({
             image: svgDataUrl(await poolContract.tokenSVG(item.tokenId).catch(() => '')),
           }))).then(images => {
             if (requestId !== loadRequestRef.current) return;
-            const imageByToken = new Map(images.map(item => [item.tokenId.toString(), item.image]));
+            images.forEach(item => {
+              if (item.image) {
+                ownedNftImagesRef.current.set(item.tokenId.toString(), item.image);
+              }
+            });
             setOwnedNFTs(current => current.map(item => ({
               ...item,
-              image: imageByToken.get(item.tokenId.toString()) || '',
+              image: ownedNftImagesRef.current.get(item.tokenId.toString()) || item.image,
             })));
           });
         } else {
