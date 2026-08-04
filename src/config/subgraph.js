@@ -1,12 +1,32 @@
 // Nutbox Backend API (replaces The Graph subgraph)
 // Uses Vite proxy in dev: /nutbox -> https://bsc-api.tagai.fun/nutbox
 // Production static hosting does not include the Vite dev proxy, so call the API directly.
-import { DEFAULT_CHAIN_ID, getNetworkConfig, getContracts } from './contracts';
+import {
+  BSC_CHAIN_ID,
+  DEFAULT_CHAIN_ID,
+  getNetworkConfig,
+  getContracts,
+} from './contracts';
 import { ethers } from 'ethers';
-import { CommunityABI, CommunityFactoryABI } from './abis';
+import {
+  BasketStakePoolABI,
+  BasketTVLMiningPoolABI,
+  CommunityABI,
+  CommunityFactoryABI,
+  NFTMiningPoolABI,
+} from './abis';
 
 const onChainCommunityCache = new Map();
 const miningReadCache = new Map();
+const chainReadProviders = new Map();
+
+function getChainReadProvider(chainId) {
+  if (!chainReadProviders.has(chainId)) {
+    const network = getNetworkConfig(chainId);
+    chainReadProviders.set(chainId, new ethers.JsonRpcProvider(network.rpcUrls[0], network.id));
+  }
+  return chainReadProviders.get(chainId);
+}
 
 async function cachedMiningRead(key, read, ttl = 5_000) {
   const cached = miningReadCache.get(key);
@@ -406,14 +426,46 @@ function buildQuery(params = {}) {
 }
 
 export async function fetchNftMiningPool(pool, chainId = DEFAULT_CHAIN_ID) {
-  const data = await cachedMiningRead(
-    `nft-pool:${chainId}:${pool.toLowerCase()}`,
-    () => fetchAPI(
-      `/mining/nft-pools/${encodeURIComponent(pool)}`,
-      chainId,
-    ),
-  );
-  return data.pool || null;
+  try {
+    const data = await cachedMiningRead(
+      `nft-pool:${chainId}:${pool.toLowerCase()}`,
+      () => fetchAPI(
+        `/mining/nft-pools/${encodeURIComponent(pool)}`,
+        chainId,
+      ),
+    );
+    return data.pool || null;
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    const contract = new ethers.Contract(pool, NFTMiningPoolABI, getChainReadProvider(chainId));
+    const [name, symbol, currentBatchId, totalSupply, totalMiningWeight] = await Promise.all([
+      contract.name(),
+      contract.symbol(),
+      contract.currentBatchId(),
+      contract.totalSupply(),
+      contract.getTotalStakedAmount(),
+    ]);
+    const currentBatch = currentBatchId > 0n ? await contract.batches(currentBatchId) : null;
+    return {
+      id: pool,
+      name,
+      symbol,
+      currentBatchId: currentBatchId.toString(),
+      totalSupply: totalSupply.toString(),
+      totalMiningWeight: totalMiningWeight.toString(),
+      batches: currentBatch ? [{
+        batchId: currentBatchId.toString(),
+        paymentAsset: currentBatch.paymentAsset,
+        referralBps: Number(currentBatch.referralBps),
+        paletteId: Number(currentBatch.paletteId),
+        active: currentBatch.active,
+        paused: currentBatch.paused,
+        mintPrice: currentBatch.mintPrice.toString(),
+        maxSupply: currentBatch.maxSupply.toString(),
+        minted: currentBatch.minted.toString(),
+      }] : [],
+    };
+  }
 }
 
 export async function fetchNftMiningNfts(
@@ -421,14 +473,45 @@ export async function fetchNftMiningNfts(
   { owner, page = 0, size = 100 } = {},
   chainId = DEFAULT_CHAIN_ID,
 ) {
-  return fetchAPI(
-    `/mining/nft-pools/${encodeURIComponent(pool)}/nfts${buildQuery({
-      owner,
+  try {
+    return await fetchAPI(
+      `/mining/nft-pools/${encodeURIComponent(pool)}/nfts${buildQuery({
+        owner,
+        page,
+        size,
+      })}`,
+      chainId,
+    );
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    if (!owner) throw error;
+    const contract = new ethers.Contract(pool, NFTMiningPoolABI, getChainReadProvider(chainId));
+    const offset = page * size;
+    const [tokenIds, total] = await Promise.all([
+      contract.tokensOfOwner(owner, offset, size),
+      contract.balanceOf(owner),
+    ]);
+    const list = await Promise.all(tokenIds.map(async tokenId => {
+      const info = await contract.getNFTInfo(tokenId);
+      return {
+        tokenId: tokenId.toString(),
+        owner: info.owner,
+        level: Number(info.level),
+        batchId: Number(info.batchId),
+        referrerTokenId: info.referrerTokenId.toString(),
+        referralCount: info.referralCount.toString(),
+        miningWeight: info.miningWeight.toString(),
+      };
+    }));
+    return {
+      pool,
+      list,
+      total: Number(total),
       page,
       size,
-    })}`,
-    chainId,
-  );
+      hasMore: offset + list.length < Number(total),
+    };
+  }
 }
 
 export async function fetchNftMiningAccounts(
@@ -436,10 +519,15 @@ export async function fetchNftMiningAccounts(
   { page = 0, size = 20 } = {},
   chainId = DEFAULT_CHAIN_ID,
 ) {
-  return fetchAPI(
-    `/mining/nft-pools/${encodeURIComponent(pool)}/accounts${buildQuery({ page, size })}`,
-    chainId,
-  );
+  try {
+    return await fetchAPI(
+      `/mining/nft-pools/${encodeURIComponent(pool)}/accounts${buildQuery({ page, size })}`,
+      chainId,
+    );
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    return { pool, list: [], total: 0, page, size, hasMore: false };
+  }
 }
 
 export async function fetchNftMiningEvents(
@@ -447,26 +535,70 @@ export async function fetchNftMiningEvents(
   { account, eventType, page = 0, size = 20 } = {},
   chainId = DEFAULT_CHAIN_ID,
 ) {
-  return fetchAPI(
-    `/mining/nft-pools/${encodeURIComponent(pool)}/events${buildQuery({
-      account,
-      eventType,
-      page,
-      size,
-    })}`,
-    chainId,
-  );
+  try {
+    return await fetchAPI(
+      `/mining/nft-pools/${encodeURIComponent(pool)}/events${buildQuery({
+        account,
+        eventType,
+        page,
+        size,
+      })}`,
+      chainId,
+    );
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    return { pool, list: [], page, size, hasMore: false };
+  }
 }
 
 export async function fetchBasketMiningPool(parentPool, chainId = DEFAULT_CHAIN_ID) {
-  const data = await cachedMiningRead(
-    `basket-pool:${chainId}:${parentPool.toLowerCase()}`,
-    () => fetchAPI(
-      `/mining/basket-pools/${encodeURIComponent(parentPool)}`,
-      chainId,
-    ),
-  );
-  return data.pool || null;
+  try {
+    const data = await cachedMiningRead(
+      `basket-pool:${chainId}:${parentPool.toLowerCase()}`,
+      () => fetchAPI(
+        `/mining/basket-pools/${encodeURIComponent(parentPool)}`,
+        chainId,
+      ),
+    );
+    return data.pool || null;
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    const contract = new ethers.Contract(
+      parentPool,
+      BasketTVLMiningPoolABI,
+      getChainReadProvider(chainId),
+    );
+    const [name, nftMiningPool, lockDuration, nftRewardBps, totalMiningAmount, children] = await Promise.all([
+      contract.name(),
+      contract.nftMiningPool(),
+      contract.lockDuration(),
+      contract.nftRewardBps(),
+      contract.getTotalStakedAmount(),
+      fetchBasketChildPools(parentPool, chainId).catch(() => []),
+    ]);
+    const stakes = await Promise.all(children.map(async child => {
+      const stake = await contract.getBasketStake(child.basket);
+      return {
+        basket: child.basket,
+        childPool: stake.childPool,
+        creator: stake.basketCreator,
+        nftTokenId: stake.nftTokenId.toString(),
+        miningAmount: stake.miningAmount.toString(),
+        chainUpdatedAt: stake.updatedAt.toString(),
+      };
+    }));
+    return {
+      parentPool,
+      name,
+      nftMiningPool,
+      lockDuration: lockDuration.toString(),
+      nftRewardBps: Number(nftRewardBps),
+      totalMiningAmount: totalMiningAmount.toString(),
+      basketCount: children.length,
+      children,
+      stakes,
+    };
+  }
 }
 
 export async function fetchBasketMiningEvents(
@@ -497,11 +629,44 @@ export async function fetchBasketChildPool(
 }
 
 export async function fetchBasketChildLive(childPool, account, chainId = DEFAULT_CHAIN_ID) {
-  const data = await fetchAPI(
-    `/mining/basket-child-pools/${encodeURIComponent(childPool)}/live${buildQuery({ account })}`,
-    chainId,
-  );
-  return data;
+  try {
+    return await fetchAPI(
+      `/mining/basket-child-pools/${encodeURIComponent(childPool)}/live${buildQuery({ account })}`,
+      chainId,
+    );
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    const contract = new ethers.Contract(
+      childPool,
+      BasketStakePoolABI,
+      getChainReadProvider(chainId),
+    );
+    const [pendingRewards, pendingNftRewards, pendingHolderFees, amount, redeemRequests, claimableAmount] = await Promise.all([
+      contract.pendingRewards(account),
+      contract.pendingNftRewards(),
+      contract.pendingHolderFees(account),
+      contract.getUserStakedAmount(account),
+      contract.redeemRequests(account),
+      contract.claimableAmount(account),
+    ]);
+    return {
+      live: {
+        childPool,
+        account,
+        pendingRewards: pendingRewards.toString(),
+        pendingNftRewards: pendingNftRewards.toString(),
+        pendingHolderFees: pendingHolderFees.toString(),
+        claimableAmount: claimableAmount.toString(),
+        userInfo: { amount: amount.toString() },
+        redeemRequests: redeemRequests.map(request => ({
+          tokenAmount: request.tokenAmount.toString(),
+          claimed: request.claimed.toString(),
+          startTime: request.startTime.toString(),
+          endTime: request.endTime.toString(),
+        })),
+      },
+    };
+  }
 }
 
 export async function fetchBasketChildPositions(

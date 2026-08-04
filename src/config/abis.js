@@ -132,7 +132,7 @@ export const BasketTVLMiningPoolABI = [
   'function getTotalStakedAmount() view returns (uint256)',
   'function getUserStakedAmount(address user) view returns (uint256)',
   'function getBasketStake(address basket) view returns (tuple(address basketCreator, address childPool, uint256 nftTokenId, uint256 miningAmount, uint256 updatedAt, bool exists))',
-  'function basketNavWeth(address basket) view returns (uint256)',
+  'function basketCommunityTokenBalance(address basket) view returns (uint256)',
   'function nftBasketPoolCount(uint256 nftTokenId) view returns (uint256)',
   'function createBasketStake(address basket, uint256 nftTokenId) returns (address childPool)',
   'function updateBasketStake(address basket) payable',

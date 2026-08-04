@@ -420,7 +420,8 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             <select className="input" value={poolType} onChange={e => setPoolType(e.target.value)}>
               <option value="staking">{t('addPool.fieldTypeNameStaking')}</option>
               <option value="locking">{t('addPool.fieldTypeNameLocking')}</option>
-              {Number(network.id) === 4663 && (
+              {(Number(network.id) === 4663
+                || (Number(network.id) === 56 && contracts.NFTMiningPoolFactory)) && (
                 <option value="nft-mining">{language === 'zh' ? 'NFT 挖矿' : 'NFT Mining'}</option>
               )}
               {contracts.BasketTVLMiningPoolFactory && (
@@ -471,7 +472,11 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             <div className="nft-pool-config">
               <div className="nft-pool-config-heading">
                 <strong>{language === 'zh' ? 'NFT 发行配置' : 'NFT issuance'}</strong>
-                <span>{language === 'zh' ? '留空支付代币表示使用 ETH' : 'Leave payment token blank to use ETH'}</span>
+                <span>
+                  {language === 'zh'
+                    ? `留空支付代币表示使用 ${network.nativeCurrency.symbol}`
+                    : `Leave payment token blank to use ${network.nativeCurrency.symbol}`}
+                </span>
               </div>
               <div className="nft-pool-form-grid">
                 <div className="input-group">
@@ -484,7 +489,14 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                 </div>
                 <div className="input-group">
                   <label>{language === 'zh' ? '支付代币（可选）' : 'Payment token (optional)'}</label>
-                  <input className="input" placeholder={language === 'zh' ? '留空使用 ETH，或输入 0x...' : 'Blank for ETH, or 0x...'} value={paymentAsset} onChange={e => setPaymentAsset(e.target.value)} />
+                  <input
+                    className="input"
+                    placeholder={language === 'zh'
+                      ? `留空使用 ${network.nativeCurrency.symbol}，或输入 0x...`
+                      : `Blank for ${network.nativeCurrency.symbol}, or 0x...`}
+                    value={paymentAsset}
+                    onChange={e => setPaymentAsset(e.target.value)}
+                  />
                   <div className={`contract-field-feedback ${paymentTokenPreview.error ? 'is-error' : 'is-success'}`}>
                     {paymentTokenPreview.loading
                       ? (language === 'zh' ? '正在读取代币...' : 'Reading token...')
@@ -627,8 +639,8 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                 <strong>{language === 'zh' ? 'Basket TVL 挖矿配置' : 'Basket TVL mining configuration'}</strong>
                 <span>
                   {language === 'zh'
-                    ? 'Basket 按链上 WETH 净值获得挖矿权重；每个 Basket 会创建独立质押子池'
-                    : 'Baskets mine by on-chain WETH NAV; each Basket gets an independent staking pool'}
+                    ? 'Basket 按合约持有的社区代币余额获得挖矿权重；每个 Basket 会创建独立质押子池'
+                    : 'Baskets mine by the Community Token balance held by each Basket contract; each Basket gets an independent staking pool'}
                 </span>
               </div>
               <div className="nft-pool-form-grid">

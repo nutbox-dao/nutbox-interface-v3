@@ -29,8 +29,8 @@ import BasketStakePoolCard from './BasketStakePoolCard';
 import './BasketTVLMiningPoolCard.css';
 
 const MAX_BASKET_POOLS_PER_NFT = 3;
-const NAV_MATCH_THRESHOLD_BPS = 100n;
-const NAV_REFRESH_THRESHOLD_BPS = 500n;
+const WEIGHT_MATCH_THRESHOLD_BPS = 100n;
+const WEIGHT_REFRESH_THRESHOLD_BPS = 500n;
 
 function toBigInt(value, fallback = 0n) {
   try {
@@ -40,16 +40,16 @@ function toBigInt(value, fallback = 0n) {
   }
 }
 
-function getNavStatus(miningAmount, actualNav) {
-  if (actualNav === null || actualNav === undefined) return 'unknown';
-  if (miningAmount === actualNav) return 'matched';
-  if (miningAmount === 0n) return actualNav > 0n ? 'stale' : 'matched';
-  const difference = miningAmount > actualNav
-    ? miningAmount - actualNav
-    : actualNav - miningAmount;
+function getMiningWeightStatus(miningAmount, actualMiningAmount) {
+  if (actualMiningAmount === null || actualMiningAmount === undefined) return 'unknown';
+  if (miningAmount === actualMiningAmount) return 'matched';
+  if (miningAmount === 0n) return actualMiningAmount > 0n ? 'stale' : 'matched';
+  const difference = miningAmount > actualMiningAmount
+    ? miningAmount - actualMiningAmount
+    : actualMiningAmount - miningAmount;
   const differenceBps = difference * 10000n;
-  if (differenceBps < miningAmount * NAV_MATCH_THRESHOLD_BPS) return 'matched';
-  if (differenceBps < miningAmount * NAV_REFRESH_THRESHOLD_BPS) return 'warning';
+  if (differenceBps < miningAmount * WEIGHT_MATCH_THRESHOLD_BPS) return 'matched';
+  if (differenceBps < miningAmount * WEIGHT_REFRESH_THRESHOLD_BPS) return 'warning';
   return 'stale';
 }
 
@@ -70,7 +70,9 @@ export default function BasketTVLMiningPoolCard({
     lockDuration: initialData?.lockDuration || 0n,
     nftRewardBps: initialData?.nftRewardBps || 0,
   });
-  const [totalNav, setTotalNav] = useState(initialData?.totalNav || 0n);
+  const [totalMiningAmount, setTotalMiningAmount] = useState(
+    initialData?.totalMiningAmount ?? initialData?.totalNav ?? 0n,
+  );
   const [basketStakes, setBasketStakes] = useState([]);
   const [childDataByBasket, setChildDataByBasket] = useState({});
   const [basketCount, setBasketCount] = useState(0);
@@ -106,7 +108,7 @@ export default function BasketTVLMiningPoolCard({
         lockDuration: toBigInt(indexed.lockDuration),
         nftRewardBps: Number(indexed.nftRewardBps || 0),
       });
-      setTotalNav(toBigInt(indexed.totalMiningAmount));
+      setTotalMiningAmount(toBigInt(indexed.totalMiningAmount));
       setBasketCount(Number(indexed.basketCount || indexed.children?.length || 0));
       setOperationFee(feeData.operationFee || 0n);
     } catch (error) {
@@ -124,7 +126,7 @@ export default function BasketTVLMiningPoolCard({
         lockDuration: initialData.lockDuration,
         nftRewardBps: initialData.nftRewardBps,
       });
-      setTotalNav(initialData.totalNav);
+      setTotalMiningAmount(toBigInt(initialData.totalMiningAmount ?? initialData.totalNav));
       setOperationFee(initialData.operationFee);
       setLoading(false);
     } else {
@@ -182,8 +184,9 @@ export default function BasketTVLMiningPoolCard({
       const tokenInterface = new ethers.Interface(ERC20ABI);
       const nftInterface = new ethers.Interface(NFTMiningPoolABI);
       const calls = [];
+      const isBscMiningPool = Number(network.id) === 56;
 
-      if (contracts.WETH) {
+      if (!isBscMiningPool && contracts.WETH) {
         calls.push(
           { key: 'holderSymbol', target: contracts.WETH, contractInterface: tokenInterface, functionName: 'symbol', allowFailure: true },
           { key: 'holderDecimals', target: contracts.WETH, contractInterface: tokenInterface, functionName: 'decimals', allowFailure: true },
@@ -193,12 +196,21 @@ export default function BasketTVLMiningPoolCard({
       children.forEach(child => {
         const key = child.basket.toLowerCase();
         calls.push(
-          { key: `${key}:actualNav`, target: pool.id, contractInterface: parentInterface, functionName: 'basketNavWeth', args: [child.basket], allowFailure: true },
+          { key: `${key}:actualMiningAmount`, target: pool.id, contractInterface: parentInterface, functionName: 'basketCommunityTokenBalance', args: [child.basket], allowFailure: true },
           { key: `${key}:name`, target: child.basket, contractInterface: tokenInterface, functionName: 'name', allowFailure: true },
           { key: `${key}:symbol`, target: child.basket, contractInterface: tokenInterface, functionName: 'symbol', allowFailure: true },
           { key: `${key}:decimals`, target: child.basket, contractInterface: tokenInterface, functionName: 'decimals', allowFailure: true },
           { key: `${key}:pendingNftRewards`, target: child.childPool, contractInterface: childInterface, functionName: 'pendingNftRewards', allowFailure: true },
         );
+        if (isBscMiningPool) {
+          calls.push({
+            key: `${key}:holderFeeToken`,
+            target: child.childPool,
+            contractInterface: childInterface,
+            functionName: 'holderFeeToken',
+            allowFailure: true,
+          });
+        }
         if (ethers.isAddress(poolConfig.nftMiningPool)) {
           calls.push({
             key: `${key}:nftOwner`,
@@ -229,23 +241,33 @@ export default function BasketTVLMiningPoolCard({
         child.childPool.toLowerCase(),
         liveResults[index],
       ]));
-      const holderFeeInfo = {
-        address: contracts.WETH,
-        symbol: data.holderSymbol || 'WETH',
-        decimals: Number(data.holderDecimals || 18),
-      };
+      const holderFeeTokens = isBscMiningPool
+        ? [...new Set(children.map(child => {
+          const token = data[`${child.basket.toLowerCase()}:holderFeeToken`];
+          return ethers.isAddress(token) ? ethers.getAddress(token) : null;
+        }).filter(Boolean))]
+        : [];
+      const holderFeeMetadata = isBscMiningPool && holderFeeTokens.length > 0
+        ? await multicallRead(readProvider, contracts.Multicall3, holderFeeTokens.flatMap(token => {
+          const key = token.toLowerCase();
+          return [
+            { key: `${key}:symbol`, target: token, contractInterface: tokenInterface, functionName: 'symbol', allowFailure: true },
+            { key: `${key}:decimals`, target: token, contractInterface: tokenInterface, functionName: 'decimals', allowFailure: true },
+          ];
+        }))
+        : {};
       const stakes = children
         .map(child => {
           const key = child.basket.toLowerCase();
-          const actualNav = data[`${key}:actualNav`];
-          const navStatus = getNavStatus(child.miningAmount, actualNav);
+          const actualMiningAmount = data[`${key}:actualMiningAmount`];
+          const navStatus = getMiningWeightStatus(child.miningAmount, actualMiningAmount);
           return {
             basket: child.basket,
             basketCreator: child.basketCreator,
             childPool: child.childPool,
             nftTokenId: child.nftTokenId,
             miningAmount: child.miningAmount,
-            actualNav,
+            actualMiningAmount,
             navStatus,
             navNeedsRefresh: navStatus === 'stale',
             updatedAt: child.updatedAt,
@@ -264,6 +286,10 @@ export default function BasketTVLMiningPoolCard({
         const key = stake.basket.toLowerCase();
         const liveResult = liveByChildPool.get(stake.childPool.toLowerCase());
         const live = liveResult?.live;
+        const holderFeeToken = isBscMiningPool
+          ? (data[`${key}:holderFeeToken`] || '')
+          : (contracts.WETH || '');
+        const holderFeeKey = holderFeeToken.toLowerCase();
         return [key, {
           tokenInfo: {
             address: stake.basket,
@@ -271,7 +297,15 @@ export default function BasketTVLMiningPoolCard({
             symbol: data[`${key}:symbol`] || 'BASKET',
             decimals: Number(data[`${key}:decimals`] || 18),
           },
-          holderFeeInfo,
+          holderFeeInfo: {
+            address: holderFeeToken,
+            symbol: isBscMiningPool
+              ? (holderFeeMetadata[`${holderFeeKey}:symbol`] || 'ERC20')
+              : (data.holderSymbol || 'WETH'),
+            decimals: Number(isBscMiningPool
+              ? (holderFeeMetadata[`${holderFeeKey}:decimals`] || 18)
+              : (data.holderDecimals || 18)),
+          },
           totalStaked: stake.totalStakedAmount,
           userStaked: toBigInt(live?.userInfo?.amount),
           userBalance: data[`${key}:userBalance`] || 0n,
@@ -409,14 +443,14 @@ export default function BasketTVLMiningPoolCard({
           { key: 'symbol', target: value, contractInterface: tokenInterface, functionName: 'symbol' },
           { key: 'creator', target: value, contractInterface: tokenInterface, functionName: 'creatorPayout' },
           { key: 'valid', target: contracts.BasketRegistry, contractInterface: registryInterface, functionName: 'isBasket', args: [value] },
-          { key: 'nav', target: pool.id, contractInterface: parentInterface, functionName: 'basketNavWeth', args: [value], allowFailure: true },
+          { key: 'miningAmount', target: pool.id, contractInterface: parentInterface, functionName: 'basketCommunityTokenBalance', args: [value], allowFailure: true },
         ]);
         if (!cancelled) setBasketPreview({
           name: preview.name,
           symbol: preview.symbol,
           creator: preview.creator,
           valid: preview.valid,
-          nav: preview.nav || 0n,
+          miningAmount: preview.miningAmount || 0n,
         });
       } catch {
         if (!cancelled) setBasketPreview({ error: true });
@@ -499,7 +533,7 @@ export default function BasketTVLMiningPoolCard({
       <div className="basket-parent-stats">
         <div>
           <span>{t('basketPool.totalNav')}</span>
-          <strong>{loading ? '…' : `${formatTokenAmount(totalNav, 18)} WETH`}</strong>
+          <strong>{loading ? '…' : `${formatTokenAmount(totalMiningAmount, communityToken?.decimals || 18)} ${communityToken?.symbol || ''}`}</strong>
         </div>
         <div>
           <span>{t('basketPool.registeredBaskets')}</span>
@@ -590,7 +624,7 @@ export default function BasketTVLMiningPoolCard({
                   <>
                     <div>
                       <strong>{basketPreview.name} ({basketPreview.symbol})</strong>
-                      <span>{t('basketPool.currentNav')}: {formatTokenAmount(basketPreview.nav, 18)} WETH</span>
+                      <span>{t('basketPool.currentNav')}: {formatTokenAmount(basketPreview.miningAmount, communityToken?.decimals || 18)} {communityToken?.symbol || ''}</span>
                     </div>
                     <div>
                       <span>{basketPreview.valid ? t('basketPool.verifiedBasket') : t('basketPool.unverifiedBasket')}</span>

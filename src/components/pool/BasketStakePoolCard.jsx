@@ -105,15 +105,15 @@ export default function BasketStakePoolCard({
           </span>
           <strong className="basket-nav-comparison">
             <span className={`basket-mining-nav is-${basketStake.navStatus || 'unknown'}`}>
-              {formatTokenAmount(basketStake.miningAmount, 18)}
+              {formatTokenAmount(basketStake.miningAmount, communityToken?.decimals || 18)}
             </span>
             <span className="basket-nav-divider">/</span>
             <span className="basket-actual-nav">
-              {basketStake.actualNav === null || basketStake.actualNav === undefined
+              {basketStake.actualMiningAmount === null || basketStake.actualMiningAmount === undefined
                 ? '—'
-                : formatTokenAmount(basketStake.actualNav, 18)}
+                : formatTokenAmount(basketStake.actualMiningAmount, communityToken?.decimals || 18)}
             </span>
-            <span className="basket-nav-unit"> ETH</span>
+            <span className="basket-nav-unit"> {communityToken?.symbol || ''}</span>
           </strong>
         </div>
       </div>
