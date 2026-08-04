@@ -555,7 +555,9 @@ export default function BasketTVLMiningPoolCard({
         <div className="basket-explainer-icon">◈</div>
         <div>
           <strong>{t('basketPool.howTitle')}</strong>
-          <p>{t('basketPool.howDescription')}</p>
+          <p>{t('basketPool.howDescription', {
+            feeToken: Number(network.id) === 56 ? 'WBNB' : 'WETH',
+          })}</p>
         </div>
       </div>
 
