@@ -354,10 +354,10 @@ async function fetchOnChainCommunities(chainId) {
   }
 }
 
-async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID) {
+async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID, options = {}) {
   const apiBase = getNetworkConfig(chainId).apiBase;
   if (!apiBase) throw new Error(`Nutbox API is not configured for chain ${chainId}`);
-  return fetchAPIFromBase(apiBase, path, chainId);
+  return fetchAPIFromBase(apiBase, path, chainId, options);
 }
 
 async function fetchAPIFromBase(apiBase, path, chainId, options = {}) {
@@ -412,6 +412,22 @@ export async function registerBasketChildPool(parentPool, txHash, chainId = DEFA
     },
   );
   return data.child;
+}
+
+export async function registerBasketMiningPool(txHash, chainId = DEFAULT_CHAIN_ID) {
+  const data = await fetchAPI(
+    '/mining/basket-pools/register',
+    chainId,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ txHash }),
+    },
+  );
+  return {
+    ...data,
+    pool: data.pool ? mapPool(data.pool, chainId) : null,
+  };
 }
 
 function buildQuery(params = {}) {

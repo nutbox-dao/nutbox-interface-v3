@@ -554,7 +554,35 @@ export default function CommunityDetail() {
           communityAddress={address}
           activePools={activePools}
           onClose={() => setShowAddPool(false)}
-          onSuccess={() => { setShowAddPool(false); loadCommunity(); }}
+          onSuccess={(registration) => {
+            setShowAddPool(false);
+            if (!registration?.pool) {
+              loadCommunity();
+              return;
+            }
+            setCommunity(current => {
+              if (!current) return current;
+              const poolId = registration.pool.id.toLowerCase();
+              const existingPools = current.pools || [];
+              const alreadyPresent = existingPools.some(pool => pool.id.toLowerCase() === poolId);
+              const ratios = new Map((registration.ratios || []).map(item => [
+                item.pool.toLowerCase(),
+                Number(item.ratio),
+              ]));
+              const reconciledPools = existingPools.map(pool => ({
+                ...pool,
+                ratio: ratios.has(pool.id.toLowerCase())
+                  ? ratios.get(pool.id.toLowerCase())
+                  : pool.ratio,
+              }));
+              return {
+                ...current,
+                pools: alreadyPresent
+                  ? reconciledPools.map(pool => pool.id.toLowerCase() === poolId ? registration.pool : pool)
+                  : [...reconciledPools, registration.pool],
+              };
+            });
+          }}
         />
       )}
 

@@ -9,6 +9,7 @@ import {
 } from '../../config/abis';
 import { getPoolTypeLabel, getPoolTypeBadgeClass, shortenAddress } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
+import { registerBasketMiningPool } from '../../config/subgraph';
 
 function parseIntegerList(value) {
   return value.split(',').map(item => item.trim()).filter(Boolean).map(item => BigInt(item));
@@ -385,8 +386,21 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
 
       toast.info(t('addPool.toastCreating'));
       await tx.wait();
+
+      let registration = null;
+      if (poolType === 'basket-tvl') {
+        try {
+          registration = await registerBasketMiningPool(tx.hash, network.id);
+        } catch (registrationError) {
+          console.error('Register Basket TVL pool failed:', registrationError);
+          toast.info(language === 'zh'
+            ? '矿池已在链上创建，后台索引完成后会自动显示'
+            : 'The pool was created on-chain and will appear after indexing');
+        }
+      }
+
       toast.success(t('addPool.toastSuccess'));
-      onSuccess?.();
+      onSuccess?.(registration);
     } catch (err) {
       console.error('Create pool failed:', err);
       toast.error(err.reason || err.message || (language === 'zh' ? '添加矿池失败' : 'Failed to create pool'));
