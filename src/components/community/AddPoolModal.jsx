@@ -3,13 +3,35 @@ import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import {
+  CommitteeABI,
   CommunityABI,
+  ERC20ABI,
+  IndexBrokerNFTFactoryABI,
   NFTMiningPoolFactoryABI,
   NFTMiningRendererABI,
+  PancakeV4CLPoolManagerABI,
+  PumpABI,
+  PumpTokenABI,
 } from '../../config/abis';
 import { getPoolTypeLabel, getPoolTypeBadgeClass, shortenAddress } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { registerBasketMiningPool } from '../../config/subgraph';
+import IndexBrokerNFTPoolFields from './IndexBrokerNFTPoolFields';
+import {
+  DEFAULT_INDEX_BROKER_CONFIG,
+  encodeIndexBrokerNftPoolMeta,
+  getIndexBrokerV4PoolId,
+  INDEX_BROKER_SOURCE_TYPES,
+  isIndexBrokerV4Source,
+} from '../../utils/indexBrokerNft';
+import { multicallRead } from '../../utils/multicall';
+
+const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
+const ERC20_INTERFACE = new ethers.Interface(ERC20ABI);
+const INDEX_BROKER_FACTORY_INTERFACE = new ethers.Interface(IndexBrokerNFTFactoryABI);
+const PANCAKE_V4_CL_MANAGER_INTERFACE = new ethers.Interface(PancakeV4CLPoolManagerABI);
+const PUMP_INTERFACE = new ethers.Interface(PumpABI);
+const PUMP_TOKEN_INTERFACE = new ethers.Interface(PumpTokenABI);
 
 function parseIntegerList(value) {
   return value.split(',').map(item => item.trim()).filter(Boolean).map(item => BigInt(item));
@@ -32,7 +54,7 @@ function previewWeightForLevel(weightsValue, levelValue) {
   }
 }
 
-export default function AddPoolModal({ communityAddress, activePools, onClose, onSuccess }) {
+export default function AddPoolModal({ communityAddress, communityTokenAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
   const { account, signer, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
@@ -68,6 +90,27 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   const [inputRatios, setInputRatios] = useState([]);
   const [loading, setLoading] = useState(false);
   const [settingsFee, setSettingsFee] = useState(null);
+  const [indexBrokerConfig, setIndexBrokerConfig] = useState(() => ({
+    ...DEFAULT_INDEX_BROKER_CONFIG,
+    fundsReceiver: account || '',
+  }));
+  const [indexBrokerContext, setIndexBrokerContext] = useState({
+    loading: false,
+    symbol: '',
+    decimals: 18,
+    defaultRenderer: '',
+    pumpListed: null,
+    pumpPoolId: '',
+    pumpPoolManager: '',
+    error: '',
+  });
+  const [indexBrokerSource, setIndexBrokerSource] = useState({
+    loading: false,
+    resolved: false,
+    poolId: '',
+    error: '',
+    details: null,
+  });
 
   // Load operation fee on mount
   useEffect(() => {
@@ -88,6 +131,238 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   useEffect(() => {
     if (!fundsReceiver && account) setFundsReceiver(account);
   }, [account, fundsReceiver]);
+
+  useEffect(() => {
+    if (poolType !== 'index-broker-nft' || !readProvider || !communityTokenAddress
+      || !contracts.IndexBrokerNFTFactory || !contracts.Pump || !contracts.Multicall3) return undefined;
+    let cancelled = false;
+    setIndexBrokerContext(current => ({ ...current, loading: true, error: '' }));
+
+    multicallRead(readProvider, contracts.Multicall3, [
+      {
+        key: 'symbol', target: communityTokenAddress, contractInterface: ERC20_INTERFACE,
+        functionName: 'symbol', args: [],
+      },
+      {
+        key: 'decimals', target: communityTokenAddress, contractInterface: ERC20_INTERFACE,
+        functionName: 'decimals', args: [],
+      },
+      {
+        key: 'officialToken', target: contracts.Pump, contractInterface: PUMP_INTERFACE,
+        functionName: 'createdTokens', args: [communityTokenAddress],
+      },
+      {
+        key: 'pumpPoolManager', target: contracts.Pump, contractInterface: PUMP_INTERFACE,
+        functionName: 'getPoolManager', args: [],
+      },
+      {
+        key: 'pumpListed', target: communityTokenAddress, contractInterface: PUMP_TOKEN_INTERFACE,
+        functionName: 'listed', args: [], allowFailure: true,
+      },
+      {
+        key: 'pumpPoolId', target: communityTokenAddress, contractInterface: PUMP_TOKEN_INTERFACE,
+        functionName: 'v4PoolId', args: [], allowFailure: true,
+      },
+      {
+        key: 'defaultIndexToken', target: contracts.IndexBrokerNFTFactory,
+        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+        functionName: 'defaultIndexToken', args: [],
+      },
+      {
+        key: 'defaultRenderer', target: contracts.IndexBrokerNFTFactory,
+        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+        functionName: 'defaultRenderer', args: [],
+      },
+    ]).then(({ symbol, decimals, officialToken, defaultIndexToken, defaultRenderer, pumpListed, pumpPoolId, pumpPoolManager }) => {
+      if (cancelled) return;
+      setIndexBrokerContext({
+        loading: false,
+        symbol,
+        decimals: Number(decimals),
+        defaultRenderer,
+        pumpListed: officialToken ? Boolean(pumpListed) : null,
+        pumpPoolId: officialToken && pumpListed ? String(pumpPoolId || '') : '',
+        pumpPoolManager: officialToken ? String(pumpPoolManager || '') : '',
+        error: '',
+      });
+      setIndexBrokerConfig(current => ({
+        ...current,
+        officialToken,
+        fundsReceiver: current.fundsReceiver || account || '',
+        indexToken: current.indexToken || defaultIndexToken,
+      }));
+    }).catch(error => {
+      if (cancelled) return;
+      console.error('Failed to load Index Broker NFT creation context:', error);
+      setIndexBrokerContext(current => ({
+        ...current,
+        loading: false,
+        error: language === 'zh' ? '无法读取 Index Broker 创建配置' : 'Could not load Index Broker creation settings',
+      }));
+    });
+
+    return () => { cancelled = true; };
+  }, [
+    account,
+    communityTokenAddress,
+    contracts.IndexBrokerNFTFactory,
+    contracts.Multicall3,
+    contracts.Pump,
+    language,
+    poolType,
+    readProvider,
+  ]);
+
+  useEffect(() => {
+    const sourceType = Number(indexBrokerConfig.sourceType);
+    const poolId = indexBrokerConfig.sourcePoolId.trim();
+    if (
+      poolType !== 'index-broker-nft'
+      || indexBrokerConfig.officialToken !== false
+      || !isIndexBrokerV4Source(sourceType)
+    ) {
+      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
+      return undefined;
+    }
+    if (!poolId) {
+      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
+      return undefined;
+    }
+    if (!ethers.isHexString(poolId, 32)) {
+      setIndexBrokerSource({
+        loading: false,
+        resolved: false,
+        poolId,
+        error: language === 'zh' ? 'Pool ID 必须是 32 字节十六进制值' : 'Pool ID must be a 32-byte hex value',
+        details: null,
+      });
+      return undefined;
+    }
+    if (sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) {
+      setIndexBrokerSource({
+        loading: false,
+        resolved: false,
+        poolId,
+        error: language === 'zh'
+          ? '当前 Index Broker 部署未启用 Uniswap V4 价格源'
+          : 'The current Index Broker deployment does not enable Uniswap V4 pricing',
+        details: null,
+      });
+      return undefined;
+    }
+    if (!readProvider || !contracts.Multicall3 || !contracts.PancakeV4CLManager) {
+      setIndexBrokerSource({
+        loading: false,
+        resolved: false,
+        poolId,
+        error: language === 'zh' ? '当前网络未配置 Pancake V4 CL Pool Manager' : 'Pancake V4 CL Pool Manager is not configured',
+        details: null,
+      });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setIndexBrokerSource({ loading: true, resolved: false, poolId, error: '', details: null });
+    const timer = setTimeout(async () => {
+      try {
+        const manager = ethers.getAddress(contracts.PancakeV4CLManager);
+        const result = await multicallRead(readProvider, contracts.Multicall3, [
+          {
+            key: 'poolKey', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
+            functionName: 'poolIdToPoolKey', args: [poolId],
+          },
+          {
+            key: 'slot0', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
+            functionName: 'getSlot0', args: [poolId],
+          },
+          {
+            key: 'liquidity', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
+            functionName: 'getLiquidity', args: [poolId],
+          },
+        ]);
+        if (cancelled) return;
+
+        const poolKey = result.poolKey;
+        const details = {
+          currency0: ethers.getAddress(poolKey.currency0),
+          currency1: ethers.getAddress(poolKey.currency1),
+          hooks: ethers.getAddress(poolKey.hooks),
+          poolManager: ethers.getAddress(poolKey.poolManager),
+          fee: Number(poolKey.fee),
+          parameters: poolKey.parameters,
+        };
+        const resolvedSource = {
+          sourcePoolManager: details.poolManager,
+          sourceCurrency0: details.currency0,
+          sourceCurrency1: details.currency1,
+          sourceHooks: details.hooks,
+          sourceFee: String(details.fee),
+          sourceParameters: details.parameters,
+        };
+        if (getIndexBrokerV4PoolId({
+          sourceType,
+          sourcePoolId: poolId,
+          ...resolvedSource,
+        }).toLowerCase() !== poolId.toLowerCase()) {
+          throw new Error(language === 'zh' ? 'Pool ID 与链上 PoolKey 不匹配' : 'Pool ID does not match the on-chain PoolKey');
+        }
+        if (details.poolManager.toLowerCase() !== manager.toLowerCase()) {
+          throw new Error(language === 'zh' ? 'Pool Manager 与当前网络配置不匹配' : 'Pool Manager does not match this network');
+        }
+
+        const token = communityTokenAddress.toLowerCase();
+        const currencies = [details.currency0.toLowerCase(), details.currency1.toLowerCase()];
+        const quoteCurrencies = new Set([
+          ethers.ZeroAddress.toLowerCase(),
+          ...(contracts.WBNB ? [contracts.WBNB.toLowerCase()] : []),
+        ]);
+        const tokenIndex = currencies.indexOf(token);
+        if (tokenIndex < 0 || !quoteCurrencies.has(currencies[tokenIndex === 0 ? 1 : 0])) {
+          throw new Error(language === 'zh'
+            ? '该池必须是当前社区代币与 BNB/WBNB 的交易池'
+            : 'The pool must pair this Community Token with BNB/WBNB');
+        }
+        if (BigInt(result.slot0.sqrtPriceX96 ?? result.slot0[0] ?? 0) === 0n || BigInt(result.liquidity || 0) === 0n) {
+          throw new Error(language === 'zh' ? '该池尚未初始化或没有流动性' : 'The pool is not initialized or has no liquidity');
+        }
+
+        setIndexBrokerConfig(current => (
+          current.sourcePoolId.trim().toLowerCase() === poolId.toLowerCase()
+            && Number(current.sourceType) === sourceType
+            ? { ...current, ...resolvedSource }
+            : current
+        ));
+        setIndexBrokerSource({ loading: false, resolved: true, poolId, error: '', details });
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to resolve V4 Pool ID:', error);
+        setIndexBrokerSource({
+          loading: false,
+          resolved: false,
+          poolId,
+          error: error.shortMessage || error.reason || error.message
+            || (language === 'zh' ? '无法读取该 Pool ID' : 'Could not resolve this Pool ID'),
+          details: null,
+        });
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [
+    communityTokenAddress,
+    contracts.Multicall3,
+    contracts.PancakeV4CLManager,
+    contracts.WBNB,
+    indexBrokerConfig.officialToken,
+    indexBrokerConfig.sourcePoolId,
+    indexBrokerConfig.sourceType,
+    language,
+    poolType,
+    readProvider,
+  ]);
 
   useEffect(() => {
     if (poolType !== 'basket-tvl' || basketNftMiningPool) return;
@@ -235,12 +510,13 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
   const handleCreate = async () => {
     const isNFTMining = poolType === 'nft-mining';
     const isBasketTVL = poolType === 'basket-tvl';
-    if (!signer || !poolName || (!isNFTMining && !isBasketTVL && !stakeTokenAddress)) {
+    const isIndexBroker = poolType === 'index-broker-nft';
+    if (!signer || !poolName || (!isNFTMining && !isBasketTVL && !isIndexBroker && !stakeTokenAddress)) {
       toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
 
-    if (!isNFTMining && !isBasketTVL && !ethers.isAddress(stakeTokenAddress)) {
+    if (!isNFTMining && !isBasketTVL && !isIndexBroker && !ethers.isAddress(stakeTokenAddress)) {
       toast.error(language === 'zh' ? '代币地址无效' : 'Invalid token address');
       return;
     }
@@ -273,11 +549,11 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
     setLoading(true);
     try {
       const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
-      const committeeContract = new ethers.Contract(contracts.Committee, [
-        'function getCommunitySettingsFee() view returns (uint256)',
-      ], readProvider);
-
-      const fee = await committeeContract.getCommunitySettingsFee();
+      let fee = isIndexBroker ? null : await new ethers.Contract(
+        contracts.Committee,
+        CommitteeABI,
+        readProvider,
+      ).getCommunitySettingsFee();
 
       let factoryAddress;
       let meta;
@@ -320,6 +596,38 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
           ['address', 'uint16', 'uint256'],
           [selectedNftPool.id, nftRewardBps, Math.round(durationHours * 3600)]
         );
+      } else if (poolType === 'index-broker-nft') {
+        factoryAddress = contracts.IndexBrokerNFTFactory;
+        if (!factoryAddress || Number(network.id) !== 56) {
+          throw new Error(language === 'zh' ? '当前网络不支持 Index Broker NFT' : 'Index Broker NFT is not supported on this network');
+        }
+        if (indexBrokerContext.loading || indexBrokerConfig.officialToken === null) {
+          throw new Error(language === 'zh' ? '正在读取创建配置，请稍后重试' : 'Creation settings are still loading');
+        }
+        if (ethers.toUtf8Bytes(poolName.trim()).length > 64) {
+          throw new Error(language === 'zh' ? '矿池名称不能超过 64 个 UTF-8 字节' : 'Pool name cannot exceed 64 UTF-8 bytes');
+        }
+        if (!contracts.Multicall3) {
+          throw new Error(language === 'zh' ? '当前网络未配置 Multicall3' : 'Multicall3 is not configured');
+        }
+        const checks = await multicallRead(readProvider, contracts.Multicall3, [
+          {
+            key: 'fee', target: contracts.Committee, contractInterface: COMMITTEE_INTERFACE,
+            functionName: 'getCommunitySettingsFee', args: [],
+          },
+          {
+            key: 'reserved', target: factoryAddress,
+            contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+            functionName: 'reservedCollectionNameHash',
+            args: [ethers.keccak256(ethers.toUtf8Bytes(poolName.trim()))],
+          },
+        ]);
+        fee = checks.fee;
+        const reserved = checks.reserved;
+        if (reserved) {
+          throw new Error(language === 'zh' ? '该集合名称为 Factory 保留名称' : 'This collection name is reserved by the Factory');
+        }
+        meta = encodeIndexBrokerNftPoolMeta(indexBrokerConfig, indexBrokerContext.decimals);
       } else {
         factoryAddress = contracts.NFTMiningPoolFactory;
         if (!factoryAddress) {
@@ -385,7 +693,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
       );
 
       toast.info(t('addPool.toastCreating'));
-      await tx.wait();
+      const receipt = await tx.wait();
 
       let registration = null;
       if (poolType === 'basket-tvl') {
@@ -396,6 +704,39 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
           toast.info(language === 'zh'
             ? '矿池已在链上创建，后台索引完成后会自动显示'
             : 'The pool was created on-chain and will appear after indexing');
+        }
+      } else if (poolType === 'index-broker-nft') {
+        const factoryInterface = new ethers.Interface(IndexBrokerNFTFactoryABI);
+        const created = receipt.logs
+          .filter(log => log.address.toLowerCase() === contracts.IndexBrokerNFTFactory.toLowerCase())
+          .map(log => {
+            try { return factoryInterface.parseLog(log); } catch { return null; }
+          })
+          .find(parsed => parsed?.name === 'IndexBrokerNFTCreated');
+        if (created) {
+          const createdPool = created.args.pool;
+          registration = {
+            source: 'transaction-receipt',
+            pool: {
+              id: createdPool,
+              index: null,
+              poolIndex: null,
+              name: created.args.name || poolName,
+              status: 'OPENED',
+              poolType: 'INDEX_BROKER_NFT',
+              totalAmount: '0',
+              asset: communityTokenAddress,
+              ratio: ratioArr[ratioArr.length - 1],
+              stakersCount: 0,
+              lockDuration: null,
+              poolFactory: contracts.IndexBrokerNFTFactory,
+              createdAt: null,
+            },
+            ratios: [
+              ...activePools.map((pool, index) => ({ pool: pool.id, ratio: ratioArr[index] })),
+              { pool: createdPool, ratio: ratioArr[ratioArr.length - 1] },
+            ],
+          };
         }
       }
 
@@ -441,6 +782,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
               {contracts.BasketTVLMiningPoolFactory && (
                 <option value="basket-tvl">{language === 'zh' ? 'Basket TVL 挖矿' : 'Basket TVL Mining'}</option>
               )}
+              {Number(network.id) === 56 && contracts.IndexBrokerNFTFactory && (
+                <option value="index-broker-nft">Index Broker NFT</option>
+              )}
             </select>
           </div>
 
@@ -455,7 +799,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             />
           </div>
 
-          {poolType !== 'nft-mining' && poolType !== 'basket-tvl' && (
+          {poolType !== 'nft-mining' && poolType !== 'basket-tvl' && poolType !== 'index-broker-nft' && (
             <div className="input-group">
               <label>{t('addPool.fieldStakeToken')}</label>
               <input
@@ -766,6 +1110,28 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             </div>
           )}
 
+          {poolType === 'index-broker-nft' && (
+            <>
+              <IndexBrokerNFTPoolFields
+                config={indexBrokerConfig}
+                onChange={setIndexBrokerConfig}
+                language={language}
+                tokenInfo={indexBrokerContext}
+                loadingContext={indexBrokerContext.loading}
+                sourceResolution={indexBrokerSource}
+                sourceCapabilities={{
+                  uniswapV4: Boolean(contracts.UniswapV4Manager),
+                  pancakeV4Cl: Boolean(contracts.PancakeV4CLManager),
+                }}
+                poolName={poolName}
+                readProvider={readProvider}
+              />
+              {indexBrokerContext.error && (
+                <div className="contract-field-feedback is-error">{indexBrokerContext.error}</div>
+              )}
+            </>
+          )}
+
           {/* Pool Ratios Section */}
           <div className="glass-card" style={{ padding: 'var(--space-4)', background: 'rgba(255,255,255,0.01)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '8px' }}>
             <h3 style={{ fontSize: 'var(--font-size-sm)', fontWeight: 600, color: 'var(--color-text-secondary)', marginBottom: 'var(--space-3)' }}>
@@ -823,7 +1189,9 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
                         ? 'Locking'
                         : poolType === 'nft-mining'
                           ? 'NFT Mining'
-                          : 'Basket TVL Mining'}
+                          : poolType === 'basket-tvl'
+                            ? 'Basket TVL Mining'
+                            : 'Index Broker NFT'}
                   </span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-1)', width: 120 }}>
@@ -877,7 +1245,7 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
             onClick={handleCreate}
             disabled={
               loading || !poolName || !isValidRatios
-              || (poolType !== 'nft-mining' && poolType !== 'basket-tvl' && !stakeTokenAddress)
+              || (poolType !== 'nft-mining' && poolType !== 'basket-tvl' && poolType !== 'index-broker-nft' && !stakeTokenAddress)
               || (poolType === 'nft-mining' && (
                 !nftSymbol || !fundsReceiver || !mintPrice || !batchSupply || !contracts.NFTMiningPoolFactory
                 || paymentTokenPreview.loading || rendererPreview.loading
@@ -885,6 +1253,23 @@ export default function AddPoolModal({ communityAddress, activePools, onClose, o
               ))
               || (poolType === 'basket-tvl' && (
                 !basketNftMiningPool || !basketLockDurationHours || !contracts.BasketTVLMiningPoolFactory
+              ))
+              || (poolType === 'index-broker-nft' && (
+                indexBrokerContext.loading || Boolean(indexBrokerContext.error)
+                || indexBrokerConfig.officialToken === null
+                || !indexBrokerConfig.symbol || !indexBrokerConfig.fundsReceiver
+                || !indexBrokerConfig.communityTokenPrice
+                || !indexBrokerConfig.indexMiningActivationTokenAmount
+                || !indexBrokerConfig.maxSupply || !indexBrokerConfig.whitelist
+                || !contracts.IndexBrokerNFTFactory
+                || (
+                  indexBrokerConfig.officialToken === false
+                  && isIndexBrokerV4Source(indexBrokerConfig.sourceType)
+                  && (
+                    indexBrokerSource.loading || !indexBrokerSource.resolved
+                    || indexBrokerSource.poolId.toLowerCase() !== indexBrokerConfig.sourcePoolId.trim().toLowerCase()
+                  )
+                )
               ))
             }
             style={{ width: '100%' }}

@@ -1,0 +1,470 @@
+.badge-index-broker {
+  color: #f5d36f;
+  border-color: rgba(245, 211, 111, 0.35);
+  background: linear-gradient(135deg, rgba(245, 211, 111, 0.14), rgba(138, 92, 246, 0.14));
+}
+
+.index-broker-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.index-broker-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #f5d36f, #8a5cf6, transparent);
+}
+
+.index-broker-stats,
+.index-broker-economics,
+.index-broker-amm-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.index-broker-stats > div,
+.index-broker-economics > div,
+.index-broker-amm-stats > div,
+.index-broker-user-summary > div {
+  min-width: 0;
+  padding: var(--space-3);
+  border: 1px solid rgba(245, 211, 111, 0.1);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.index-broker-stats span,
+.index-broker-economics span,
+.index-broker-amm-stats span,
+.index-broker-user-summary span,
+.index-broker-pending span,
+.index-broker-mining-columns span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.index-broker-stats strong,
+.index-broker-economics strong,
+.index-broker-amm-stats strong,
+.index-broker-user-summary strong {
+  display: block;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.index-broker-economics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.index-broker-stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.index-broker-user-summary {
+  display: grid;
+  grid-template-columns: 1fr 1.5fr auto;
+  align-items: stretch;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.index-broker-user-summary .btn {
+  align-self: center;
+}
+
+.index-broker-mint-panel {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 280px) auto;
+  align-items: end;
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+  padding: var(--space-4);
+  border: 1px solid rgba(245, 211, 111, 0.2);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, rgba(245, 211, 111, 0.07), rgba(138, 92, 246, 0.06));
+}
+
+.index-broker-mint-panel h3,
+.index-broker-section-heading h2,
+.index-broker-admin h2,
+.index-broker-rewards h2,
+.index-broker-insights h2 {
+  margin: 0;
+  font-size: var(--font-size-lg);
+}
+
+.index-broker-mint-panel p,
+.index-broker-section-heading p,
+.index-broker-insights p {
+  margin: 5px 0 0;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.index-broker-nft-section,
+.index-broker-rewards,
+.index-broker-amm,
+.index-broker-admin {
+  margin-top: var(--space-5);
+  padding: var(--space-5);
+}
+
+.index-broker-section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.index-broker-empty {
+  padding: var(--space-6);
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.index-broker-nft-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--space-4);
+}
+
+.index-broker-nft {
+  overflow: hidden;
+  border: 1px solid rgba(245, 211, 111, 0.14);
+  border-radius: var(--radius-lg);
+  background: rgba(8, 9, 16, 0.52);
+}
+
+.index-broker-nft > img,
+.index-broker-image-placeholder {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  background: radial-gradient(circle at 30% 20%, rgba(245, 211, 111, 0.18), transparent 55%), #0c0d16;
+}
+
+.index-broker-image-placeholder {
+  display: grid;
+  place-items: center;
+  color: rgba(245, 211, 111, 0.7);
+  font-weight: 700;
+}
+
+.index-broker-nft-body {
+  padding: var(--space-4);
+}
+
+.index-broker-nft-title,
+.index-broker-pending {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.index-broker-nft-title span {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.index-broker-mining-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.index-broker-mining-columns > div {
+  padding: var(--space-3);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.index-broker-mining-columns strong,
+.index-broker-mining-columns small {
+  display: block;
+}
+
+.index-broker-mining-columns small {
+  margin-top: 3px;
+  color: #f5d36f;
+}
+
+.index-broker-pending {
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.index-broker-pending span {
+  margin: 0;
+}
+
+.index-broker-nft-actions,
+.index-broker-sell-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.index-broker-reveal-status {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--color-text-tertiary);
+}
+
+.index-broker-upgrade-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.index-broker-reward-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+}
+
+.index-broker-reward-form small {
+  display: block;
+  margin-top: var(--space-2);
+  color: var(--color-text-tertiary);
+}
+
+.index-broker-warning {
+  margin: var(--space-4) 0;
+  padding: var(--space-3);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: var(--radius-md);
+  color: #f6c66d;
+  background: rgba(245, 158, 11, 0.07);
+  font-size: var(--font-size-xs);
+  line-height: 1.55;
+}
+
+.index-broker-inventory-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.index-broker-inventory-grid article {
+  overflow: hidden;
+  padding-bottom: var(--space-3);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.index-broker-inventory-grid img,
+.index-broker-inventory-grid .index-broker-image-placeholder {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+}
+
+.index-broker-inventory-grid strong,
+.index-broker-inventory-grid .btn {
+  display: block;
+  margin: var(--space-2) var(--space-3) 0;
+}
+
+.index-broker-admin > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+}
+
+.index-broker-insights {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-top: var(--space-5);
+}
+
+.index-broker-insights > div {
+  padding: var(--space-5);
+}
+
+.index-broker-insight-row,
+.index-broker-event-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.055);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.index-broker-event-row {
+  grid-template-columns: 1fr auto;
+}
+
+.index-broker-event-row div span {
+  display: block;
+  margin-top: 3px;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.index-broker-loading {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: 50;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(10, 10, 18, 0.92);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.index-broker-create-config .index-broker-subheading {
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.index-broker-whitelist {
+  min-height: 112px;
+  resize: vertical;
+  font-family: monospace;
+}
+
+.index-broker-check {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.index-broker-renderer-preview {
+  overflow: hidden;
+  border: 1px solid rgba(115, 251, 211, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(6, 7, 26, 0.35);
+}
+
+.index-broker-renderer-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.index-broker-renderer-toggle:hover {
+  background: rgba(115, 251, 211, 0.045);
+}
+
+.index-broker-renderer-toggle > span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.index-broker-renderer-toggle small {
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-family: monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.index-broker-renderer-action {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.index-broker-renderer-chevron {
+  color: var(--color-text-tertiary);
+  font-size: 22px;
+  line-height: 1;
+  transition: transform 160ms ease;
+}
+
+.index-broker-renderer-chevron.is-expanded {
+  transform: rotate(180deg);
+}
+
+.index-broker-renderer-body {
+  border: 0;
+  border-top: 1px solid rgba(115, 251, 211, 0.18);
+  border-radius: 0;
+}
+
+.index-broker-renderer-parameters {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.index-broker-renderer-collection {
+  grid-column: span 2;
+}
+
+.index-broker-renderer-check {
+  min-height: 38px;
+  padding: 8px 11px;
+  border: 1px solid rgba(115, 251, 211, 0.18);
+  border-radius: var(--radius-md);
+  background: rgba(115, 251, 211, 0.04);
+}
+
+@media (max-width: 760px) {
+  .index-broker-stats,
+  .index-broker-amm-stats,
+  .index-broker-user-summary,
+  .index-broker-mint-panel,
+  .index-broker-reward-form,
+  .index-broker-insights,
+  .index-broker-admin > div {
+    grid-template-columns: 1fr;
+  }
+
+  .index-broker-economics {
+    grid-template-columns: 1fr;
+  }
+
+  .index-broker-renderer-parameters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 480px) {
+  .index-broker-renderer-parameters {
+    grid-template-columns: 1fr;
+  }
+
+  .index-broker-renderer-collection {
+    grid-column: auto;
+  }
+}

@@ -14,6 +14,7 @@ import { multicallRead } from '../utils/multicall';
 import { copyToClipboard, getBscScanUrl, shortenAddress } from '../utils/helpers';
 import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
 import BasketTVLMiningPoolCard from '../components/pool/BasketTVLMiningPoolCard';
+import IndexBrokerNFTPoolCard from '../components/pool/IndexBrokerNFTPoolCard';
 import './MiningPoolDetail.css';
 
 export default function MiningPoolDetail() {
@@ -38,7 +39,7 @@ export default function MiningPoolDetail() {
       const indexedPool = community?.pools?.find(
         item => item.id.toLowerCase() === poolAddress.toLowerCase(),
       );
-      if (!indexedPool || !['BASKET_TVL_MINING', 'NFT_MINING'].includes(indexedPool.poolType)) {
+      if (!indexedPool || !['BASKET_TVL_MINING', 'NFT_MINING', 'INDEX_BROKER_NFT'].includes(indexedPool.poolType)) {
         throw new Error('Unsupported mining pool type');
       }
 
@@ -92,7 +93,8 @@ export default function MiningPoolDetail() {
     account && communityOwner && account.toLowerCase() === communityOwner.toLowerCase()
   );
   const isBasketPool = pool?.poolType === 'BASKET_TVL_MINING';
-  const isSupportedPool = isBasketPool || pool?.poolType === 'NFT_MINING';
+  const isIndexBrokerPool = pool?.poolType === 'INDEX_BROKER_NFT';
+  const isSupportedPool = isBasketPool || isIndexBrokerPool || pool?.poolType === 'NFT_MINING';
   const displayedPoolAddress = pool?.id || poolAddress;
 
   const handleCopyPoolAddress = async () => {
@@ -145,6 +147,15 @@ export default function MiningPoolDetail() {
           pool={pool}
           communityAddress={communityAddress}
           communityToken={communityToken}
+          onRefresh={loadDetail}
+          detail
+        />
+      ) : isIndexBrokerPool ? (
+        <IndexBrokerNFTPoolCard
+          pool={pool}
+          communityAddress={communityAddress}
+          communityToken={communityToken}
+          isOwner={isOwner}
           onRefresh={loadDetail}
           detail
         />

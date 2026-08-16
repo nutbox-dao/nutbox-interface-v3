@@ -540,6 +540,12 @@ select.input {
   animation: slideUp 300ms ease;
 }
 
+@media (min-width: 769px) {
+  .modal-content.add-pool-modal {
+    max-width: 960px;
+  }
+}
+
 .modal-header {
   display: flex;
   align-items: center;

@@ -715,6 +715,36 @@ export async function fetchBasketChildEvents(
   );
 }
 
+// ──── Index Broker NFT read model ────
+// One backend request returns indexed bootstrap data, rankings, activity, and token-ID hints.
+// Live balances, weights, allowances, rewards, inventory summary, and quotes stay on-chain.
+export async function fetchIndexBrokerNftInsights(
+  pool,
+  { account, accountsSize = 10, eventsSize = 12, inventorySize = 24 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  try {
+    return await fetchAPI(
+      `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/insights${buildQuery({
+        account,
+        accountsSize,
+        eventsSize,
+        inventorySize,
+      })}`,
+      chainId,
+    );
+  } catch (error) {
+    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
+    return {
+      pool: null,
+      topAccounts: [],
+      recentEvents: [],
+      inventoryTokenIds: [],
+      indexedBlock: 0,
+    };
+  }
+}
+
 // ──── Global stats ────
 export async function fetchWalnutStats(chainId = DEFAULT_CHAIN_ID) {
   try {
@@ -911,6 +941,7 @@ function mapPool(raw, chainId) {
     lockDuration: raw.lockDuration,
     poolFactory: raw.poolFactory,
     createdAt: raw.createdAtTs?.toString(),
+    indexBroker: raw.indexBroker || null,
   };
 }
 
@@ -940,6 +971,7 @@ function guessPoolType(factoryAddress, chainId) {
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
+    [contracts.IndexBrokerNFTFactory, 'INDEX_BROKER_NFT'],
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || 'UNKNOWN';
 }

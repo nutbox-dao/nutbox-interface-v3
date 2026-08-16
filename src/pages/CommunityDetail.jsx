@@ -18,6 +18,7 @@ import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
 import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
 import BasketTVLMiningPoolCard from '../components/pool/BasketTVLMiningPoolCard';
+import IndexBrokerNFTPoolCard from '../components/pool/IndexBrokerNFTPoolCard';
 import { PoolCardFooter, PoolCardHeader } from '../components/pool/PoolCardTemplate';
 import AddPoolModal from '../components/community/AddPoolModal';
 import AdjustRatiosModal from '../components/community/AdjustRatiosModal';
@@ -238,10 +239,13 @@ export default function CommunityDetail() {
   const basketTVLMiningPools = displayPools.filter(p =>
     p.poolType === 'BASKET_TVL_MINING'
   );
+  const indexBrokerNftPools = displayPools.filter(p =>
+    p.poolType === 'INDEX_BROKER_NFT'
+  );
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
     && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'NFT_MINING'
-    && p.poolType !== 'BASKET_TVL_MINING'
+    && p.poolType !== 'BASKET_TVL_MINING' && p.poolType !== 'INDEX_BROKER_NFT'
   );
   const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
   const displayDaoFund = daoFundAddress || community.daoFund;
@@ -474,7 +478,7 @@ export default function CommunityDetail() {
               </div>
             </div>
           </div>
-        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && nftMiningPools.length === 0 && basketTVLMiningPools.length === 0 && otherPools.length === 0 ? (
+        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && nftMiningPools.length === 0 && basketTVLMiningPools.length === 0 && indexBrokerNftPools.length === 0 && otherPools.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">{t('detail.noPoolsTitle')}</div>
@@ -529,6 +533,16 @@ export default function CommunityDetail() {
                 onRefresh={loadCommunity}
               />
             ))}
+            {indexBrokerNftPools.map(pool => (
+              <IndexBrokerNFTPoolCard
+                key={pool.id}
+                pool={pool}
+                communityAddress={address}
+                communityToken={tokenInfo}
+                isOwner={isOwner}
+                onRefresh={loadCommunity}
+              />
+            ))}
             {otherPools.map(pool => (
               <div key={pool.id} className="pool-card glass-card" style={{ opacity: 0.6 }}>
                 <PoolCardHeader
@@ -552,6 +566,7 @@ export default function CommunityDetail() {
       {showAddPool && (
         <AddPoolModal
           communityAddress={address}
+          communityTokenAddress={community.cToken}
           activePools={activePools}
           onClose={() => setShowAddPool(false)}
           onSuccess={(registration) => {
@@ -673,6 +688,7 @@ function guessPoolType(factoryAddress, contracts) {
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
+    [contracts.IndexBrokerNFTFactory, 'INDEX_BROKER_NFT'],
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || '';
 }

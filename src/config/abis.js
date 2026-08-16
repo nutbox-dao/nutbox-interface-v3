@@ -121,6 +121,107 @@ export const NFTMiningRendererABI = [
   'function renderSVG((string collectionName, uint256 tokenId, uint256 seed, uint256 referralCount, uint256 miningWeight, uint32 batchId, uint32 level, uint8 paletteId) params) view returns (string)',
 ];
 
+export const IndexBrokerNFTFactoryABI = [
+  'function defaultRenderer() view returns (address)',
+  'function defaultIndexToken() view returns (address)',
+  'function platformFeeBps() view returns (uint16)',
+  'function reservedCollectionNameHash(bytes32) view returns (bool)',
+  'event IndexBrokerNFTCreated(address indexed pool, address indexed community, address indexed admin, address communityToken, address renderer, string name, string symbol, address fundsReceiver, uint256 communityTokenPrice, uint256 indexMiningActivationTokenAmount, uint256 recommitPrice, uint256 nativePrice, uint256 maxSupply, uint16 referralBps, bool lockWhitelistSlots, bool rerollEnabled, uint256 totalWhitelistAllocation)',
+  'event IndexBrokerNFTAMMCreated(address indexed pool, address indexed ammVault, address priceOracle, uint8 priceSourceType, bool active, uint16 normalFeeBps, uint16 specificFeeBps, address indexToken)',
+];
+
+export const IndexBrokerNFTRendererABI = [
+  'function renderSVG((string collectionName,uint256 tokenId,uint256 seed,uint256 referralCount,uint256 referrerTokenId,uint256 miningWeight,uint256 indexMiningWeight,uint256 communityTokenUnit,uint32 level,bool miningActive,bool indexMiningActive) params) view returns (string)',
+];
+
+export const IndexBrokerNFTABI = [
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function owner() view returns (address)',
+  'function factory() view returns (address)',
+  'function community() view returns (address)',
+  'function communityToken() view returns (address)',
+  'function fundsReceiver() view returns (address)',
+  'function renderer() view returns (address)',
+  'function ammVault() view returns (address)',
+  'function indexToken() view returns (address)',
+  'function communityTokenPrice() view returns (uint256)',
+  'function indexMiningActivationTokenAmount() view returns (uint256)',
+  'function recommitPrice() view returns (uint256)',
+  'function minimumIndexMiningWeight() view returns (uint256)',
+  'function nativePrice() view returns (uint256)',
+  'function maxSupply() view returns (uint256)',
+  'function referralBps() view returns (uint16)',
+  'function lockWhitelistSlots() view returns (bool)',
+  'function rerollEnabled() view returns (bool)',
+  'function totalSupply() view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
+  'function tokenByIndex(uint256) view returns (uint256)',
+  'function ownerOf(uint256) view returns (address)',
+  'function getApproved(uint256) view returns (address)',
+  'function approve(address to, uint256 tokenId)',
+  'function levelCount() view returns (uint256)',
+  'function levelThresholds(uint256) view returns (uint256)',
+  'function levelWeights(uint256) view returns (uint256)',
+  'function getUserStakedAmount(address user) view returns (uint256)',
+  'function getTotalStakedAmount() view returns (uint256)',
+  'function getNFTInfo(uint256 tokenId) view returns (tuple(address owner, uint32 level, uint256 referrerTokenId, uint256 referralCount, uint256 miningWeight, bool miningActive, bool indexMiningActive, uint256 indexMiningWeight, uint256 pendingIndexRewards, uint256 seed, uint256 revealBlock, uint256 revealRound, bool revealPending) info)',
+  'function tokensOfOwner(address account, uint256 offset, uint256 limit) view returns (uint256[])',
+  'function tokenSVG(uint256 tokenId) view returns (string)',
+  'function remainingWhitelistMints(address account) view returns (uint256)',
+  'function remainingPaidMints() view returns (uint256)',
+  'function totalActiveIndexMiningWeight() view returns (uint256)',
+  'function queuedIndexRewards() view returns (uint256)',
+  'function mint(uint256 referrerTokenId) payable returns (uint256)',
+  'function reveal(uint256 tokenId) returns (uint256)',
+  'function commitReveal(uint256 tokenId)',
+  'function activateIndexMining(uint256 tokenId)',
+  'function upgradeIndexMining(uint256 tokenId, uint256 tokenAmount)',
+  'function injectIndexRewards(uint256 amount)',
+  'function claimIndexRewards(uint256 tokenId) returns (uint256)',
+  'function harvestIndexHolderFees() returns (uint256)',
+  'function setFundsReceiver(address newReceiver)',
+  'event Transfer(address indexed from, address indexed to, uint256 indexed tokenId)',
+];
+
+export const IndexBrokerNFTAMMABI = [
+  'function active() view returns (bool)',
+  'function collection() view returns (address)',
+  'function communityToken() view returns (address)',
+  'function indexToken() view returns (address)',
+  'function tokensPerNFT() view returns (uint256)',
+  'function normalFeeBps() view returns (uint16)',
+  'function specificFeeBps() view returns (uint16)',
+  'function inventoryCount() view returns (uint256)',
+  'function oldestTokenId() view returns (uint256)',
+  'function newestTokenId() view returns (uint256)',
+  'function inInventory(uint256 tokenId) view returns (bool)',
+  'function nextInventoryToken(uint256 tokenId) view returns (uint256)',
+  'function quoteNativeValue() view returns (uint256)',
+  'function quoteNormalNativeFee() view returns (uint256)',
+  'function quoteSpecificNativeFee() view returns (uint256)',
+  'function activate()',
+  'function sellNFT(uint256 tokenId) payable',
+  'function buyNextNFT() payable returns (uint256)',
+  'function buySpecificNFT(uint256 tokenId) payable',
+];
+
+export const PumpABI = [
+  'function createdTokens(address token) view returns (bool)',
+  'function getPoolManager() view returns (address)',
+];
+
+export const PumpTokenABI = [
+  'function listed() view returns (bool)',
+  'function v4PoolId() view returns (bytes32)',
+];
+
+export const PancakeV4CLPoolManagerABI = [
+  'function poolIdToPoolKey(bytes32 id) view returns (tuple(address currency0,address currency1,address hooks,address poolManager,uint24 fee,bytes32 parameters))',
+  'function getSlot0(bytes32 id) view returns (uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)',
+  'function getLiquidity(bytes32 id) view returns (uint128)',
+];
+
 export const BasketTVLMiningPoolABI = [
   'function name() view returns (string)',
   'function factory() view returns (address)',
@@ -172,6 +273,7 @@ export const BasketStakePoolABI = [
 
 export const Multicall3ABI = [
   'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
+  'function getBlockNumber() view returns (uint256)',
 ];
 
 export const LinearCalculatorABI = [
