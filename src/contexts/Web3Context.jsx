@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect, useWalletClient, useSwitchChain } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
 import { ethers } from 'ethers';
@@ -38,13 +38,6 @@ export function Web3Provider({ children }) {
   const [walletSigner, setWalletSigner] = useState(null);
 
   useEffect(() => {
-    if (SUPPORTED_CHAIN_IDS.includes(walletChainId)) {
-      setSelectedChainId(walletChainId);
-      localStorage.setItem(STORAGE_KEY, String(walletChainId));
-    }
-  }, [walletChainId]);
-
-  useEffect(() => {
     if (!walletClient) {
       setWalletSigner(null);
       return;
@@ -71,9 +64,13 @@ export function Web3Provider({ children }) {
   const isCorrectChain = walletChainId === selectedChainId;
   const signer = isCorrectChain ? walletSigner : null;
 
-  const switchNetwork = async (nextChainId) => {
+  const switchNetwork = useCallback(async (nextChainId) => {
     const id = Number(nextChainId);
     if (!SUPPORTED_CHAIN_IDS.includes(id)) return;
+
+    // The route selects which network's data is displayed. The wallet chain is
+    // only used for signing; allowing it to overwrite selectedChainId can make
+    // the route guard and wallet continuously switch the app between networks.
     setSelectedChainId(id);
     localStorage.setItem(STORAGE_KEY, String(id));
     if (isConnected && walletChainId !== id) {
@@ -83,7 +80,7 @@ export function Web3Provider({ children }) {
         console.error('Failed to switch chain:', err);
       }
     }
-  };
+  }, [isConnected, switchChainAsync, walletChainId]);
 
   const value = {
     account: account ?? null,
