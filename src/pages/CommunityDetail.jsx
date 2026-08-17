@@ -28,7 +28,7 @@ import './CommunityDetail.css';
 
 export default function CommunityDetail() {
   const { address } = useParams();
-  const { account, isConnected, readProvider, signer, contracts, activeChainId, network } = useWeb3();
+  const { account, isConnected, readProvider, getWriteSigner, contracts, activeChainId, network } = useWeb3();
   const toast = useToast();
   const { t, language } = useLanguage();
 
@@ -185,11 +185,11 @@ export default function CommunityDetail() {
 
   // Admin actions
   const handleWithdrawRevenue = async () => {
-    if (!signer) return;
     try {
+      const writeSigner = await getWriteSigner();
       const contract = new ethers.Contract(address, [
         'function adminWithdrawRevenue()',
-      ], signer);
+      ], writeSigner);
       const tx = await contract.adminWithdrawRevenue();
       toast.info(t('detail.revenueWithdrawing'));
       await tx.wait();

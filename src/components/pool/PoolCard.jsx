@@ -9,7 +9,7 @@ import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './PoolCard.css';
 
 export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
-  const { account, signer, readProvider, isConnected, contracts, network } = useWeb3();
+  const { account, getWriteSigner, readProvider, isConnected, contracts, network } = useWeb3();
   const toast = useToast();
   const { t } = useLanguage();
 
@@ -166,10 +166,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
 
   // ──── Actions ────
   const handleApprove = async () => {
-    if (!signer || !stakeTokenInfo) return;
+    if (!stakeTokenInfo) return;
     setActionLoading('approve');
     try {
-      const tokenContract = new ethers.Contract(stakeTokenInfo.address, ERC20ABI, signer);
+      const writeSigner = await getWriteSigner();
+      const tokenContract = new ethers.Contract(stakeTokenInfo.address, ERC20ABI, writeSigner);
       const tx = await tokenContract.approve(pool.id, ethers.MaxUint256);
       toast.info('Approving...');
       await tx.wait();
@@ -183,10 +184,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   };
 
   const handleDeposit = async () => {
-    if (!signer || !stakeAmount) return;
+    if (!stakeAmount) return;
     setActionLoading('deposit');
     try {
-      const poolContract = new ethers.Contract(pool.id, poolABI, signer);
+      const writeSigner = await getWriteSigner();
+      const poolContract = new ethers.Contract(pool.id, poolABI, writeSigner);
       const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(stakeAmount, decimals);
@@ -206,10 +208,11 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   };
 
   const handleWithdraw = async () => {
-    if (!signer || !withdrawAmount) return;
+    if (!withdrawAmount) return;
     setActionLoading('withdraw');
     try {
-      const poolContract = new ethers.Contract(pool.id, poolABI, signer);
+      const writeSigner = await getWriteSigner();
+      const poolContract = new ethers.Contract(pool.id, poolABI, writeSigner);
       const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const amount = ethers.parseUnits(withdrawAmount, decimals);
@@ -229,10 +232,10 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   };
 
   const handleClaimRewards = async () => {
-    if (!signer) return;
     setActionLoading('claim');
     try {
-      const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
+      const writeSigner = await getWriteSigner();
+      const communityContract = new ethers.Contract(communityAddress, CommunityABI, writeSigner);
       const committeeContract = new ethers.Contract(contracts.Committee, ['function getPoolOperationFee() view returns (uint256)'], readProvider);
       const fee = await committeeContract.getPoolOperationFee();
       const tx = await communityContract.withdrawPoolsRewards([pool.id], { value: fee });
@@ -248,10 +251,10 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   };
 
   const handleRedeem = async () => {
-    if (!signer) return;
     setActionLoading('redeem');
     try {
-      const poolContract = new ethers.Contract(pool.id, ERC20LockingABI, signer);
+      const writeSigner = await getWriteSigner();
+      const poolContract = new ethers.Contract(pool.id, ERC20LockingABI, writeSigner);
       const tx = await poolContract.redeem();
       toast.info('Redeeming...');
       await tx.wait();

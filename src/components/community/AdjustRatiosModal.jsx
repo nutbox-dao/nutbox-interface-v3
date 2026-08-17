@@ -7,7 +7,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function AdjustRatiosModal({ communityAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider, contracts, network } = useWeb3();
+  const { getWriteSigner, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
   
   const [loading, setLoading] = useState(false);
@@ -50,11 +50,6 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
   };
 
   const handleSave = async () => {
-    if (!signer) {
-      toast.error(t('common.walletNotConnected'));
-      return;
-    }
-
     // Convert and validate ratios
     const ratioArr = [];
     let sumVal = 0;
@@ -78,7 +73,8 @@ export default function AdjustRatiosModal({ communityAddress, activePools, onClo
 
     setLoading(true);
     try {
-      const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
+      const writeSigner = await getWriteSigner();
+      const communityContract = new ethers.Contract(communityAddress, CommunityABI, writeSigner);
       const committeeContract = new ethers.Contract(contracts.Committee, [
         'function getCommunitySettingsFee() view returns (uint256)',
       ], readProvider);

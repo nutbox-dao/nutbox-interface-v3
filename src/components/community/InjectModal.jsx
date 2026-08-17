@@ -8,7 +8,7 @@ import { formatTokenAmount } from '../../utils/helpers';
 
 export default function InjectModal({ communityAddress, tokenInfo, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, isConnected, isCorrectChain, switchToBSC, contracts, network } = useWeb3();
+  const { account, getWriteSigner, readProvider, isConnected, contracts } = useWeb3();
   const toast = useToast();
 
   const tokenAddress = tokenInfo?.address;
@@ -52,12 +52,13 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
   const isValidAmount = parsedAmount !== null && parsedAmount > 0n && parsedAmount <= balance;
 
   const handleInject = async () => {
-    if (!signer || !tokenAddress || !isValidAmount) return;
+    if (!tokenAddress || !isValidAmount) return;
     try {
+      const writeSigner = await getWriteSigner();
       // Step 1: approve if allowance is insufficient (one-click flow)
       if (allowance < parsedAmount) {
         setLoading('approve');
-        const token = new ethers.Contract(tokenAddress, ERC20ABI, signer);
+        const token = new ethers.Contract(tokenAddress, ERC20ABI, writeSigner);
         toast.info(t('inject.toastApproving', { symbol }));
         const approveTx = await token.approve(contracts.HourlyTickCalculator, ethers.MaxUint256);
         await approveTx.wait();
@@ -67,7 +68,7 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
 
       // Step 2: inject
       setLoading('inject');
-      const calc = new ethers.Contract(contracts.HourlyTickCalculator, HourlyTickCalculatorABI, signer);
+      const calc = new ethers.Contract(contracts.HourlyTickCalculator, HourlyTickCalculatorABI, writeSigner);
       toast.info(t('inject.toastInjecting', { amount: amount.trim(), symbol }));
       const tx = await calc.inject(communityAddress, parsedAmount);
       await tx.wait();
@@ -113,10 +114,6 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
             <div style={{ textAlign: 'center', padding: 'var(--space-4)', color: 'var(--color-text-tertiary)', fontSize: 'var(--font-size-sm)' }}>
               {t('inject.connectFirst')}
             </div>
-          ) : !isCorrectChain ? (
-            <button className="btn btn-ghost btn-lg" onClick={switchToBSC} style={{ width: '100%' }}>
-              {t('inject.wrongChain', { network: network.shortName })}
-            </button>
           ) : (
             <>
               {/* Amount input */}

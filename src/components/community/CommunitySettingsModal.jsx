@@ -7,7 +7,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 
 export default function CommunitySettingsModal({ communityAddress, community, retainedRevenue, communityToken, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { signer, readProvider, contracts, network } = useWeb3();
+  const { getWriteSigner, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [devFund, setDevFund] = useState('');
@@ -42,10 +42,6 @@ export default function CommunitySettingsModal({ communityAddress, community, re
   }, [readProvider, contracts]);
 
   const handleUpdateDevFund = async () => {
-    if (!signer) {
-      toast.error(t('common.walletNotConnected'));
-      return;
-    }
     if (!ethers.isAddress(devFund)) {
       toast.error(language === 'zh' ? '无效的钱包地址' : 'Invalid Ethereum address');
       return;
@@ -53,7 +49,8 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
     setDevLoading(true);
     try {
-      const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
+      const writeSigner = await getWriteSigner();
+      const communityContract = new ethers.Contract(communityAddress, CommunityABI, writeSigner);
       
       const tx = await communityContract.adminSetDev(devFund);
       toast.info(t('settings.walletSaving'));
@@ -70,10 +67,6 @@ export default function CommunitySettingsModal({ communityAddress, community, re
   };
 
   const handleUpdateFeeRatio = async () => {
-    if (!signer) {
-      toast.error(t('common.walletNotConnected'));
-      return;
-    }
     const percent = parseFloat(feeRatioPercent);
     if (isNaN(percent) || percent < 0 || percent > 100) {
       toast.error(language === 'zh' ? '提取比率必须是 0 到 100 之间的百分比' : 'DAO Fund Ratio must be a percentage between 0% and 100%');
@@ -85,7 +78,8 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
     setFeeLoading(true);
     try {
-      const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
+      const writeSigner = await getWriteSigner();
+      const communityContract = new ethers.Contract(communityAddress, CommunityABI, writeSigner);
       
       const tx = await communityContract.adminSetFeeRatio(ratioPPM, { value: settingsFee });
       toast.info(t('settings.ratioSaving'));
@@ -102,15 +96,12 @@ export default function CommunitySettingsModal({ communityAddress, community, re
   };
 
   const handleWithdrawRevenue = async () => {
-    if (!signer) {
-      toast.error(t('common.walletNotConnected'));
-      return;
-    }
     setWithdrawLoading(true);
     try {
+      const writeSigner = await getWriteSigner();
       const communityContract = new ethers.Contract(communityAddress, [
         'function adminWithdrawRevenue()',
-      ], signer);
+      ], writeSigner);
       const tx = await communityContract.adminWithdrawRevenue();
       toast.info(t('settings.revenueWithdrawing'));
       await tx.wait();

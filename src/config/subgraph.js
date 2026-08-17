@@ -363,6 +363,9 @@ async function fetchAPI(path, chainId = DEFAULT_CHAIN_ID, options = {}) {
 async function fetchAPIFromBase(apiBase, path, chainId, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
     ...options,
+    // API data is live and error responses must never get stuck in the
+    // browser HTTP cache. Callers can still opt into a specific policy.
+    cache: options.cache ?? 'no-store',
     headers: {
       'X-Chain-Id': String(chainId),
       ...options.headers,
@@ -800,10 +803,27 @@ export async function fetchCommunity(
       : refreshedCommunity;
   }
   // Fetch the requested community and its complete pool list directly from the API.
-  const raw = await fetchAPI(
-    `/communities/${encodeURIComponent(communityAddress)}`,
-    chainId,
-  );
+  // Do not let a transient/cached detail failure turn an existing community into
+  // a false "not found" page. The list endpoint is a safe secondary source and
+  // currently carries the same complete pool payload.
+  let raw;
+  try {
+    raw = await fetchAPI(
+      `/communities/${encodeURIComponent(communityAddress)}`,
+      chainId,
+      { cache: 'no-store' },
+    );
+  } catch (detailError) {
+    try {
+      const data = await fetchAPI('/communities?page=0&size=100', chainId, { cache: 'no-store' });
+      raw = (data.communities || []).find(item =>
+        item.community?.toLowerCase() === communityAddress.toLowerCase()
+      );
+    } catch {
+      throw detailError;
+    }
+    if (!raw) throw detailError;
+  }
 
   const mapped = mapCommunity(raw, chainId);
   if (!includeHistory) return mapped;

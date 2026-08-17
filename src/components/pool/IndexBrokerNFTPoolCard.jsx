@@ -157,7 +157,7 @@ export default function IndexBrokerNFTPoolCard({
   detail = false,
 }) {
   const {
-    account, signer, readProvider, isConnected, connecting, connect, contracts, network,
+    account, getWriteSigner, readProvider, isConnected, connecting, connect, contracts, network,
   } = useWeb3();
   const { language } = useLanguage();
   const toast = useToast();
@@ -606,10 +606,10 @@ export default function IndexBrokerNFTPoolCard({
   }, [loadPoolData]);
 
   const execute = async (key, pending, success, transaction) => {
-    if (!signer) return;
     setActionLoading(key);
     try {
-      const tx = await transaction();
+      const writeSigner = await getWriteSigner();
+      const tx = await transaction(writeSigner);
       toast.info(pending);
       await tx.wait();
       toast.success(success);
@@ -626,14 +626,14 @@ export default function IndexBrokerNFTPoolCard({
     key,
     language === 'zh' ? '正在授权社区代币…' : 'Approving Community Token…',
     language === 'zh' ? '社区代币授权成功' : 'Community Token approved',
-    () => new ethers.Contract(data.communityAsset.address, ERC20ABI, signer).approve(spender, ethers.MaxUint256),
+    writeSigner => new ethers.Contract(data.communityAsset.address, ERC20ABI, writeSigner).approve(spender, ethers.MaxUint256),
   );
 
   const handleMint = () => execute(
     'mint',
     language === 'zh' ? '正在铸造 Index Broker NFT…' : 'Minting Index Broker NFT…',
     language === 'zh' ? 'NFT 铸造成功' : 'NFT minted',
-    () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer).mint(
+    writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).mint(
       data.whitelistRemaining > 0n ? 0n : toBigInt(referrerTokenId),
       { value: data.whitelistRemaining > 0n ? 0n : data.nativePrice },
     ),
@@ -643,7 +643,7 @@ export default function IndexBrokerNFTPoolCard({
     'community-claim',
     language === 'zh' ? '正在领取社区奖励…' : 'Claiming community rewards…',
     language === 'zh' ? '社区奖励已领取' : 'Community rewards claimed',
-    () => new ethers.Contract(communityAddress, CommunityABI, signer)
+    writeSigner => new ethers.Contract(communityAddress, CommunityABI, writeSigner)
       .withdrawPoolsRewards([pool.id], { value: data.poolOperationFee }),
   );
 
@@ -651,7 +651,7 @@ export default function IndexBrokerNFTPoolCard({
     `${key}-${tokenId}`,
     pending,
     success,
-    () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer)[functionName](tokenId, ...args),
+    writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner)[functionName](tokenId, ...args),
   );
 
   const upgradeIndexMining = (nft) => {
@@ -674,7 +674,7 @@ export default function IndexBrokerNFTPoolCard({
     'approve-index-token',
     language === 'zh' ? '正在授权指数代币…' : 'Approving index token…',
     language === 'zh' ? '指数代币授权成功' : 'Index token approved',
-    () => new ethers.Contract(data.indexToken.address, ERC20ABI, signer).approve(pool.id, ethers.MaxUint256),
+    writeSigner => new ethers.Contract(data.indexToken.address, ERC20ABI, writeSigner).approve(pool.id, ethers.MaxUint256),
   );
 
   const injectIndexRewards = () => {
@@ -684,7 +684,7 @@ export default function IndexBrokerNFTPoolCard({
       'inject-index-rewards',
       language === 'zh' ? '正在注入指数奖励…' : 'Injecting index rewards…',
       language === 'zh' ? '指数奖励已注入' : 'Index rewards injected',
-      () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer).injectIndexRewards(amount),
+      writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).injectIndexRewards(amount),
     );
   };
 
@@ -692,22 +692,22 @@ export default function IndexBrokerNFTPoolCard({
     'harvest-index-holder-fees',
     language === 'zh' ? '正在收割 holder fee…' : 'Harvesting holder fees…',
     language === 'zh' ? 'holder fee 已转入 AMM 回购储备' : 'Holder fees moved to the AMM buyback reserve',
-    () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer).harvestIndexHolderFees(),
+    writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).harvestIndexHolderFees(),
   );
 
   const approveNftSale = nft => execute(
     `approve-sale-${nft.tokenId}`,
     language === 'zh' ? '正在授权 AMM 接收 NFT…' : 'Approving NFT for AMM…',
     language === 'zh' ? 'NFT 出售授权成功' : 'NFT sale approved',
-    () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer).approve(data.ammAddress, nft.tokenId),
+    writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).approve(data.ammAddress, nft.tokenId),
   );
 
   const sellNft = nft => execute(
     `sell-${nft.tokenId}`,
     language === 'zh' ? '正在向 AMM 出售 NFT…' : 'Selling NFT to AMM…',
     language === 'zh' ? 'NFT 已出售给 AMM' : 'NFT sold to AMM',
-    async () => {
-      const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, signer);
+    async writeSigner => {
+      const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner);
       const fee = await amm.quoteNormalNativeFee();
       return amm.sellNFT(nft.tokenId, { value: withFeeBuffer(fee) });
     },
@@ -717,8 +717,8 @@ export default function IndexBrokerNFTPoolCard({
     `buy-${tokenId || 'next'}`,
     language === 'zh' ? '正在从 AMM 买入 NFT…' : 'Buying NFT from AMM…',
     language === 'zh' ? 'NFT 买入成功' : 'NFT purchased',
-    async () => {
-      const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, signer);
+    async writeSigner => {
+      const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner);
       if (tokenId) {
         const fee = await amm.quoteSpecificNativeFee();
         return amm.buySpecificNFT(tokenId, { value: withFeeBuffer(fee) });
@@ -893,7 +893,7 @@ export default function IndexBrokerNFTPoolCard({
         <section className="index-broker-amm glass-card">
           <div className="index-broker-section-heading">
             <div><h2>{c.amm}</h2><p>{data.amm.active ? c.ammActive : c.ammWaiting}</p></div>
-            {!data.amm.active && isConnected && <button className="btn btn-primary btn-sm" disabled={busy || loading || !data.ammAddress} onClick={() => execute('activate-amm', language === 'zh' ? '正在激活 AMM…' : 'Activating AMM…', language === 'zh' ? 'AMM 已激活' : 'AMM activated', () => new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, signer).activate())}>{c.activateAmm}</button>}
+            {!data.amm.active && isConnected && <button className="btn btn-primary btn-sm" disabled={busy || loading || !data.ammAddress} onClick={() => execute('activate-amm', language === 'zh' ? '正在激活 AMM…' : 'Activating AMM…', language === 'zh' ? 'AMM 已激活' : 'AMM activated', writeSigner => new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner).activate())}>{c.activateAmm}</button>}
           </div>
           <div className="index-broker-amm-stats">
             <div><span>{c.inventory}</span><strong>{data.amm.inventoryCount.toString()}</strong></div>
@@ -924,7 +924,7 @@ export default function IndexBrokerNFTPoolCard({
       {detail && isOwner && (
         <section className="index-broker-admin glass-card">
           <h2>{c.updateReceiver}</h2>
-          <div><input className="input" value={newReceiver} onChange={event => setNewReceiver(event.target.value)} placeholder={c.receiver} /><button className="btn btn-secondary" disabled={busy || loading || !ethers.isAddress(newReceiver)} onClick={() => execute('receiver', language === 'zh' ? '正在更新收款地址…' : 'Updating receiver…', language === 'zh' ? '收款地址已更新' : 'Receiver updated', () => new ethers.Contract(pool.id, IndexBrokerNFTABI, signer).setFundsReceiver(newReceiver))}>{c.updateReceiver}</button></div>
+          <div><input className="input" value={newReceiver} onChange={event => setNewReceiver(event.target.value)} placeholder={c.receiver} /><button className="btn btn-secondary" disabled={busy || loading || !ethers.isAddress(newReceiver)} onClick={() => execute('receiver', language === 'zh' ? '正在更新收款地址…' : 'Updating receiver…', language === 'zh' ? '收款地址已更新' : 'Receiver updated', writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).setFundsReceiver(newReceiver))}>{c.updateReceiver}</button></div>
         </section>
       )}
 

@@ -56,7 +56,7 @@ function previewWeightForLevel(weightsValue, levelValue) {
 
 export default function AddPoolModal({ communityAddress, communityTokenAddress, activePools, onClose, onSuccess }) {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, contracts, network } = useWeb3();
+  const { account, getWriteSigner, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
 
   const [poolType, setPoolType] = useState('staking');
@@ -511,7 +511,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     const isNFTMining = poolType === 'nft-mining';
     const isBasketTVL = poolType === 'basket-tvl';
     const isIndexBroker = poolType === 'index-broker-nft';
-    if (!signer || !poolName || (!isNFTMining && !isBasketTVL && !isIndexBroker && !stakeTokenAddress)) {
+    if (!poolName || (!isNFTMining && !isBasketTVL && !isIndexBroker && !stakeTokenAddress)) {
       toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
@@ -548,7 +548,8 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
 
     setLoading(true);
     try {
-      const communityContract = new ethers.Contract(communityAddress, CommunityABI, signer);
+      const writeSigner = await getWriteSigner();
+      const communityContract = new ethers.Contract(communityAddress, CommunityABI, writeSigner);
       let fee = isIndexBroker ? null : await new ethers.Contract(
         contracts.Committee,
         CommitteeABI,

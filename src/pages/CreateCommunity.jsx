@@ -26,7 +26,7 @@ function getNextFullHour() {
 
 export default function CreateCommunity() {
   const { t, language } = useLanguage();
-  const { account, signer, readProvider, isConnected, contracts, network, activeChainId } = useWeb3();
+  const { account, getWriteSigner, readProvider, isConnected, contracts, network, activeChainId } = useWeb3();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -110,7 +110,7 @@ export default function CreateCommunity() {
   }, [readProvider, contracts]);
 
   const handleCreate = async () => {
-    if (!signer || !account) {
+    if (!account) {
       toast.error('Please connect your wallet');
       return;
     }
@@ -183,7 +183,8 @@ export default function CreateCommunity() {
 
     setLoading(true);
     try {
-      const factory = new ethers.Contract(contracts.CommunityFactory, CommunityFactoryABI, signer);
+      const writeSigner = await getWriteSigner();
+      const factory = new ethers.Contract(contracts.CommunityFactory, CommunityFactoryABI, writeSigner);
       const committeeContract = new ethers.Contract(contracts.Committee, [
         'function getCreateCommunityFee() view returns (uint256)',
       ], readProvider);

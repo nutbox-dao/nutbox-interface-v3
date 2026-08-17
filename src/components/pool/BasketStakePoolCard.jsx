@@ -17,7 +17,7 @@ export default function BasketStakePoolCard({
   loading,
   onRefresh,
 }) {
-  const { signer, isConnected, network } = useWeb3();
+  const { getWriteSigner, isConnected, network } = useWeb3();
   const toast = useToast();
   const { t } = useLanguage();
 
@@ -43,7 +43,8 @@ export default function BasketStakePoolCard({
   const execute = async (key, pendingMessage, successMessage, transaction) => {
     setActionLoading(key);
     try {
-      const tx = await transaction();
+      const writeSigner = await getWriteSigner();
+      const tx = await transaction(writeSigner);
       toast.info(pendingMessage);
       await tx.wait();
       toast.success(successMessage);
@@ -74,14 +75,14 @@ export default function BasketStakePoolCard({
     'approve',
     t('basketPool.approving'),
     t('basketPool.approved'),
-    () => new ethers.Contract(tokenInfo.address, ERC20ABI, signer).approve(childPool, ethers.MaxUint256),
+    writeSigner => new ethers.Contract(tokenInfo.address, ERC20ABI, writeSigner).approve(childPool, ethers.MaxUint256),
   );
 
   const handleAmountAction = () => execute(
     action,
     action === 'deposit' ? t('basketPool.depositing') : t('basketPool.withdrawing'),
     action === 'deposit' ? t('basketPool.deposited') : t('basketPool.withdrawRequested'),
-    () => new ethers.Contract(childPool, BasketStakePoolABI, signer)[action](
+    writeSigner => new ethers.Contract(childPool, BasketStakePoolABI, writeSigner)[action](
       parsedAmount,
       { value: suppliedFee },
     ),
@@ -173,7 +174,7 @@ export default function BasketStakePoolCard({
                 'claim',
                 t('basketPool.claiming'),
                 t('basketPool.claimed'),
-                () => new ethers.Contract(childPool, BasketStakePoolABI, signer).claimRewards({ value: suppliedFee }),
+                writeSigner => new ethers.Contract(childPool, BasketStakePoolABI, writeSigner).claimRewards({ value: suppliedFee }),
               )}
             >
               {actionLoading === 'claim' ? (
@@ -190,7 +191,7 @@ export default function BasketStakePoolCard({
                   'redeem',
                   t('basketPool.redeeming'),
                   t('basketPool.redeemed'),
-                  () => new ethers.Contract(childPool, BasketStakePoolABI, signer).redeem(),
+                  writeSigner => new ethers.Contract(childPool, BasketStakePoolABI, writeSigner).redeem(),
                 )}
               >
                 {actionLoading === 'redeem' ? (
@@ -288,7 +289,7 @@ export default function BasketStakePoolCard({
               'claim-nft',
               t('basketPool.claimingNft'),
               t('basketPool.claimedNft'),
-              () => new ethers.Contract(childPool, BasketStakePoolABI, signer).claimNftRewards({ value: suppliedFee }),
+              writeSigner => new ethers.Contract(childPool, BasketStakePoolABI, writeSigner).claimNftRewards({ value: suppliedFee }),
             )}
           >
             {actionLoading === 'claim-nft' ? (

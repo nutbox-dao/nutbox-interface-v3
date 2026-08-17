@@ -64,6 +64,27 @@ export function Web3Provider({ children }) {
   const isCorrectChain = walletChainId === selectedChainId;
   const signer = isCorrectChain ? walletSigner : null;
 
+  const getWriteSigner = useCallback(async () => {
+    if (!account || !isConnected || !walletClient) {
+      throw new Error('Please connect your wallet');
+    }
+
+    const targetChainId = selectedChainId;
+    if (walletChainId !== targetChainId) {
+      await switchChainAsync({ chainId: targetChainId });
+    }
+
+    // wagmi's walletClient/signer state may update one render after a successful
+    // chain switch. Rebuild the signer from the live wallet transport so the
+    // original write can continue immediately after the user accepts.
+    const writeProvider = new ethers.BrowserProvider(walletClient.transport, 'any');
+    const currentNetwork = await writeProvider.getNetwork();
+    if (Number(currentNetwork.chainId) !== targetChainId) {
+      throw new Error(`Please switch your wallet to ${network.name}`);
+    }
+    return writeProvider.getSigner(account);
+  }, [account, isConnected, network.name, selectedChainId, switchChainAsync, walletChainId, walletClient]);
+
   const switchNetwork = useCallback(async (nextChainId) => {
     const id = Number(nextChainId);
     if (!SUPPORTED_CHAIN_IDS.includes(id)) return;
@@ -86,6 +107,7 @@ export function Web3Provider({ children }) {
     account: account ?? null,
     provider,
     signer,
+    getWriteSigner,
     chainId: walletChainId ?? null,
     activeChainId: selectedChainId,
     network,

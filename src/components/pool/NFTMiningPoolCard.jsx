@@ -67,7 +67,7 @@ export default function NFTMiningPoolCard({
   onRefresh,
   detail = false,
 }) {
-  const { account, signer, readProvider, isConnected, connecting, connect, contracts, network } = useWeb3();
+  const { account, getWriteSigner, readProvider, isConnected, connecting, connect, contracts, network } = useWeb3();
   const { t } = useLanguage();
   const toast = useToast();
 
@@ -289,7 +289,8 @@ export default function NFTMiningPoolCard({
   const waitForAction = async (key, pendingMessage, successMessage, action) => {
     setActionLoading(key);
     try {
-      const tx = await action();
+      const writeSigner = await getWriteSigner();
+      const tx = await action(writeSigner);
       toast.info(pendingMessage);
       await tx.wait();
       toast.success(successMessage);
@@ -306,7 +307,7 @@ export default function NFTMiningPoolCard({
     'approve',
     t('nftPool.toastApproving'),
     t('nftPool.toastApproved'),
-    () => new ethers.Contract(batch.paymentAsset, ERC20ABI, signer).approve(pool.id, ethers.MaxUint256),
+    writeSigner => new ethers.Contract(batch.paymentAsset, ERC20ABI, writeSigner).approve(pool.id, ethers.MaxUint256),
   );
 
   const handleMint = () => {
@@ -314,9 +315,9 @@ export default function NFTMiningPoolCard({
       'mint',
       t('nftPool.toastMinting'),
       t('nftPool.toastMinted'),
-      () => {
+      writeSigner => {
         const referrer = referrerTokenId.trim() ? BigInt(referrerTokenId) : 0n;
-        return new ethers.Contract(pool.id, NFTMiningPoolABI, signer).mint(
+        return new ethers.Contract(pool.id, NFTMiningPoolABI, writeSigner).mint(
           referrer,
           isNativePayment ? { value: batch.mintPrice } : {},
         );
@@ -328,14 +329,14 @@ export default function NFTMiningPoolCard({
     'claim',
     t('nftPool.toastClaiming'),
     t('nftPool.toastClaimed'),
-    async () => {
+    async writeSigner => {
       const committee = new ethers.Contract(
         contracts.Committee,
         ['function getPoolOperationFee() view returns (uint256)'],
         readProvider,
       );
       const fee = await committee.getPoolOperationFee();
-      return new ethers.Contract(communityAddress, CommunityABI, signer)
+      return new ethers.Contract(communityAddress, CommunityABI, writeSigner)
         .withdrawPoolsRewards([pool.id], { value: fee });
     },
   );
@@ -344,21 +345,21 @@ export default function NFTMiningPoolCard({
     'pause',
     t('nftPool.toastUpdatingBatch'),
     t('nftPool.toastBatchUpdated'),
-    () => new ethers.Contract(pool.id, NFTMiningPoolABI, signer).setCurrentBatchPaused(!batch.paused),
+    writeSigner => new ethers.Contract(pool.id, NFTMiningPoolABI, writeSigner).setCurrentBatchPaused(!batch.paused),
   );
 
   const handleCloseBatch = () => waitForAction(
     'close',
     t('nftPool.toastClosingBatch'),
     t('nftPool.toastBatchClosed'),
-    () => new ethers.Contract(pool.id, NFTMiningPoolABI, signer).closeCurrentBatch(),
+    writeSigner => new ethers.Contract(pool.id, NFTMiningPoolABI, writeSigner).closeCurrentBatch(),
   );
 
   const handleCreateBatch = () => waitForAction(
     'new-batch',
     t('nftPool.toastCreatingBatch'),
     t('nftPool.toastBatchCreated'),
-    async () => {
+    async writeSigner => {
       const paymentAsset = newBatch.paymentAsset.trim() || ethers.ZeroAddress;
       if (paymentAsset !== ethers.ZeroAddress && !ethers.isAddress(paymentAsset)) {
         throw new Error(t('nftPool.invalidPaymentToken'));
@@ -372,7 +373,7 @@ export default function NFTMiningPoolCard({
       if (!newBatch.supply || BigInt(newBatch.supply) <= 0n || price <= 0n || referralBps < 0 || referralBps > 10000) {
         throw new Error(t('nftPool.invalidBatchConfig'));
       }
-      return new ethers.Contract(pool.id, NFTMiningPoolABI, signer)
+      return new ethers.Contract(pool.id, NFTMiningPoolABI, writeSigner)
         .createBatch(BigInt(newBatch.supply), paymentAsset, price, referralBps);
     },
   );
@@ -381,9 +382,9 @@ export default function NFTMiningPoolCard({
     'receiver',
     t('nftPool.toastUpdatingReceiver'),
     t('nftPool.toastReceiverUpdated'),
-    () => {
+    writeSigner => {
       if (!ethers.isAddress(newReceiver)) throw new Error(t('nftPool.invalidReceiver'));
-      return new ethers.Contract(pool.id, NFTMiningPoolABI, signer).setFundsReceiver(newReceiver);
+      return new ethers.Contract(pool.id, NFTMiningPoolABI, writeSigner).setFundsReceiver(newReceiver);
     },
   );
 
@@ -545,7 +546,7 @@ export default function NFTMiningPoolCard({
               </div>
               <button
                 className="btn btn-success btn-sm"
-                disabled={busy || !signer || !walletDataReady || pendingRewards <= 0n}
+                disabled={busy || !walletDataReady || pendingRewards <= 0n}
                 onClick={handleClaim}
               >
                 {actionLoading === 'claim' ? <span className="spinner" /> : null}

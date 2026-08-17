@@ -60,7 +60,7 @@ export default function BasketTVLMiningPoolCard({
   initialData,
   detail = false,
 }) {
-  const { account, signer, readProvider, isConnected, connecting, connect, contracts, network } = useWeb3();
+  const { account, getWriteSigner, readProvider, isConnected, connecting, connect, contracts, network } = useWeb3();
   const toast = useToast();
   const { t } = useLanguage();
 
@@ -474,7 +474,8 @@ export default function BasketTVLMiningPoolCard({
   const execute = async (key, pendingMessage, successMessage, transaction, afterConfirmed) => {
     setActionLoading(key);
     try {
-      const tx = await transaction();
+      const writeSigner = await getWriteSigner();
+      const tx = await transaction(writeSigner);
       toast.info(pendingMessage);
       const receipt = await tx.wait();
       if (afterConfirmed) {
@@ -498,7 +499,7 @@ export default function BasketTVLMiningPoolCard({
     'register',
     t('basketPool.registering'),
     t('basketPool.registered'),
-    () => new ethers.Contract(pool.id, BasketTVLMiningPoolABI, signer)
+    writeSigner => new ethers.Contract(pool.id, BasketTVLMiningPoolABI, writeSigner)
       .createBasketStake(basketAddress, BigInt(nftTokenId)),
     receipt => registerBasketChildPool(pool.id, receipt.hash, network.id),
   );
@@ -688,12 +689,12 @@ export default function BasketTVLMiningPoolCard({
                   />
                   <button
                     className={`basket-refresh-nav is-${stake.navStatus || 'unknown'}`}
-                    disabled={Boolean(actionLoading) || !signer}
+                    disabled={Boolean(actionLoading)}
                     onClick={() => execute(
                       `update-${stake.basket}`,
                       t('basketPool.updatingNav'),
                       t('basketPool.navUpdated'),
-                      () => new ethers.Contract(pool.id, BasketTVLMiningPoolABI, signer)
+                      writeSigner => new ethers.Contract(pool.id, BasketTVLMiningPoolABI, writeSigner)
                         .updateBasketStake(stake.basket, { value: operationFee }),
                     )}
                   >
