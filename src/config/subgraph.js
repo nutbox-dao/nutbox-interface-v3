@@ -726,26 +726,15 @@ export async function fetchIndexBrokerNftInsights(
   { account, accountsSize = 10, eventsSize = 12, inventorySize = 24 } = {},
   chainId = DEFAULT_CHAIN_ID,
 ) {
-  try {
-    return await fetchAPI(
-      `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/insights${buildQuery({
-        account,
-        accountsSize,
-        eventsSize,
-        inventorySize,
-      })}`,
-      chainId,
-    );
-  } catch (error) {
-    if (Number(chainId) !== BSC_CHAIN_ID) throw error;
-    return {
-      pool: null,
-      topAccounts: [],
-      recentEvents: [],
-      inventoryTokenIds: [],
-      indexedBlock: 0,
-    };
-  }
+  return fetchAPI(
+    `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/insights${buildQuery({
+      account,
+      accountsSize,
+      eventsSize,
+      inventorySize,
+    })}`,
+    chainId,
+  );
 }
 
 // ──── Global stats ────

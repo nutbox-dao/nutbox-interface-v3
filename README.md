@@ -46,14 +46,17 @@ Index Broker NFT 不展示 `stakersCount`，因此不会按 NFT 总量扫描 `ow
 - Basket TVL Mining
 - Index Broker NFT（BSC V11）
 
-Index Broker NFT 支持创建参数编码、白名单/公开铸造、社区挖矿、指数挖矿激活与升级、揭图/重抽、指数奖励注入与领取、holder-fee harvest，以及专属 NFT AMM 的激活、买入和卖出。
+Index Broker NFT 使用新版动态模板架构：Burn 模板通过销毁社区代币增加指数权重，Stake 模板通过质押指定 ERC20 增减权重。前端支持白名单/公开铸造、揭图/重抽、指数奖励、holder-fee harvest、NFT AMM 交易，以及通过 AMM BNB 储备执行指数回购。
 
 ## BSC V11 合约
 
 | Contract | Address |
 | --- | --- |
-| IndexBrokerNFTFactory | `0xFa26Bf8d0830EC78ff7B2D959a1724f5E178392E` |
-| IndexBrokerNFTPriceOracle | `0x85060fd888a936C77555F6D7899e46e102a697e3` |
+| IndexBrokerNFTFactory | `0xB1708D2F3A504846a47cdB2e4Dfb48b3ea1c9b5F` |
+| IndexBrokerNFTBurnTemplate | `0x1D875946C87a650AF2Aa5B04427D44E647a480B9` |
+| IndexBrokerNFTStakeTemplate | `0xc24Ff0009fF1AaD70eF8714ee32ebc8f6b7983a5` |
+| IndexBrokerNFTAMMTemplate | `0x698680412e34db49CdBa62c46a0Faad31D05ce0A` |
+| NutboxRouter | `0x04e2d43bA38e3f3F0D0dab3A30D1B58BFE9B659f` |
 | StonkBrokerRenderer | `0xd4B6120f566CDecD88b7Be6f994a6c7493F8a068` |
 | Pump | `0x8fEF5b4c0f761a0cc447800e3019B089ac306F28` |
 

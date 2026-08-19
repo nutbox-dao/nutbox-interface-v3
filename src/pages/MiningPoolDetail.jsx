@@ -42,6 +42,12 @@ export default function MiningPoolDetail() {
       if (!indexedPool || !['BASKET_TVL_MINING', 'NFT_MINING', 'INDEX_BROKER_NFT'].includes(indexedPool.poolType)) {
         throw new Error('Unsupported mining pool type');
       }
+      if (
+        indexedPool.poolType === 'INDEX_BROKER_NFT'
+        && indexedPool.poolFactory?.toLowerCase() !== contracts.IndexBrokerNFTFactory?.toLowerCase()
+      ) {
+        throw new Error('Legacy Index Broker NFT pools are no longer supported');
+      }
 
       setPool(indexedPool);
       setCommunityOwner(community.owner?.id || '');
@@ -81,6 +87,7 @@ export default function MiningPoolDetail() {
     activeChainId,
     communityAddress,
     contracts.Multicall3,
+    contracts.IndexBrokerNFTFactory,
     poolAddress,
     readProvider,
   ]);

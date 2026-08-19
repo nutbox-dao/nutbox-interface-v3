@@ -9,10 +9,19 @@ export const INDEX_BROKER_SOURCE_TYPES = {
   PANCAKE_V4_CL: 3,
 };
 
+export const INDEX_BROKER_MINING_MODES = {
+  BURN: 'burn',
+  STAKE: 'stake',
+};
+
 export const DEFAULT_INDEX_BROKER_CONFIG = {
   symbol: '',
   fundsReceiver: '',
   renderer: '',
+  miningMode: INDEX_BROKER_MINING_MODES.BURN,
+  nftTemplate: '',
+  stakingToken: '',
+  pump: '',
   levelThresholds: '0, 2, 4, 6',
   levelWeights: '10000, 12000, 15000, 20000',
   communityTokenPrice: '',
@@ -196,24 +205,29 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
 
   const symbol = String(config.symbol || '').trim();
   if (!symbol || ethers.toUtf8Bytes(symbol).length > 16) throw new Error('NFT symbol must be 1-16 UTF-8 bytes');
-  const fundsReceiver = requireAddress(config.fundsReceiver, 'Funds receiver');
+  const fundsReceiver = requireAddress(config.fundsReceiver, 'Funds receiver', true);
   const renderer = requireAddress(config.renderer, 'Renderer', true);
+  const nftTemplate = requireAddress(config.nftTemplate, 'NFT template');
   const indexToken = requireAddress(config.indexToken, 'Index token', true);
   const maxSupply = BigInt(config.maxSupply || 0);
   if (maxSupply <= 0n) throw new Error('Max supply must be greater than zero');
 
   const communityTokenPrice = ethers.parseUnits(String(config.communityTokenPrice || '0'), communityTokenDecimals);
-  const activationPrice = ethers.parseUnits(
-    String(config.indexMiningActivationTokenAmount || '0'),
-    communityTokenDecimals,
+  const stakeMode = config.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
+  const activationPrice = stakeMode ? 0n : ethers.parseUnits(
+    String(config.indexMiningActivationTokenAmount || '0'), communityTokenDecimals,
   );
   const recommitPrice = config.rerollEnabled
     ? ethers.parseUnits(String(config.recommitPrice || config.communityTokenPrice || '0'), communityTokenDecimals)
     : 0n;
   const nativePrice = ethers.parseEther(String(config.nativePrice || '0'));
-  if (communityTokenPrice <= 0n || activationPrice <= 0n) {
-    throw new Error('Community Token mint and activation costs must be greater than zero');
+  if (communityTokenPrice <= 0n) {
+    throw new Error('Community Token mint cost must be greater than zero');
   }
+
+  const nftTemplateConfig = stakeMode
+    ? abiCoder.encode(['address'], [requireAddress(config.stakingToken, 'Staking token')])
+    : '0x';
 
   const referralBps = percentToBps(config.referralPercent, 'Referral rate');
   const normalFeeBps = percentToBps(config.normalFeePercent, 'Normal AMM fee');
@@ -231,17 +245,21 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
     ? INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL
     : Number(config.sourceType);
   const sourceData = config.officialToken ? '0x' : encodeExternalPriceSource(config);
+  const pump = config.officialToken
+    ? requireAddress(config.pump, 'Pump', true)
+    : ethers.ZeroAddress;
   const ammConfig = abiCoder.encode(
-    ['tuple(uint16 normalFeeBps,uint16 specificFeeBps,uint8 priceSourceType,bytes priceSourceData,address indexToken)'],
-    [[normalFeeBps, specificFeeBps, sourceType, sourceData, indexToken]],
+    ['tuple(uint16 normalFeeBps,uint16 specificFeeBps,uint8 priceSourceType,bytes priceSourceData,address indexToken,address pump)'],
+    [[normalFeeBps, specificFeeBps, sourceType, sourceData, indexToken, pump]],
   );
 
   return abiCoder.encode(
-    ['tuple(string symbol,address fundsReceiver,address renderer,uint256[] levelThresholds,uint256[] levelWeights,uint256 communityTokenPrice,uint256 indexMiningActivationTokenAmount,uint256 recommitPrice,uint256 nativePrice,uint256 maxSupply,uint16 referralBps,bytes ammConfig,bool lockWhitelistSlots,bool rerollEnabled,address[] whitelistAccounts,uint256[] whitelistAllowances)'],
+    ['tuple(string symbol,address fundsReceiver,address renderer,address nftTemplate,uint256[] levelThresholds,uint256[] levelWeights,uint256 communityTokenPrice,uint256 indexMiningActivationTokenAmount,uint256 recommitPrice,uint256 nativePrice,uint256 maxSupply,uint16 referralBps,bytes ammConfig,bytes nftTemplateConfig,bool lockWhitelistSlots,bool rerollEnabled,address[] whitelistAccounts,uint256[] whitelistAllowances)'],
     [[
       symbol,
       fundsReceiver,
       renderer,
+      nftTemplate,
       thresholds,
       weights,
       communityTokenPrice,
@@ -251,6 +269,7 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
       maxSupply,
       referralBps,
       ammConfig,
+      nftTemplateConfig,
       nativePrice === 0n || Boolean(config.lockWhitelistSlots),
       Boolean(config.rerollEnabled),
       whitelist.accounts,

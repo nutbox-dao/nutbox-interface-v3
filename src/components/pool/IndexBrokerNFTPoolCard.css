@@ -228,9 +228,14 @@
 
 .index-broker-upgrade-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.index-broker-upgrade-row small {
+  grid-column: 1 / -1;
+  color: var(--color-text-tertiary);
 }
 
 .index-broker-reward-form {
@@ -255,6 +260,30 @@
   background: rgba(245, 158, 11, 0.07);
   font-size: var(--font-size-xs);
   line-height: 1.55;
+}
+
+.index-broker-buyback-form {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(150px, 0.8fr)) auto;
+  align-items: end;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid rgba(138, 92, 246, 0.22);
+  border-radius: var(--radius-md);
+  background: rgba(138, 92, 246, 0.06);
+}
+
+.index-broker-buyback-form small {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-tertiary);
+  line-height: 1.45;
+}
+
+.index-broker-load-error p {
+  margin: var(--space-4) 0;
+  color: var(--color-danger);
 }
 
 .index-broker-inventory-grid {
@@ -450,6 +479,15 @@
     grid-template-columns: 1fr;
   }
 
+  .index-broker-buyback-form,
+  .index-broker-upgrade-row {
+    grid-template-columns: 1fr;
+  }
+
+  .index-broker-upgrade-row small {
+    grid-column: auto;
+  }
+
   .index-broker-economics {
     grid-template-columns: 1fr;
   }
@@ -460,6 +498,10 @@
 }
 
 @media (max-width: 480px) {
+  .index-broker-nft-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .index-broker-renderer-parameters {
     grid-template-columns: 1fr;
   }

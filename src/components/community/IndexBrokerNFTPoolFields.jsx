@@ -1,4 +1,7 @@
-import { INDEX_BROKER_SOURCE_TYPES } from '../../utils/indexBrokerNft';
+import {
+  INDEX_BROKER_MINING_MODES,
+  INDEX_BROKER_SOURCE_TYPES,
+} from '../../utils/indexBrokerNft';
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
 
 function Field({ label, children, wide = false, hint }) {
@@ -21,11 +24,23 @@ export default function IndexBrokerNFTPoolFields({
   sourceCapabilities,
   poolName,
   readProvider,
+  templateAddresses,
 }) {
   const zh = language === 'zh';
   const update = (key, value) => onChange(current => ({ ...current, [key]: value }));
   const sourceType = Number(config.sourceType);
   const whitelistOnly = Number(config.nativePrice || 0) === 0;
+  const stakeMode = config.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
+  const updateMiningMode = miningMode => onChange(current => ({
+    ...current,
+    miningMode,
+    nftTemplate: miningMode === INDEX_BROKER_MINING_MODES.STAKE
+      ? templateAddresses.stake
+      : templateAddresses.burn,
+    indexMiningActivationTokenAmount: miningMode === INDEX_BROKER_MINING_MODES.STAKE
+      ? ''
+      : current.indexMiningActivationTokenAmount,
+  }));
   const updateSourceType = value => onChange(current => ({
     ...current,
     sourceType: value,
@@ -52,18 +67,35 @@ export default function IndexBrokerNFTPoolFields({
       </div>
 
       <div className="nft-pool-form-grid">
+        <Field wide label={zh ? '指数挖矿模式' : 'Index mining mode'}>
+          <select className="input" value={config.miningMode} onChange={event => updateMiningMode(event.target.value)}>
+            <option value={INDEX_BROKER_MINING_MODES.BURN} disabled={!tokenInfo.burnTemplateSupported}>
+              {zh ? 'Burn：销毁社区代币获得权重' : 'Burn: burn Community Tokens for weight'}
+            </option>
+            <option value={INDEX_BROKER_MINING_MODES.STAKE} disabled={!tokenInfo.stakeTemplateSupported}>
+              {zh ? 'Stake：质押指定 ERC20 获得权重' : 'Stake: deposit an ERC20 for weight'}
+            </option>
+          </select>
+        </Field>
+        {stakeMode && (
+          <Field wide label={zh ? '指数挖矿质押代币' : 'Index mining staking token'} hint={zh ? '创建后不可修改；本金和挖矿权重随 NFT 一起转移。' : 'Immutable after creation; principal and weight follow the NFT on transfer.'}>
+            <input className="input" value={config.stakingToken} onChange={event => update('stakingToken', event.target.value)} placeholder="0x..." />
+          </Field>
+        )}
         <Field label="NFT Symbol">
           <input className="input" maxLength={16} value={config.symbol} onChange={event => update('symbol', event.target.value)} placeholder="e.g. STONK" />
         </Field>
-        <Field label={zh ? '公开铸造收款地址' : 'Public mint receiver'}>
+        <Field label={zh ? '公开铸造收款地址' : 'Public mint receiver'} hint={zh ? '留空时由 Factory 自动设为专属 AMM，铸造 BNB 进入指数回购储备。' : 'Blank selects the dedicated AMM so public-mint BNB funds index buybacks.'}>
           <input className="input" value={config.fundsReceiver} onChange={event => update('fundsReceiver', event.target.value)} placeholder="0x..." />
         </Field>
         <Field label={zh ? '每枚 NFT 社区代币成本' : 'Community Token per NFT'} hint={tokenInfo.symbol ? tokenInfo.symbol : undefined}>
           <input type="number" min="0" step="any" className="input" value={config.communityTokenPrice} onChange={event => update('communityTokenPrice', event.target.value)} placeholder="1000" />
         </Field>
-        <Field label={zh ? '指数挖矿重新激活成本' : 'Index mining activation cost'} hint={tokenInfo.symbol ? tokenInfo.symbol : undefined}>
-          <input type="number" min="0" step="any" className="input" value={config.indexMiningActivationTokenAmount} onChange={event => update('indexMiningActivationTokenAmount', event.target.value)} placeholder="100" />
-        </Field>
+        {!stakeMode && (
+          <Field label={zh ? '指数挖矿重新激活成本' : 'Index mining activation cost'} hint={zh ? `可填 0 表示免费重新激活 · ${tokenInfo.symbol || '社区代币'}` : `0 allows free reactivation · ${tokenInfo.symbol || 'Community Token'}`}>
+            <input type="number" min="0" step="any" className="input" value={config.indexMiningActivationTokenAmount} onChange={event => update('indexMiningActivationTokenAmount', event.target.value)} placeholder="100" />
+          </Field>
+        )}
         <Field label={zh ? '公开铸造 BNB 价格' : 'Public mint BNB price'} hint={whitelistOnly ? (zh ? '0 表示纯白名单矿池' : '0 creates a whitelist-only pool') : undefined}>
           <input type="number" min="0" step="any" className="input" value={config.nativePrice} onChange={event => update('nativePrice', event.target.value)} placeholder="0.01" />
         </Field>

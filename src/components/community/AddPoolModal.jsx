@@ -21,6 +21,7 @@ import {
   DEFAULT_INDEX_BROKER_CONFIG,
   encodeIndexBrokerNftPoolMeta,
   getIndexBrokerV4PoolId,
+  INDEX_BROKER_MINING_MODES,
   INDEX_BROKER_SOURCE_TYPES,
   isIndexBrokerV4Source,
 } from '../../utils/indexBrokerNft';
@@ -102,6 +103,9 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     pumpListed: null,
     pumpPoolId: '',
     pumpPoolManager: '',
+    burnTemplateSupported: false,
+    stakeTemplateSupported: false,
+    pumpSupported: false,
     error: '',
   });
   const [indexBrokerSource, setIndexBrokerSource] = useState({
@@ -173,7 +177,22 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
         functionName: 'defaultRenderer', args: [],
       },
-    ]).then(({ symbol, decimals, officialToken, defaultIndexToken, defaultRenderer, pumpListed, pumpPoolId, pumpPoolManager }) => {
+      {
+        key: 'burnTemplateSupported', target: contracts.IndexBrokerNFTFactory,
+        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+        functionName: 'supportedNFTTemplate', args: [contracts.IndexBrokerNFTBurnTemplate],
+      },
+      {
+        key: 'stakeTemplateSupported', target: contracts.IndexBrokerNFTFactory,
+        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+        functionName: 'supportedNFTTemplate', args: [contracts.IndexBrokerNFTStakeTemplate],
+      },
+      {
+        key: 'pumpSupported', target: contracts.IndexBrokerNFTFactory,
+        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
+        functionName: 'supportedPump', args: [contracts.Pump],
+      },
+    ]).then(({ symbol, decimals, officialToken, defaultIndexToken, defaultRenderer, pumpListed, pumpPoolId, pumpPoolManager, burnTemplateSupported, stakeTemplateSupported, pumpSupported }) => {
       if (cancelled) return;
       setIndexBrokerContext({
         loading: false,
@@ -183,13 +202,27 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         pumpListed: officialToken ? Boolean(pumpListed) : null,
         pumpPoolId: officialToken && pumpListed ? String(pumpPoolId || '') : '',
         pumpPoolManager: officialToken ? String(pumpPoolManager || '') : '',
-        error: '',
+        burnTemplateSupported: Boolean(burnTemplateSupported),
+        stakeTemplateSupported: Boolean(stakeTemplateSupported),
+        pumpSupported: Boolean(pumpSupported),
+        error: !burnTemplateSupported && !stakeTemplateSupported
+          ? (language === 'zh' ? 'Factory 当前没有可用的 NFT 模板' : 'The Factory has no supported NFT template')
+          : (officialToken && !pumpSupported
+            ? (language === 'zh' ? '当前 Pump 未在 Factory 注册' : 'The current Pump is not registered in the Factory')
+            : ''),
       });
       setIndexBrokerConfig(current => ({
         ...current,
         officialToken,
         fundsReceiver: current.fundsReceiver || account || '',
         indexToken: current.indexToken || defaultIndexToken,
+        pump: officialToken ? contracts.Pump : '',
+        nftTemplate: current.nftTemplate || (
+          burnTemplateSupported ? contracts.IndexBrokerNFTBurnTemplate : contracts.IndexBrokerNFTStakeTemplate
+        ),
+        miningMode: current.nftTemplate ? current.miningMode : (
+          burnTemplateSupported ? INDEX_BROKER_MINING_MODES.BURN : INDEX_BROKER_MINING_MODES.STAKE
+        ),
       }));
     }).catch(error => {
       if (cancelled) return;
@@ -206,6 +239,8 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     account,
     communityTokenAddress,
     contracts.IndexBrokerNFTFactory,
+    contracts.IndexBrokerNFTBurnTemplate,
+    contracts.IndexBrokerNFTStakeTemplate,
     contracts.Multicall3,
     contracts.Pump,
     language,
@@ -1126,6 +1161,10 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
                 }}
                 poolName={poolName}
                 readProvider={readProvider}
+                templateAddresses={{
+                  burn: contracts.IndexBrokerNFTBurnTemplate,
+                  stake: contracts.IndexBrokerNFTStakeTemplate,
+                }}
               />
               {indexBrokerContext.error && (
                 <div className="contract-field-feedback is-error">{indexBrokerContext.error}</div>
@@ -1258,9 +1297,13 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
               || (poolType === 'index-broker-nft' && (
                 indexBrokerContext.loading || Boolean(indexBrokerContext.error)
                 || indexBrokerConfig.officialToken === null
-                || !indexBrokerConfig.symbol || !indexBrokerConfig.fundsReceiver
+                || !indexBrokerConfig.symbol
+                || !indexBrokerConfig.nftTemplate
                 || !indexBrokerConfig.communityTokenPrice
-                || !indexBrokerConfig.indexMiningActivationTokenAmount
+                || (
+                  indexBrokerConfig.miningMode === INDEX_BROKER_MINING_MODES.STAKE
+                  && !indexBrokerConfig.stakingToken
+                )
                 || !indexBrokerConfig.maxSupply || !indexBrokerConfig.whitelist
                 || !contracts.IndexBrokerNFTFactory
                 || (

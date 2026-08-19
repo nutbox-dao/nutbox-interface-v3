@@ -241,6 +241,7 @@ export default function CommunityDetail() {
   );
   const indexBrokerNftPools = displayPools.filter(p =>
     p.poolType === 'INDEX_BROKER_NFT'
+      && p.poolFactory?.toLowerCase() === contracts.IndexBrokerNFTFactory?.toLowerCase()
   );
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
