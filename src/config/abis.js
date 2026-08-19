@@ -124,6 +124,10 @@ export const NFTMiningRendererABI = [
 export const IndexBrokerNFTFactoryABI = [
   'function defaultRenderer() view returns (address)',
   'function defaultIndexToken() view returns (address)',
+  'function basketRegistry() view returns (address)',
+  'function basketSwapRouterForVersion(uint32 version) view returns (address)',
+  'function indexV3Router() view returns (address)',
+  'function indexV3Fee() view returns (uint24)',
   'function platformFeeBps() view returns (uint16)',
   'function reservedCollectionNameHash(bytes32) view returns (bool)',
   'function nftTemplateCount() view returns (uint256)',
@@ -136,7 +140,9 @@ export const IndexBrokerNFTFactoryABI = [
 ];
 
 export const IndexBrokerNFTRendererABI = [
-  'function renderSVG((string collectionName,uint256 tokenId,uint256 seed,uint256 referralCount,uint256 referrerTokenId,uint256 miningWeight,uint256 indexMiningWeight,uint256 communityTokenUnit,uint32 level,bool miningActive,bool indexMiningActive) params) view returns (string)',
+  'function renderSVG((string collectionName,uint256 tokenId,uint256 seed,uint256 referralCount,uint256 referrerTokenId,uint256 miningWeight,uint256 indexMiningWeight,uint256 indexMiningTokenUnit,uint32 level,bool miningActive,bool indexMiningActive) params) view returns (string)',
+  'function renderTokenURI((string collectionName,uint256 tokenId,uint256 seed,uint256 referralCount,uint256 referrerTokenId,uint256 miningWeight,uint256 indexMiningWeight,uint256 indexMiningTokenUnit,uint32 level,bool miningActive,bool indexMiningActive) params) view returns (string)',
+  'function renderContractURI(string collectionName) view returns (string)',
 ];
 
 export const IndexBrokerNFTABI = [

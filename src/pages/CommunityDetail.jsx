@@ -566,6 +566,7 @@ export default function CommunityDetail() {
       {/* ── Add Pool Modal ── */}
       {showAddPool && (
         <AddPoolModal
+          key={`${activeChainId}:${address.toLowerCase()}:${account?.toLowerCase() || 'anonymous'}`}
           communityAddress={address}
           communityTokenAddress={community.cToken}
           activePools={activePools}

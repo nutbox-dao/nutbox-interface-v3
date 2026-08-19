@@ -14,6 +14,14 @@ export const INDEX_BROKER_MINING_MODES = {
   STAKE: 'stake',
 };
 
+export const INDEX_BROKER_MINT_ACCESS_MODES = {
+  OPEN: 'open',
+  WHITELIST_ONLY: 'whitelist-only',
+  MIXED: 'mixed',
+};
+
+export const INDEX_BROKER_OPEN_MINT_PLACEHOLDER = '0x000000000000000000000000000000000000dEaD';
+
 export const DEFAULT_INDEX_BROKER_CONFIG = {
   symbol: '',
   fundsReceiver: '',
@@ -33,6 +41,7 @@ export const DEFAULT_INDEX_BROKER_CONFIG = {
   normalFeePercent: '1',
   specificFeePercent: '3',
   indexToken: '',
+  mintAccessMode: INDEX_BROKER_MINT_ACCESS_MODES.OPEN,
   lockWhitelistSlots: true,
   rerollEnabled: false,
   whitelist: '',
@@ -77,12 +86,20 @@ export function parseIndexBrokerWhitelist(value) {
     const address = ethers.getAddress(rawAddress);
     const key = address.toLowerCase();
     const allowance = BigInt(rawAllowance);
-    if (seen.has(key) || allowance <= 0n) throw new Error(`Invalid whitelist row: ${row}`);
+    if (address === ethers.ZeroAddress || seen.has(key) || allowance <= 0n) {
+      throw new Error(`Invalid whitelist row: ${row}`);
+    }
     seen.add(key);
     accounts.push(address);
     allowances.push(allowance);
   }
   return { accounts, allowances };
+}
+
+export function getIndexBrokerMintAccessMode(config) {
+  const mode = config?.mintAccessMode || INDEX_BROKER_MINT_ACCESS_MODES.OPEN;
+  if (Object.values(INDEX_BROKER_MINT_ACCESS_MODES).includes(mode)) return mode;
+  throw new Error('Unsupported mint access mode');
 }
 
 function percentToBps(value, label) {
@@ -217,10 +234,18 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
   const activationPrice = stakeMode ? 0n : ethers.parseUnits(
     String(config.indexMiningActivationTokenAmount || '0'), communityTokenDecimals,
   );
-  const recommitPrice = config.rerollEnabled
-    ? ethers.parseUnits(String(config.recommitPrice || config.communityTokenPrice || '0'), communityTokenDecimals)
+  const requestedRecommitPrice = config.rerollEnabled
+    ? ethers.parseUnits(String(config.recommitPrice || '0'), communityTokenDecimals)
     : 0n;
-  const nativePrice = ethers.parseEther(String(config.nativePrice || '0'));
+  const recommitPrice = config.rerollEnabled
+    ? (requestedRecommitPrice === 0n ? communityTokenPrice : requestedRecommitPrice)
+    : 0n;
+  const mintAccessMode = getIndexBrokerMintAccessMode(config);
+  const whitelistOnly = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY;
+  const openMint = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.OPEN;
+  const nativePrice = whitelistOnly
+    ? 0n
+    : ethers.parseEther(String(config.nativePrice || '0'));
   if (communityTokenPrice <= 0n) {
     throw new Error('Community Token mint cost must be greater than zero');
   }
@@ -229,16 +254,20 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
     ? abiCoder.encode(['address'], [requireAddress(config.stakingToken, 'Staking token')])
     : '0x';
 
-  const referralBps = percentToBps(config.referralPercent, 'Referral rate');
+  const referralBps = whitelistOnly
+    ? 0
+    : percentToBps(config.referralPercent, 'Referral rate');
   const normalFeeBps = percentToBps(config.normalFeePercent, 'Normal AMM fee');
   const specificFeeBps = percentToBps(config.specificFeePercent, 'Specific NFT AMM fee');
-  const whitelist = parseIndexBrokerWhitelist(config.whitelist);
+  const whitelist = openMint
+    ? { accounts: [INDEX_BROKER_OPEN_MINT_PLACEHOLDER], allowances: [1n] }
+    : parseIndexBrokerWhitelist(config.whitelist);
   const whitelistTotal = whitelist.allowances.reduce((total, value) => total + value, 0n);
-  if (whitelistTotal > maxSupply || (nativePrice === 0n && whitelistTotal !== maxSupply)) {
-    throw new Error('Whitelist allocation is incompatible with max supply');
+  if (!whitelistOnly && nativePrice === 0n) {
+    throw new Error('Paid public mint modes require a native-coin price greater than zero');
   }
-  if (nativePrice === 0n && referralBps !== 0) {
-    throw new Error('Whitelist-only pools must use a 0% referral rate');
+  if (!openMint && (whitelistTotal > maxSupply || (whitelistOnly && whitelistTotal !== maxSupply))) {
+    throw new Error('Whitelist allocation is incompatible with max supply');
   }
 
   const sourceType = config.officialToken
@@ -270,7 +299,7 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
       referralBps,
       ammConfig,
       nftTemplateConfig,
-      nativePrice === 0n || Boolean(config.lockWhitelistSlots),
+      whitelistOnly || (mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.MIXED && Boolean(config.lockWhitelistSlots)),
       Boolean(config.rerollEnabled),
       whitelist.accounts,
       whitelist.allowances,

@@ -36,11 +36,14 @@ export default function IndexBrokerRendererPreview({
   defaultRenderer,
   poolName,
   tokenDecimals,
+  indexMiningTokenAddress,
   language,
   readProvider,
+  defaultExpanded = false,
+  onStatusChange,
 }) {
   const zh = language === 'zh';
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const [params, setParams] = useState({
     collectionName: '',
     tokenId: '1',
@@ -49,18 +52,105 @@ export default function IndexBrokerRendererPreview({
     referrerTokenId: '2',
     miningWeight: '12000',
     indexMiningWeight: '5000000',
-    communityTokenUnit: '1',
+    indexMiningTokenUnit: '',
     level: '2',
     miningActive: true,
     indexMiningActive: true,
   });
   const [preview, setPreview] = useState({ loading: false, image: '', address: '', error: '' });
+  const [compatibility, setCompatibility] = useState({ loading: false, valid: false, address: '', error: '' });
+  const [unitContext, setUnitContext] = useState({ loading: false, decimals: tokenDecimals, error: '' });
   const rendererAddress = String(customRenderer || '').trim() || String(defaultRenderer || '').trim();
   const tokenUnitPlaceholder = useMemo(
-    () => (10n ** BigInt(Number.isInteger(tokenDecimals) ? tokenDecimals : 18)).toString(),
-    [tokenDecimals],
+    () => (10n ** BigInt(Number.isInteger(unitContext.decimals) ? unitContext.decimals : 18)).toString(),
+    [unitContext.decimals],
   );
   const update = (key, value) => setParams(current => ({ ...current, [key]: value }));
+
+  useEffect(() => {
+    const tokenAddress = String(indexMiningTokenAddress || '').trim();
+    if (!tokenAddress) {
+      setUnitContext({ loading: false, decimals: tokenDecimals, error: '' });
+      return undefined;
+    }
+    if (!readProvider || !ethers.isAddress(tokenAddress)) {
+      setUnitContext({ loading: false, decimals: tokenDecimals, error: zh ? '质押代币地址无效' : 'Invalid staking-token address' });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setUnitContext(current => ({ ...current, loading: true, error: '' }));
+    new ethers.Contract(tokenAddress, ['function decimals() view returns (uint8)'], readProvider).decimals()
+      .then(decimals => {
+        const normalizedDecimals = Number(decimals);
+        if (!Number.isInteger(normalizedDecimals) || normalizedDecimals < 0 || normalizedDecimals > 77) {
+          throw new Error('Unsupported staking-token decimals');
+        }
+        if (!cancelled) setUnitContext({ loading: false, decimals: normalizedDecimals, error: '' });
+      })
+      .catch(() => {
+        if (!cancelled) setUnitContext({ loading: false, decimals: tokenDecimals, error: zh ? '无法读取质押代币 decimals' : 'Could not read staking-token decimals' });
+      });
+    return () => { cancelled = true; };
+  }, [indexMiningTokenAddress, readProvider, tokenDecimals, zh]);
+
+  useEffect(() => {
+    onStatusChange?.(compatibility);
+  }, [compatibility, onStatusChange]);
+
+  useEffect(() => {
+    if (!readProvider || !rendererAddress || !ethers.isAddress(rendererAddress)) {
+      setCompatibility({ loading: false, valid: false, address: rendererAddress, error: '' });
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCompatibility({ loading: true, valid: false, address: rendererAddress, error: '' });
+    const timer = setTimeout(async () => {
+      try {
+        if (await readProvider.getCode(rendererAddress) === '0x') throw new Error('Renderer has no contract code');
+        const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, readProvider);
+        const canonicalParams = {
+          collectionName: poolName.trim() || 'Index Broker Compatibility Check',
+          tokenId: 1n,
+          seed: 1n,
+          referralCount: 0n,
+          referrerTokenId: 0n,
+          miningWeight: 10_000n,
+          indexMiningWeight: BigInt(tokenUnitPlaceholder),
+          indexMiningTokenUnit: BigInt(tokenUnitPlaceholder),
+          level: 1,
+          miningActive: true,
+          indexMiningActive: true,
+        };
+        const [svg, tokenUri, contractUri] = await Promise.all([
+          renderer.renderSVG(canonicalParams),
+          renderer.renderTokenURI(canonicalParams),
+          renderer.renderContractURI(canonicalParams.collectionName),
+        ]);
+        if (!String(svg).trimStart().startsWith('<svg') || !String(tokenUri).trim() || !String(contractUri).trim()) {
+          throw new Error('Renderer returned invalid metadata');
+        }
+        if (!cancelled) setCompatibility({ loading: false, valid: true, address: rendererAddress, error: '' });
+      } catch (error) {
+        if (cancelled) return;
+        console.error('Failed to validate Index Broker Renderer:', error);
+        setCompatibility({
+          loading: false,
+          valid: false,
+          address: rendererAddress,
+          error: zh
+            ? 'Renderer 必须兼容 renderSVG、renderTokenURI 和 renderContractURI'
+            : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI',
+        });
+      }
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
 
   useEffect(() => {
     if (!expanded) return undefined;
@@ -97,9 +187,9 @@ export default function IndexBrokerRendererPreview({
           referrerTokenId: unsignedInteger(params.referrerTokenId, 'Referrer token ID'),
           miningWeight: unsignedInteger(params.miningWeight, 'Mining weight'),
           indexMiningWeight: unsignedInteger(params.indexMiningWeight, 'Index mining weight'),
-          communityTokenUnit: unsignedInteger(
-            params.communityTokenUnit || tokenUnitPlaceholder,
-            'Community Token unit',
+          indexMiningTokenUnit: unsignedInteger(
+            params.indexMiningTokenUnit || tokenUnitPlaceholder,
+            'Index mining token unit',
           ),
           level: Number(level),
           miningActive: params.miningActive,
@@ -161,6 +251,13 @@ export default function IndexBrokerRendererPreview({
 
       {expanded && (
         <div className="renderer-preview index-broker-renderer-body">
+          {(compatibility.loading || compatibility.error || compatibility.valid) && (
+            <div className={`contract-field-feedback index-broker-renderer-compatibility ${compatibility.error ? 'is-error' : compatibility.valid ? 'is-success' : ''}`}>
+              {compatibility.loading
+                ? (zh ? '正在验证 Renderer 完整元数据接口…' : 'Validating the complete Renderer metadata interface…')
+                : compatibility.error || (zh ? 'Renderer 完整接口已验证' : 'Complete Renderer interface verified')}
+            </div>
+          )}
           <div className="renderer-preview-copy">
             <div>
               <strong>{zh ? '实际链上渲染' : 'Live on-chain render'}</strong>
@@ -193,11 +290,18 @@ export default function IndexBrokerRendererPreview({
             <PreviewField label={zh ? '社区挖矿权重' : 'Community mining weight'} value={params.miningWeight} onChange={value => update('miningWeight', value)} />
             <PreviewField label={zh ? '指数挖矿权重' : 'Index mining weight'} value={params.indexMiningWeight} onChange={value => update('indexMiningWeight', value)} />
             <PreviewField
-              label={zh ? '社区代币最小单位' : 'Community Token unit'}
-              value={params.communityTokenUnit}
-              onChange={value => update('communityTokenUnit', value)}
+              label={zh ? '指数挖矿代币单位' : 'Index mining token unit'}
+              value={params.indexMiningTokenUnit}
+              onChange={value => update('indexMiningTokenUnit', value)}
               placeholder={tokenUnitPlaceholder}
             />
+            {(unitContext.loading || unitContext.error) && (
+              <div className={`contract-field-feedback index-broker-renderer-unit-status ${unitContext.error ? 'is-error' : ''}`}>
+                {unitContext.loading
+                  ? (zh ? '正在读取质押代币精度…' : 'Reading staking-token decimals…')
+                  : unitContext.error}
+              </div>
+            )}
             <PreviewField label={zh ? '等级' : 'Level'} value={params.level} onChange={value => update('level', value)} />
             <label className="index-broker-check index-broker-renderer-check">
               <input type="checkbox" checked={params.miningActive} onChange={event => update('miningActive', event.target.checked)} />
