@@ -16,6 +16,18 @@ function unsignedInteger(value, label) {
   return BigInt(normalized);
 }
 
+function tokenAmount(value, decimals, label) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized || !/^\d+(?:\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a token amount`);
+  }
+  try {
+    return ethers.parseUnits(normalized, decimals);
+  } catch (cause) {
+    throw new Error(`${label} exceeds the token precision`, { cause });
+  }
+}
+
 function decodeBase64Utf8(value) {
   const bytes = Uint8Array.from(atob(value), character => character.charCodeAt(0));
   return new TextDecoder().decode(bytes);
@@ -72,6 +84,56 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function preloadImage(source, signal, timeoutMs = 12_000) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const abort = () => {
+      cleanup();
+      image.src = '';
+      reject(new Error('Image load aborted'));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      image.src = '';
+      reject(new Error('Image load timed out'));
+    }, timeoutMs);
+    image.onload = () => {
+      cleanup();
+      resolve(source);
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error('Image load failed'));
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+    image.src = source;
+  });
+}
+
+async function firstLoadableImage(candidates, parentSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  parentSignal?.addEventListener('abort', abort, { once: true });
+  try {
+    return await Promise.any(candidates.map(source => preloadImage(source, controller.signal)));
+  } catch (cause) {
+    throw new Error('All preview image sources failed', { cause });
+  } finally {
+    controller.abort();
+    parentSignal?.removeEventListener('abort', abort);
+  }
+}
+
 function compatibilityErrorMessage(error, zh) {
   const code = error?.code || error?.info?.error?.code || error?.cause?.code;
   if (['TIMEOUT', 'NETWORK_ERROR', 'SERVER_ERROR'].includes(code)) {
@@ -84,7 +146,7 @@ function compatibilityErrorMessage(error, zh) {
     : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI';
 }
 
-function PreviewField({ label, value, onChange, placeholder }) {
+function PreviewField({ label, value, onChange, placeholder, inputMode = 'numeric' }) {
   return (
     <div className="input-group">
       <label>{label}</label>
@@ -93,7 +155,7 @@ function PreviewField({ label, value, onChange, placeholder }) {
         value={value}
         onChange={event => onChange(event.target.value)}
         placeholder={placeholder}
-        inputMode="numeric"
+        inputMode={inputMode}
         spellCheck="false"
       />
     </div>
@@ -260,11 +322,13 @@ export default function IndexBrokerRendererPreview({
     }
 
     let cancelled = false;
+    const requestController = new AbortController();
     setPreview(current => ({ ...current, loading: true, address: rendererAddress, error: '' }));
     const timer = setTimeout(async () => {
       try {
         const level = unsignedInteger(params.level, 'Level');
         if (level > 4_294_967_295n) throw new Error('Level exceeds uint32');
+        const indexMiningTokenDecimals = Number.isInteger(unitContext.decimals) ? unitContext.decimals : 18;
         const renderParams = {
           collectionName: params.collectionName.trim() || poolName.trim() || 'Index Broker Preview',
           tokenId: unsignedInteger(params.tokenId, 'Token ID'),
@@ -272,7 +336,11 @@ export default function IndexBrokerRendererPreview({
           referralCount: unsignedInteger(params.referralCount, 'Referral count'),
           referrerTokenId: unsignedInteger(params.referrerTokenId, 'Referrer token ID'),
           miningWeight: unsignedInteger(params.miningWeight, 'Mining weight'),
-          indexMiningWeight: unsignedInteger(params.indexMiningWeight, 'Index mining weight'),
+          indexMiningWeight: tokenAmount(
+            params.indexMiningWeight,
+            indexMiningTokenDecimals,
+            'Index mining weight',
+          ),
           indexMiningTokenUnit: unsignedInteger(
             params.indexMiningTokenUnit || tokenUnitPlaceholder,
             'Index mining token unit',
@@ -305,11 +373,14 @@ export default function IndexBrokerRendererPreview({
           ...(!externalSvgImage ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`] : []),
         ]);
         if (imageCandidates.length === 0) throw new Error('Renderer returned no supported preview image');
+        if (cancelled) return;
+        const image = await firstLoadableImage(imageCandidates, requestController.signal);
         if (!cancelled) {
+          const orderedCandidates = [image, ...imageCandidates.filter(candidate => candidate !== image)];
           setPreview({
             loading: false,
-            image: imageCandidates[0],
-            imageCandidates,
+            image,
+            imageCandidates: orderedCandidates,
             address: rendererAddress,
             error: '',
           });
@@ -317,14 +388,19 @@ export default function IndexBrokerRendererPreview({
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to preview Index Broker Renderer:', error);
+          const imageLoadFailed = error.message === 'All preview image sources failed';
           setPreview({
             loading: false,
             image: '',
             imageCandidates: [],
             address: rendererAddress,
-            error: zh
-              ? '无法使用这些参数调用 Renderer，请检查各字段和合约地址'
-              : 'Could not call the Renderer with these parameters; check the fields and contract address',
+            error: imageLoadFailed
+              ? (zh
+                ? '图片资源加载失败，请检查 IPFS 网关连接'
+                : 'The image could not be loaded; check the IPFS gateway connection')
+              : (zh
+                ? '无法使用这些参数调用 Renderer，请检查各字段和合约地址'
+                : 'Could not call the Renderer with these parameters; check the fields and contract address'),
           });
         }
       }
@@ -332,9 +408,10 @@ export default function IndexBrokerRendererPreview({
 
     return () => {
       cancelled = true;
+      requestController.abort();
       clearTimeout(timer);
     };
-  }, [expanded, multicallAddress, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
+  }, [expanded, multicallAddress, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, unitContext.decimals, zh]);
 
   return (
     <div className="index-broker-renderer-preview nft-pool-form-wide">
@@ -397,7 +474,12 @@ export default function IndexBrokerRendererPreview({
             <PreviewField label={zh ? '推荐数量' : 'Referral count'} value={params.referralCount} onChange={value => update('referralCount', value)} />
             <PreviewField label={zh ? '推荐人 NFT ID' : 'Referrer NFT ID'} value={params.referrerTokenId} onChange={value => update('referrerTokenId', value)} />
             <PreviewField label={zh ? '社区挖矿权重' : 'Community mining weight'} value={params.miningWeight} onChange={value => update('miningWeight', value)} />
-            <PreviewField label={zh ? '指数挖矿权重' : 'Index mining weight'} value={params.indexMiningWeight} onChange={value => update('indexMiningWeight', value)} />
+            <PreviewField
+              label={zh ? '指数挖矿权重（代币数量）' : 'Index mining weight (tokens)'}
+              value={params.indexMiningWeight}
+              onChange={value => update('indexMiningWeight', value)}
+              inputMode="decimal"
+            />
             <PreviewField
               label={zh ? '指数挖矿代币单位' : 'Index mining token unit'}
               value={params.indexMiningTokenUnit}
