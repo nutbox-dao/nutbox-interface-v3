@@ -2292,6 +2292,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
                 poolName={poolName}
                 onPoolNameChange={setPoolName}
                 readProvider={readProvider}
+                multicallAddress={contracts.Multicall3}
                 templateAddresses={{
                   burn: contracts.IndexBrokerNFTBurnTemplate,
                   stake: contracts.IndexBrokerNFTStakeTemplate,

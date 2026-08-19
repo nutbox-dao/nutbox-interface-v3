@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { IndexBrokerNFTRendererABI } from '../../config/abis';
 import { shortenAddress } from '../../utils/helpers';
+import { multicallRead } from '../../utils/multicall';
 
 function randomSeed() {
   return BigInt(ethers.hexlify(ethers.randomBytes(32))).toString();
@@ -13,6 +14,53 @@ function unsignedInteger(value, label) {
     throw new Error(`${label} must be an unsigned integer`);
   }
   return BigInt(normalized);
+}
+
+function decodeBase64Utf8(value) {
+  const bytes = Uint8Array.from(atob(value), character => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function parseTokenImage(tokenUri) {
+  const uri = String(tokenUri || '').trim();
+  if (!uri) return '';
+
+  try {
+    let json;
+    if (uri.startsWith('data:application/json;base64,')) {
+      json = decodeBase64Utf8(uri.slice('data:application/json;base64,'.length));
+    } else if (uri.startsWith('data:application/json,')) {
+      json = decodeURIComponent(uri.slice('data:application/json,'.length));
+    } else if (uri.startsWith('{')) {
+      json = uri;
+    } else {
+      return '';
+    }
+    return String(JSON.parse(json).image || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function previewImageUri(uri) {
+  const value = String(uri || '').trim();
+  if (value.startsWith('ipfs://')) {
+    return `https://ipfs.io/ipfs/${value.slice('ipfs://'.length).replace(/^ipfs\//, '')}`;
+  }
+  if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return value;
+  return '';
+}
+
+function compatibilityErrorMessage(error, zh) {
+  const code = error?.code || error?.info?.error?.code || error?.cause?.code;
+  if (['TIMEOUT', 'NETWORK_ERROR', 'SERVER_ERROR'].includes(code)) {
+    return zh
+      ? '验证 Renderer 时 RPC 请求失败，请稍后重试'
+      : 'The RPC request failed while validating the Renderer; please retry';
+  }
+  return zh
+    ? 'Renderer 必须兼容 renderSVG、renderTokenURI 和 renderContractURI'
+    : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI';
 }
 
 function PreviewField({ label, value, onChange, placeholder }) {
@@ -39,6 +87,7 @@ export default function IndexBrokerRendererPreview({
   indexMiningTokenAddress,
   language,
   readProvider,
+  multicallAddress,
   defaultExpanded = false,
   onStatusChange,
 }) {
@@ -99,7 +148,7 @@ export default function IndexBrokerRendererPreview({
   }, [compatibility, onStatusChange]);
 
   useEffect(() => {
-    if (!readProvider || !rendererAddress || !ethers.isAddress(rendererAddress)) {
+    if (!readProvider || !multicallAddress || !rendererAddress || !ethers.isAddress(rendererAddress)) {
       setCompatibility({ loading: false, valid: false, address: rendererAddress, error: '' });
       return undefined;
     }
@@ -108,8 +157,6 @@ export default function IndexBrokerRendererPreview({
     setCompatibility({ loading: true, valid: false, address: rendererAddress, error: '' });
     const timer = setTimeout(async () => {
       try {
-        if (await readProvider.getCode(rendererAddress) === '0x') throw new Error('Renderer has no contract code');
-        const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, readProvider);
         const canonicalParams = {
           collectionName: poolName.trim() || 'Index Broker Compatibility Check',
           tokenId: 1n,
@@ -123,10 +170,28 @@ export default function IndexBrokerRendererPreview({
           miningActive: true,
           indexMiningActive: true,
         };
-        const [svg, tokenUri, contractUri] = await Promise.all([
-          renderer.renderSVG(canonicalParams),
-          renderer.renderTokenURI(canonicalParams),
-          renderer.renderContractURI(canonicalParams.collectionName),
+        const { svg, tokenUri, contractUri } = await multicallRead(readProvider, multicallAddress, [
+          {
+            key: 'svg',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderSVG',
+            args: [canonicalParams],
+          },
+          {
+            key: 'tokenUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderTokenURI',
+            args: [canonicalParams],
+          },
+          {
+            key: 'contractUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderContractURI',
+            args: [canonicalParams.collectionName],
+          },
         ]);
         if (!String(svg).trimStart().startsWith('<svg') || !String(tokenUri).trim() || !String(contractUri).trim()) {
           throw new Error('Renderer returned invalid metadata');
@@ -139,9 +204,7 @@ export default function IndexBrokerRendererPreview({
           loading: false,
           valid: false,
           address: rendererAddress,
-          error: zh
-            ? 'Renderer 必须兼容 renderSVG、renderTokenURI 和 renderContractURI'
-            : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI',
+          error: compatibilityErrorMessage(error, zh),
         });
       }
     }, 450);
@@ -150,11 +213,11 @@ export default function IndexBrokerRendererPreview({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
+  }, [multicallAddress, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
 
   useEffect(() => {
     if (!expanded) return undefined;
-    if (!readProvider || !rendererAddress) {
+    if (!readProvider || !multicallAddress || !rendererAddress) {
       setPreview({
         loading: false,
         image: '',
@@ -195,13 +258,28 @@ export default function IndexBrokerRendererPreview({
           miningActive: params.miningActive,
           indexMiningActive: params.indexMiningActive,
         };
-        const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, readProvider);
-        const svg = await renderer.renderSVG(renderParams);
+        const { svg, tokenUri } = await multicallRead(readProvider, multicallAddress, [
+          {
+            key: 'svg',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderSVG',
+            args: [renderParams],
+          },
+          {
+            key: 'tokenUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderTokenURI',
+            args: [renderParams],
+          },
+        ]);
         if (!String(svg).trimStart().startsWith('<svg')) throw new Error('Renderer returned invalid SVG');
+        const metadataImage = previewImageUri(parseTokenImage(tokenUri));
         if (!cancelled) {
           setPreview({
             loading: false,
-            image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+            image: metadataImage || `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
             address: rendererAddress,
             error: '',
           });
@@ -225,7 +303,7 @@ export default function IndexBrokerRendererPreview({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [expanded, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
+  }, [expanded, multicallAddress, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
 
   return (
     <div className="index-broker-renderer-preview nft-pool-form-wide">
