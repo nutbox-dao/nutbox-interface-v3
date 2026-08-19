@@ -42,13 +42,34 @@ function parseTokenImage(tokenUri) {
   }
 }
 
-function previewImageUri(uri) {
+function previewImageUris(uri) {
   const value = String(uri || '').trim();
   if (value.startsWith('ipfs://')) {
-    return `https://ipfs.io/ipfs/${value.slice('ipfs://'.length).replace(/^ipfs\//, '')}`;
+    const path = value.slice('ipfs://'.length).replace(/^ipfs\//, '');
+    const [cid, ...segments] = path.split('/');
+    const suffix = segments.length ? `/${segments.join('/')}` : '';
+    return [
+      ...(cid && /^[\da-z]+$/i.test(cid) ? [`https://${cid}.ipfs.4everland.io${suffix}`] : []),
+      `https://ipfs.io/ipfs/${path}`,
+      `https://dweb.link/ipfs/${path}`,
+    ];
   }
-  if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return value;
-  return '';
+  if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return [value];
+  return [];
+}
+
+function extractSvgImage(svg) {
+  try {
+    const document = new DOMParser().parseFromString(String(svg || ''), 'image/svg+xml');
+    const image = document.querySelector('image');
+    return String(image?.getAttribute('href') || image?.getAttribute('xlink:href') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
 }
 
 function compatibilityErrorMessage(error, zh) {
@@ -106,7 +127,7 @@ export default function IndexBrokerRendererPreview({
     miningActive: true,
     indexMiningActive: true,
   });
-  const [preview, setPreview] = useState({ loading: false, image: '', address: '', error: '' });
+  const [preview, setPreview] = useState({ loading: false, image: '', imageCandidates: [], address: '', error: '' });
   const [compatibility, setCompatibility] = useState({ loading: false, valid: false, address: '', error: '' });
   const [unitContext, setUnitContext] = useState({ loading: false, decimals: tokenDecimals, error: '' });
   const rendererAddress = String(customRenderer || '').trim() || String(defaultRenderer || '').trim();
@@ -221,6 +242,7 @@ export default function IndexBrokerRendererPreview({
       setPreview({
         loading: false,
         image: '',
+        imageCandidates: [],
         address: rendererAddress,
         error: zh ? '正在读取默认 Renderer 地址…' : 'Resolving the default Renderer address…',
       });
@@ -230,6 +252,7 @@ export default function IndexBrokerRendererPreview({
       setPreview({
         loading: false,
         image: '',
+        imageCandidates: [],
         address: rendererAddress,
         error: zh ? '请输入有效的 Renderer 地址' : 'Enter a valid Renderer address',
       });
@@ -275,11 +298,18 @@ export default function IndexBrokerRendererPreview({
           },
         ]);
         if (!String(svg).trimStart().startsWith('<svg')) throw new Error('Renderer returned invalid SVG');
-        const metadataImage = previewImageUri(parseTokenImage(tokenUri));
+        const externalSvgImage = extractSvgImage(svg);
+        const imageCandidates = unique([
+          ...previewImageUris(parseTokenImage(tokenUri)),
+          ...previewImageUris(externalSvgImage),
+          ...(!externalSvgImage ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`] : []),
+        ]);
+        if (imageCandidates.length === 0) throw new Error('Renderer returned no supported preview image');
         if (!cancelled) {
           setPreview({
             loading: false,
-            image: metadataImage || `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+            image: imageCandidates[0],
+            imageCandidates,
             address: rendererAddress,
             error: '',
           });
@@ -290,6 +320,7 @@ export default function IndexBrokerRendererPreview({
           setPreview({
             loading: false,
             image: '',
+            imageCandidates: [],
             address: rendererAddress,
             error: zh
               ? '无法使用这些参数调用 Renderer，请检查各字段和合约地址'
@@ -400,7 +431,25 @@ export default function IndexBrokerRendererPreview({
             ) : preview.error ? (
               <div className="renderer-preview-status is-error">{preview.error}</div>
             ) : preview.image ? (
-              <img src={preview.image} alt={zh ? 'Index Broker Renderer 预览' : 'Index Broker Renderer preview'} />
+              <img
+                src={preview.image}
+                alt={zh ? 'Index Broker Renderer 预览' : 'Index Broker Renderer preview'}
+                onError={() => {
+                  setPreview(current => {
+                    const currentIndex = current.imageCandidates.indexOf(current.image);
+                    const nextImage = current.imageCandidates[currentIndex + 1];
+                    return nextImage
+                      ? { ...current, image: nextImage }
+                      : {
+                        ...current,
+                        image: '',
+                        error: zh
+                          ? '图片资源加载失败，请检查 IPFS 网关连接'
+                          : 'The image could not be loaded; check the IPFS gateway connection',
+                      };
+                  });
+                }}
+              />
             ) : null}
           </div>
         </div>
