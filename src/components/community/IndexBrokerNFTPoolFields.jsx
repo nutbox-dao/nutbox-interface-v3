@@ -68,6 +68,26 @@ function effectiveFee(value) {
   return `${total.toFixed(2).replace(/\.?0+$/, '')}%`;
 }
 
+function formatUsd(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '$0';
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    notation: amount >= 1_000 ? 'compact' : 'standard',
+    maximumFractionDigits: amount >= 1_000 ? 2 : 0,
+  }).format(amount);
+}
+
+function formatCompact(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return '0';
+  return new Intl.NumberFormat('en-US', {
+    notation: 'compact',
+    maximumFractionDigits: 1,
+  }).format(amount);
+}
+
 export default function IndexBrokerNFTPoolFields({
   section,
   config,
@@ -76,6 +96,8 @@ export default function IndexBrokerNFTPoolFields({
   tokenInfo,
   loadingContext,
   sourceResolution,
+  poolDiscovery = { loading: false, pools: [], error: '' },
+  onRetryPoolDiscovery,
   sourceCapabilities = {},
   sourceFactories = {},
   poolName,
@@ -91,11 +113,6 @@ export default function IndexBrokerNFTPoolFields({
   const zh = language === 'zh';
   const update = (key, value) => onChange(current => ({ ...current, [key]: value }));
   const sourceType = Number(config.sourceType);
-  const selectedSourceFactory = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-    ? sourceFactories.pancakeV2
-    : sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-      ? sourceFactories.pancakeV3
-      : '';
   const currentSourceInput = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
     || sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
     ? config.sourcePool.trim()
@@ -144,8 +161,8 @@ export default function IndexBrokerNFTPoolFields({
     mintAccessMode: mode,
   }));
 
-  const updateSourceType = value => {
-    const nextSourceType = Number(value);
+  const selectPricePool = candidate => {
+    const nextSourceType = Number(candidate.sourceType);
     const sourceFactory = nextSourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
       ? sourceFactories.pancakeV2
       : nextSourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
@@ -153,10 +170,15 @@ export default function IndexBrokerNFTPoolFields({
         : '';
     onChange(current => ({
       ...current,
-      sourceType: value,
+      sourceType: String(nextSourceType),
       sourceFactory: sourceFactory || '',
-      sourcePool: '',
-      sourcePoolId: '',
+      sourcePool: nextSourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
+        || nextSourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
+        ? candidate.address
+        : '',
+      sourcePoolId: nextSourceType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL
+        ? candidate.address
+        : '',
       sourcePoolManager: '',
       sourceCurrency0: '',
       sourceCurrency1: '',
@@ -165,6 +187,14 @@ export default function IndexBrokerNFTPoolFields({
       sourceTickSpacing: '',
       sourceParameters: '',
     }));
+  };
+
+  const sourceIsSupported = candidate => {
+    const candidateType = Number(candidate.sourceType);
+    if (candidateType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR) return Boolean(sourceCapabilities.pancakeV2);
+    if (candidateType === INDEX_BROKER_SOURCE_TYPES.V3_POOL) return Boolean(sourceCapabilities.pancakeV3);
+    if (candidateType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL) return Boolean(sourceCapabilities.pancakeV4Cl);
+    return false;
   };
 
   if (section === 'template') {
@@ -488,62 +518,96 @@ export default function IndexBrokerNFTPoolFields({
             {indexTokenValidation?.error && <div className="contract-field-feedback is-error">{indexTokenValidation.error}</div>}
             {indexTokenValidation?.valid && (
               <div className="contract-field-feedback is-success">
-                {zh ? '已验证 Basket' : 'Basket verified'} · V{indexTokenValidation.version} · {shortValue(indexTokenValidation.router)}
+                {zh ? '已验证 Basket' : 'Basket verified'}
+                {indexTokenValidation.symbol ? ` · ${indexTokenValidation.symbol}` : ''}
+                {' · '}V{indexTokenValidation.version} · {shortValue(indexTokenValidation.router)}
               </div>
             )}
           </Field>
 
           {!loadingContext && config.officialToken === false && (
             <>
-              <div className="wizard-callout nft-pool-form-wide">
-                <strong>{zh ? 'DEX 价格源的作用' : 'What the DEX price source does'}</strong>
-                <span>{zh
-                  ? '专属 AMM 会用这里的流动性池，把每枚 NFT 的社区代币价格换算成 BNB 价值，从而计算买卖价格和交易费用。请选择社区代币已有流动性的 Pancake 版本，并填写对应的池地址；平台会使用默认 Factory 自动验证。'
-                  : 'The dedicated AMM uses this liquidity pool to convert the Community Token price per NFT into a BNB value for trade pricing and fees. Choose the Pancake version where the Community Token has liquidity and enter that pool; the platform verifies it against the default Factory.'}</span>
+              <div className="dex-pool-discovery nft-pool-form-wide">
+                <div className="dex-pool-discovery-header">
+                  <div>
+                    <strong>{zh ? '选择价格源池' : 'Select a price-source pool'}</strong>
+                    <span>{zh ? `按流动性排序 · 共 ${poolDiscovery.pools.length} 个候选池` : `Sorted by liquidity · ${poolDiscovery.pools.length} candidates`}</span>
+                  </div>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={onRetryPoolDiscovery} disabled={poolDiscovery.loading}>
+                    {poolDiscovery.loading ? (zh ? '查找中…' : 'Searching…') : (zh ? '重新查找' : 'Refresh')}
+                  </button>
+                </div>
+                <p className="dex-pool-discovery-description">
+                  {zh
+                    ? 'NFT AMM 交易手续费会使用选择的 DEX 来计价。'
+                    : 'NFT AMM trading fees are priced using the selected DEX.'}
+                </p>
+
+                {poolDiscovery.loading && poolDiscovery.pools.length === 0 && (
+                  <div className="dex-pool-discovery-state"><span className="spinner" />{zh ? '正在查找 Pancake 候选池…' : 'Discovering Pancake pools…'}</div>
+                )}
+                {poolDiscovery.error && (
+                  <div className="dex-pool-discovery-state is-error">
+                    <span>{zh ? '候选池查找失败，请稍后重试。' : 'Pool discovery failed. Please retry.'}</span>
+                    <small>{poolDiscovery.error}</small>
+                  </div>
+                )}
+                {!poolDiscovery.loading && !poolDiscovery.error && poolDiscovery.pools.length === 0 && (
+                  <div className="dex-pool-discovery-state">
+                    {zh ? '没有找到可用的 Pancake V2、V3 或 V4 CL 池。请先为社区代币创建流动性池。' : 'No Pancake V2, V3, or V4 CL pool was found. Create liquidity for the Community Token first.'}
+                  </div>
+                )}
+
+                {poolDiscovery.pools.length > 0 && (
+                  <div className="dex-pool-candidate-list">
+                    {poolDiscovery.pools.map(candidate => {
+                      const candidateValue = candidate.address.toLowerCase();
+                      const selected = currentSourceInput.toLowerCase() === candidateValue
+                        && sourceType === Number(candidate.sourceType);
+                      const supported = sourceIsSupported(candidate);
+                      const validating = selected && sourceResolutionMatches && sourceResolution.loading;
+                      const validationError = selected && sourceResolutionMatches ? sourceResolution.error : '';
+                      const verified = selected && sourceResolutionMatches && sourceResolution.resolved;
+                      const pairSymbol = candidate.pairedTokenSymbol || shortValue(candidate.pairedToken);
+                      return (
+                        <button
+                          key={candidate.id}
+                          type="button"
+                          className={`dex-pool-candidate ${selected ? 'is-selected' : ''} ${!supported ? 'is-disabled' : ''}`}
+                          onClick={() => selectPricePool(candidate)}
+                          disabled={!supported}
+                          aria-pressed={selected}
+                        >
+                          <span className="dex-pool-candidate-main">
+                            <span className="dex-pool-version">{candidate.versionLabel.replace('Pancake ', '')}</span>
+                            <strong>{tokenInfo.symbol || (zh ? '社区代币' : 'Community Token')} / {pairSymbol}</strong>
+                            {candidate.feeTier && <span className="dex-pool-fee">{candidate.feeTier}</span>}
+                          </span>
+                          <span className="dex-pool-candidate-address">{shortValue(candidate.address)}</span>
+                          <span className="dex-pool-candidate-metrics">
+                            <span><small>{zh ? '流动性' : 'Liquidity'}</small><strong>{formatUsd(candidate.liquidityUsd)}</strong></span>
+                            <span><small>24h {zh ? '交易量' : 'volume'}</small><strong>{formatUsd(candidate.volume24hUsd)}</strong></span>
+                            <span><small>24h {zh ? '交易数' : 'txs'}</small><strong>{formatCompact(candidate.transactions24h)}</strong></span>
+                          </span>
+                          <span className={`dex-pool-candidate-status ${validationError ? 'is-error' : verified ? 'is-success' : ''}`}>
+                            {!supported
+                              ? (zh ? '当前部署未支持该版本' : 'This version is not supported')
+                              : validating
+                                ? (zh ? '正在进行链上支持检查…' : 'Checking on-chain support…')
+                                : validationError
+                                  ? validationError
+                                  : verified
+                                    ? (zh ? '✓ 已通过链上支持检查' : '✓ On-chain support verified')
+                                    : selected
+                                      ? (zh ? '等待链上检查' : 'Waiting for on-chain check')
+                                      : (zh ? '点击选择并检查' : 'Select and check')}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              <Field label={zh ? 'Pancake 价格源版本' : 'Pancake price-source version'}>
-                <select className="input" value={config.sourceType} onChange={event => updateSourceType(event.target.value)}>
-                  <option value={INDEX_BROKER_SOURCE_TYPES.V2_PAIR} disabled={!sourceCapabilities.pancakeV2}>
-                    Pancake V2{sourceCapabilities.pancakeV2 ? '' : (zh ? '（当前未支持）' : ' (not supported)')}
-                  </option>
-                  <option value={INDEX_BROKER_SOURCE_TYPES.V3_POOL} disabled={!sourceCapabilities.pancakeV3}>
-                    Pancake V3{sourceCapabilities.pancakeV3 ? '' : (zh ? '（当前未支持）' : ' (not supported)')}
-                  </option>
-                  <option value={INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL} disabled={!sourceCapabilities.pancakeV4Cl}>
-                    Pancake V4 CL{sourceCapabilities.pancakeV4Cl ? '' : (zh ? '（当前未支持）' : ' (not supported)')}
-                  </option>
-                </select>
-              </Field>
-              {(sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR || sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL) ? (
-                <Field
-                  wide
-                  label={zh ? 'Pancake 交易池地址' : 'Pancake pool address'}
-                  hint={zh
-                    ? `使用平台默认的 ${sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR ? 'Pancake V2' : 'Pancake V3'} Factory 自动验证${selectedSourceFactory ? ` · ${shortValue(selectedSourceFactory)}` : ''}`
-                    : `Automatically verified against the platform default ${sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR ? 'Pancake V2' : 'Pancake V3'} Factory${selectedSourceFactory ? ` · ${shortValue(selectedSourceFactory)}` : ''}`}
-                >
-                  <input className="input" value={config.sourcePool} onChange={event => update('sourcePool', event.target.value.trim())} placeholder="0x..." spellCheck="false" />
-                  {sourceResolutionMatches && sourceResolution.loading && <div className="contract-field-feedback">{zh ? '正在验证 Factory、交易对与流动性…' : 'Validating the Factory, token pair, and liquidity…'}</div>}
-                  {sourceResolutionMatches && sourceResolution.error && <div className="contract-field-feedback is-error">{sourceResolution.error}</div>}
-                  {sourceResolutionMatches && sourceResolution.resolved && sourceResolution.details && (
-                    <div className="contract-field-feedback is-success">
-                      {zh ? '价格池已验证' : 'Price pool verified'} · {shortValue(sourceResolution.details.currency0)} / {shortValue(sourceResolution.details.currency1)}
-                      {sourceResolution.details.fee !== null ? ` · Fee ${sourceResolution.details.fee}` : ''}
-                    </div>
-                  )}
-                </Field>
-              ) : (
-                <Field wide label="Pool ID" hint={zh ? '前端会从 Pool Manager 自动读取并校验完整 PoolKey。' : 'The full PoolKey is resolved and verified through the Pool Manager.'}>
-                  <input className="input" value={config.sourcePoolId} onChange={event => update('sourcePoolId', event.target.value.trim())} placeholder="0x… (bytes32)" spellCheck="false" />
-                  {sourceResolutionMatches && sourceResolution.loading && <div className="contract-field-feedback">{zh ? '正在读取链上 PoolKey 与流动性…' : 'Reading the on-chain PoolKey and liquidity…'}</div>}
-                  {sourceResolutionMatches && sourceResolution.error && <div className="contract-field-feedback is-error">{sourceResolution.error}</div>}
-                  {sourceResolutionMatches && sourceResolution.resolved && sourceResolution.details && (
-                    <div className="contract-field-feedback is-success">
-                      {zh ? '已验证' : 'Verified'} · {shortValue(sourceResolution.details.currency0)} / {shortValue(sourceResolution.details.currency1)} · Fee {sourceResolution.details.fee}
-                    </div>
-                  )}
-                </Field>
-              )}
             </>
           )}
         </div>

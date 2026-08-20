@@ -23,7 +23,10 @@ import { PoolCardFooter, PoolCardHeader } from '../components/pool/PoolCardTempl
 import AddPoolModal from '../components/community/AddPoolModal';
 import AdjustRatiosModal from '../components/community/AdjustRatiosModal';
 import CommunitySettingsModal from '../components/community/CommunitySettingsModal';
+import CommunityTokenTradeCard from '../components/community/CommunityTokenTradeCard';
 import DistributionDisplay from '../components/community/DistributionDisplay';
+import IndexBrokerNFTWorkspace from '../components/community/IndexBrokerNFTWorkspace';
+import useTimedActionLoading from '../hooks/useTimedActionLoading';
 import './CommunityDetail.css';
 
 export default function CommunityDetail() {
@@ -34,13 +37,14 @@ export default function CommunityDetail() {
 
   const [community, setCommunity] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [revenueLoading, setRevenueLoading] = useTimedActionLoading(false);
   const [tokenInfo, setTokenInfo] = useState(null);
   const [rewardRate, setRewardRate] = useState(null);
   const [rewardRateUnit, setRewardRateUnit] = useState('/block');
-  const [showAddPool, setShowAddPool] = useState(false);
+  const [addPoolMode, setAddPoolMode] = useState(null);
   const [showAdjustRatios, setShowAdjustRatios] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [activeTab, setActiveTab] = useState('pools');
+  const [activeTab, setActiveTab] = useState(null);
   const [retainedRevenue, setRetainedRevenue] = useState(null);
   const [showFeeRatioPopover, setShowFeeRatioPopover] = useState(false);
   const [onChainFeeRatio, setOnChainFeeRatio] = useState(null);
@@ -185,6 +189,7 @@ export default function CommunityDetail() {
 
   // Admin actions
   const handleWithdrawRevenue = async () => {
+    setRevenueLoading(true);
     try {
       const writeSigner = await getWriteSigner();
       const contract = new ethers.Contract(address, [
@@ -197,6 +202,8 @@ export default function CommunityDetail() {
       loadCommunity();
     } catch (err) {
       toast.error(err.reason || err.message || t('detail.revenueWithdrawFailed'));
+    } finally {
+      setRevenueLoading(false);
     }
   };
 
@@ -246,10 +253,19 @@ export default function CommunityDetail() {
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
     && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'NFT_MINING'
-    && p.poolType !== 'BASKET_TVL_MINING' && p.poolType !== 'INDEX_BROKER_NFT'
+    && p.poolType !== 'BASKET_TVL_MINING'
+    && !(p.poolType === 'INDEX_BROKER_NFT'
+      && p.poolFactory?.toLowerCase() === contracts.IndexBrokerNFTFactory?.toLowerCase())
   );
+  const primaryIndexBrokerNftPool = indexBrokerNftPools.reduce((selected, pool) => {
+    if (!selected) return pool;
+    return Number(pool.ratio || 0) > Number(selected.ratio || 0) ? pool : selected;
+  }, null);
   const displayFeeRatio = onChainFeeRatio !== null ? onChainFeeRatio : (community?.feeRatio || 0);
   const displayDaoFund = daoFundAddress || community.daoFund;
+  const selectedTab = activeTab === 'nft' && indexBrokerNftPools.length === 0
+    ? 'pools'
+    : (activeTab || (indexBrokerNftPools.length > 0 ? 'nft' : 'pools'));
 
   return (
     <div className="page container">
@@ -324,7 +340,27 @@ export default function CommunityDetail() {
           </div>
           <div className="info-item">
             <span className="info-label">{t('detail.ownerAddress')}</span>
-            <span className="info-value" style={{ fontFamily: 'monospace' }}>{shortenAddress(community.owner?.id)}</span>
+            <span className="info-value ctoken-address">
+              <a
+                href={getBscScanUrl(community.owner?.id, 'address', network.explorerUrl)}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ fontFamily: 'monospace', fontSize: 'var(--font-size-xs)' }}
+              >
+                {shortenAddress(community.owner?.id, 6)}
+              </a>
+              <button
+                className="copy-btn"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  copyToClipboard(community.owner?.id);
+                  toast.info(t('common.copySuccess'));
+                }}
+                title={language === 'zh' ? '复制创建者地址' : 'Copy creator address'}
+              >
+                📋
+              </button>
+            </span>
           </div>
           <div className="info-item" style={{ position: 'relative' }}>
             <span className="info-label" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -403,7 +439,12 @@ export default function CommunityDetail() {
               <span>{t('detail.adminPanelTitle')}</span>
             </div>
             <div className="admin-actions">
-              <button className="btn btn-primary btn-sm" onClick={() => setShowAddPool(true)}>
+              {contracts.IndexBrokerNFTFactory && (
+                <button className="btn btn-primary btn-sm" onClick={() => setAddPoolMode('nft')}>
+                  {t('detail.createNftBtn')}
+                </button>
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={() => setAddPoolMode('pool')}>
                 {t('detail.addPoolBtn')}
               </button>
               <button className="btn btn-warning btn-sm" onClick={() => setShowAdjustRatios(true)}>
@@ -417,30 +458,48 @@ export default function CommunityDetail() {
         )}
       </div>
 
-      {/* ── Distribution Display (inline) ── */}
-      <DistributionDisplay
-        communityAddress={address}
-        tokenInfo={tokenInfo}
-        community={community}
-      />
+      {/* ── Reward schedule + Community Token trade ── */}
+      <div className={`community-market-row ${indexBrokerNftPools.length > 0 ? 'has-token-trade' : ''}`}>
+        <DistributionDisplay
+          communityAddress={address}
+          tokenInfo={tokenInfo}
+          community={community}
+        />
+        {indexBrokerNftPools.length > 0 && (
+          <CommunityTokenTradeCard community={community} tokenInfo={tokenInfo} />
+        )}
+      </div>
 
       {/* ── Pools Section ── */}
       <div style={{ marginTop: 'var(--space-8)' }}>
         <div className="tabs">
-          <button className={`tab ${activeTab === 'pools' ? 'active' : ''}`} onClick={() => setActiveTab('pools')}>
+          {indexBrokerNftPools.length > 0 && (
+            <button className={`tab ${selectedTab === 'nft' ? 'active' : ''}`} onClick={() => setActiveTab('nft')}>
+              NFT
+            </button>
+          )}
+          <button className={`tab ${selectedTab === 'pools' ? 'active' : ''}`} onClick={() => setActiveTab('pools')}>
             {t('detail.tabActivePools')} ({activePools.length})
           </button>
-          <button className={`tab ${activeTab === 'devfund' ? 'active' : ''}`} onClick={() => setActiveTab('devfund')}>
+          <button className={`tab ${selectedTab === 'devfund' ? 'active' : ''}`} onClick={() => setActiveTab('devfund')}>
             {t('detail.tabDaoFund')}
           </button>
-          <button className={`tab ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
+          <button className={`tab ${selectedTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}>
             {t('detail.tabHistory')}
           </button>
         </div>
 
-        {activeTab === 'history' ? (
+        {selectedTab === 'nft' ? (
+          <IndexBrokerNFTWorkspace
+            pool={primaryIndexBrokerNftPool}
+            communityAddress={address}
+            communityToken={tokenInfo}
+            isOwner={isOwner}
+            onRefresh={loadCommunity}
+          />
+        ) : selectedTab === 'history' ? (
           <HistoryTab operations={community.operationHistory} pools={community.pools} />
-        ) : activeTab === 'devfund' ? (
+        ) : selectedTab === 'devfund' ? (
           <div className="devfund-panel glass-card" style={{ padding: 'var(--space-6)', marginTop: 'var(--space-4)' }}>
             <h4 style={{ marginBottom: 'var(--space-4)', fontSize: 'var(--font-size-lg)', display: 'flex', alignItems: 'center', gap: 8 }}>
               {t('detail.daoFundInfoTitle')}
@@ -471,7 +530,7 @@ export default function CommunityDetail() {
                     {retainedRevenue !== null ? `${formatTokenAmount(retainedRevenue, tokenInfo?.decimals || 18, 4)} ${tokenInfo?.symbol || t('detail.historyTokens')}` : '...'}
                   </span>
                   {retainedRevenue > 0n && (
-                    <button className="btn btn-success btn-xs" onClick={handleWithdrawRevenue} style={{ padding: '2px 8px', fontSize: 11 }}>
+                    <button className="btn btn-success btn-xs" disabled={revenueLoading} onClick={handleWithdrawRevenue} style={{ padding: '2px 8px', fontSize: 11 }}>
                       {t('detail.claimRevenueBtn')}
                     </button>
                   )}
@@ -487,7 +546,7 @@ export default function CommunityDetail() {
               {isOwner ? t('detail.noPoolsDesc') : t('detail.noPoolsDescUser')}
             </div>
             {isOwner && (
-              <button className="btn btn-primary" onClick={() => setShowAddPool(true)}>{t('detail.addPoolBtn')}</button>
+              <button className="btn btn-primary" onClick={() => setAddPoolMode('pool')}>{t('detail.addPoolBtn')}</button>
             )}
           </div>
         ) : (
@@ -564,15 +623,17 @@ export default function CommunityDetail() {
       </div>
 
       {/* ── Add Pool Modal ── */}
-      {showAddPool && (
+      {addPoolMode && (
         <AddPoolModal
-          key={`${activeChainId}:${address.toLowerCase()}:${account?.toLowerCase() || 'anonymous'}`}
+          key={`${activeChainId}:${address.toLowerCase()}:${account?.toLowerCase() || 'anonymous'}:${addPoolMode}`}
           communityAddress={address}
           communityTokenAddress={community.cToken}
           activePools={activePools}
-          onClose={() => setShowAddPool(false)}
+          initialPoolType={addPoolMode === 'nft' ? 'index-broker-nft' : ''}
+          draftScope={addPoolMode === 'nft' ? 'create-nft' : ''}
+          onClose={() => setAddPoolMode(null)}
           onSuccess={(registration) => {
-            setShowAddPool(false);
+            setAddPoolMode(null);
             if (!registration?.pool) {
               loadCommunity();
               return;

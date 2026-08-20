@@ -169,6 +169,390 @@
   gap: var(--space-3);
 }
 
+/* ── Reward schedule + token trading ── */
+.community-market-row {
+  margin-top: var(--space-6);
+}
+
+.community-market-row.has-token-trade {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 350px);
+  align-items: stretch;
+  gap: var(--space-5);
+}
+
+.community-market-row .distribution-section {
+  min-width: 0;
+  margin-top: 0;
+}
+
+.community-token-trade {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 18px;
+  border-color: rgba(124, 58, 237, 0.24);
+  background:
+    radial-gradient(circle at 100% 0, rgba(124, 58, 237, 0.13), transparent 48%),
+    var(--color-bg-glass);
+}
+
+.community-token-trade:hover {
+  transform: none;
+}
+
+.community-token-trade-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.community-token-trade-logo {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  border: 1px solid rgba(124, 58, 237, 0.38);
+  border-radius: var(--radius-md);
+  background: var(--gradient-primary);
+  color: white;
+  font-weight: 800;
+}
+
+.community-token-trade-heading span,
+.community-token-trade-heading strong {
+  display: block;
+}
+
+.community-token-trade-heading span {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.community-token-trade-heading strong {
+  margin-top: 2px;
+  font-size: var(--font-size-lg);
+}
+
+.community-token-trade-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-top: var(--space-4);
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.community-token-trade-tabs button {
+  padding: 7px 12px;
+  border: 0;
+  border-radius: calc(var(--radius-md) - 3px);
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.community-token-trade-tabs button.active {
+  background: rgba(124, 58, 237, 0.18);
+  color: var(--color-text-accent);
+}
+
+.community-token-swap-field {
+  margin-top: var(--space-3);
+  padding: 10px var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.community-token-swap-field.output {
+  margin-top: 0;
+}
+
+.community-token-swap-field-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.community-token-swap-field-head button {
+  max-width: 70%;
+  overflow: hidden;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-accent);
+  cursor: pointer;
+  font: inherit;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-token-swap-field-head button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.community-token-swap-input-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: 4px;
+}
+
+.community-token-swap-input-row input,
+.community-token-swap-input-row > span {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.community-token-swap-input-row input:disabled {
+  opacity: 0.55;
+}
+
+.community-token-swap-input-row > span.is-loading {
+  color: var(--color-text-tertiary);
+}
+
+.community-token-swap-input-row strong {
+  overflow: hidden;
+  max-width: 92px;
+  font-size: var(--font-size-sm);
+  text-overflow: ellipsis;
+}
+
+.community-token-swap-arrow {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px auto;
+  position: relative;
+  z-index: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  background: var(--color-bg-card);
+  color: var(--color-text-accent);
+  font-size: 14px;
+}
+
+.community-token-swap-status {
+  min-height: 22px;
+  margin: var(--space-2) 0;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.community-token-swap-status.error {
+  color: var(--color-red);
+}
+
+.community-token-swap-minimum {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin: -2px 0 var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.community-token-swap-minimum strong {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-token-slippage {
+  margin-bottom: 10px;
+}
+
+.community-token-slippage-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: 5px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.community-token-slippage-heading em {
+  color: var(--color-amber);
+  font-size: 11px;
+  font-style: normal;
+}
+
+.community-token-slippage-options {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.community-token-slippage-options button,
+.community-token-slippage-options label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 30px;
+  padding: 0 7px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--color-text-tertiary);
+  font-size: 12px;
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease;
+}
+
+.community-token-slippage-options button {
+  cursor: pointer;
+}
+
+.community-token-slippage-options button.active,
+.community-token-slippage-options label.active {
+  border-color: rgba(124, 58, 237, 0.62);
+  background: rgba(124, 58, 237, 0.16);
+  color: var(--color-text-accent);
+}
+
+.community-token-slippage-options button:disabled,
+.community-token-slippage-options label:has(input:disabled) {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.community-token-slippage-options input {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: right;
+}
+
+.community-token-slippage-options label span {
+  margin-left: 2px;
+}
+
+.community-token-slippage > small {
+  display: block;
+  margin-top: 6px;
+  color: var(--color-red);
+  font-size: 11px;
+}
+
+.community-token-trade-action {
+  width: 100%;
+  margin-top: auto;
+}
+
+.community-token-trade-address {
+  margin-top: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-family: monospace;
+  font-size: var(--font-size-xs);
+  text-align: center;
+  text-decoration: none;
+}
+
+/* ── Index Broker NFT workspace ── */
+.index-broker-workspace {
+  display: flex;
+  flex-direction: column;
+  margin-top: var(--space-4);
+}
+
+.index-broker-workspace > .index-broker-embedded {
+  display: contents;
+}
+
+.index-broker-workspace .index-broker-compact-header {
+  order: 1;
+}
+
+.index-broker-workspace-tabs {
+  order: 2;
+  margin-top: var(--space-4);
+}
+
+.index-broker-workspace > .index-broker-embedded > :not(.index-broker-compact-header),
+.index-broker-workspace > section,
+.index-broker-workspace > .index-broker-insights {
+  order: 3;
+}
+
+.index-broker-pool-switcher,
+.index-broker-workspace-tabs {
+  display: flex;
+  gap: var(--space-2);
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.index-broker-pool-switcher {
+  margin-bottom: var(--space-3);
+}
+
+.index-broker-pool-switcher button,
+.index-broker-workspace-tabs button {
+  flex: 0 0 auto;
+  border: 1px solid var(--color-border);
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast), color var(--transition-fast);
+}
+
+.index-broker-pool-switcher button {
+  padding: 7px 12px;
+  border-radius: var(--radius-full);
+  font-size: var(--font-size-xs);
+}
+
+.index-broker-workspace-tabs {
+  padding: 5px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: rgba(255, 255, 255, 0.018);
+}
+
+.index-broker-workspace-tabs button {
+  min-height: 42px;
+  padding: 9px 18px;
+  border-color: transparent;
+  border-radius: var(--radius-md);
+  font-weight: 650;
+}
+
+.index-broker-pool-switcher button.active,
+.index-broker-workspace-tabs button.active {
+  border-color: rgba(245, 211, 111, 0.32);
+  background: linear-gradient(135deg, rgba(245, 211, 111, 0.12), rgba(124, 58, 237, 0.13));
+  color: #f5d36f;
+}
+
 /* ── History ── */
 .history-list {
   display: flex;
@@ -230,6 +614,20 @@
 }
 
 @media (max-width: 768px) {
+  .community-market-row.has-token-trade {
+    grid-template-columns: 1fr;
+  }
+
+  .community-token-trade {
+    min-height: 310px;
+  }
+
+  .index-broker-workspace-tabs button {
+    min-height: 40px;
+    padding-inline: 13px;
+    font-size: var(--font-size-xs);
+  }
+
   .community-header {
     padding: var(--space-5);
   }

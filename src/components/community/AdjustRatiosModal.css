@@ -1,0 +1,105 @@
+.adjust-ratio-input-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  width: 154px;
+}
+
+.adjust-ratio-close-trigger {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-full);
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--color-red);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  transition: all var(--transition-fast);
+}
+
+.adjust-ratio-close-trigger:hover:not(:disabled) {
+  border-color: rgba(239, 68, 68, 0.7);
+  background: rgba(239, 68, 68, 0.22);
+  transform: scale(1.06);
+}
+
+.pool-close-confirm-overlay {
+  z-index: 1100;
+}
+
+.pool-close-confirm {
+  max-width: 480px;
+}
+
+.pool-close-warning {
+  padding: var(--space-4);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  background: rgba(239, 68, 68, 0.08);
+}
+
+.pool-close-warning strong {
+  display: block;
+  color: var(--color-red);
+  font-size: var(--font-size-base);
+}
+
+.pool-close-warning p {
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.55;
+}
+
+.pool-close-name-block {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin: var(--space-5) 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-glass);
+}
+
+.pool-close-name-block span {
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.pool-close-name-block strong {
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+.pool-close-name-mismatch {
+  border-color: rgba(239, 68, 68, 0.55) !important;
+}
+
+.pool-close-ratio-error {
+  margin-top: var(--space-3);
+  color: var(--color-red);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.pool-close-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+@media (max-width: 520px) {
+  .adjust-ratio-input-actions {
+    width: 142px;
+  }
+
+  .pool-close-confirm-actions {
+    grid-template-columns: 1fr;
+  }
+}

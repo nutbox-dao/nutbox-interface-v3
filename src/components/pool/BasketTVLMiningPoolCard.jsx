@@ -12,6 +12,7 @@ import {
   NFTMiningPoolABI,
 } from '../../config/abis';
 import { getChainPath } from '../../config/contracts';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import {
   fetchBasketChildLive,
   fetchBasketMiningPool,
@@ -87,7 +88,7 @@ export default function BasketTVLMiningPoolCard({
   const [nftTokenId, setNftTokenId] = useState('');
   const [basketPreview, setBasketPreview] = useState(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [actionLoading, setActionLoading] = useState('');
+  const [actionLoading, setActionLoading] = useTimedActionLoading('');
 
   const loadParentData = useCallback(async () => {
     if (!readProvider) return;

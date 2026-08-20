@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { BasketStakePoolABI, ERC20ABI } from '../../config/abis';
 import { formatDate, formatTokenAmount, shortenAddress } from '../../utils/helpers';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 
 export default function BasketStakePoolCard({
   basket,
@@ -21,7 +22,7 @@ export default function BasketStakePoolCard({
   const toast = useToast();
   const { t } = useLanguage();
 
-  const [actionLoading, setActionLoading] = useState('');
+  const [actionLoading, setActionLoading] = useTimedActionLoading('');
   const [action, setAction] = useState('');
   const [amount, setAmount] = useState('');
 

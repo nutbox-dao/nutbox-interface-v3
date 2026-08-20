@@ -14,7 +14,7 @@ import { multicallRead } from '../utils/multicall';
 import { copyToClipboard, getBscScanUrl, shortenAddress } from '../utils/helpers';
 import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
 import BasketTVLMiningPoolCard from '../components/pool/BasketTVLMiningPoolCard';
-import IndexBrokerNFTPoolCard from '../components/pool/IndexBrokerNFTPoolCard';
+import IndexBrokerNFTDetailWorkspace from '../components/community/IndexBrokerNFTDetailWorkspace';
 import './MiningPoolDetail.css';
 
 export default function MiningPoolDetail() {
@@ -56,17 +56,24 @@ export default function MiningPoolDetail() {
       try {
         const communityInterface = new ethers.Interface(CommunityABI);
         const tokenInterface = new ethers.Interface(ERC20ABI);
-        const detail = await multicallRead(readProvider, contracts.Multicall3, [
-          { key: 'active', target: communityAddress, contractInterface: communityInterface, functionName: 'poolActived', args: [poolAddress] },
-          { key: 'ratio', target: communityAddress, contractInterface: communityInterface, functionName: 'poolRatios', args: [poolAddress] },
-          { key: 'name', target: community.cToken, contractInterface: tokenInterface, functionName: 'name' },
-          { key: 'symbol', target: community.cToken, contractInterface: tokenInterface, functionName: 'symbol' },
-          { key: 'decimals', target: community.cToken, contractInterface: tokenInterface, functionName: 'decimals' },
+        const paddedPoolAddress = ethers.zeroPadValue(poolAddress, 32);
+        const paddedRatioSlot = ethers.zeroPadValue(ethers.toBeHex(10), 32);
+        const ratioStorageKey = ethers.keccak256(
+          ethers.concat([paddedPoolAddress, paddedRatioSlot]),
+        );
+        const [detail, rawRatio] = await Promise.all([
+          multicallRead(readProvider, contracts.Multicall3, [
+            { key: 'active', target: communityAddress, contractInterface: communityInterface, functionName: 'poolActived', args: [poolAddress] },
+            { key: 'name', target: community.cToken, contractInterface: tokenInterface, functionName: 'name' },
+            { key: 'symbol', target: community.cToken, contractInterface: tokenInterface, functionName: 'symbol' },
+            { key: 'decimals', target: community.cToken, contractInterface: tokenInterface, functionName: 'decimals' },
+          ]),
+          readProvider.getStorage(communityAddress, ratioStorageKey),
         ]);
 
         setPool(current => current ? ({
           ...current,
-          ratio: Number(detail.ratio || 0),
+          ratio: detail.active ? Number(BigInt(rawRatio)) : 0,
           status: detail.active ? 'OPENED' : 'CLOSED',
         }) : current);
         setCommunityToken({
@@ -158,7 +165,7 @@ export default function MiningPoolDetail() {
           detail
         />
       ) : isIndexBrokerPool ? (
-        <IndexBrokerNFTPoolCard
+        <IndexBrokerNFTDetailWorkspace
           pool={pool}
           communityAddress={communityAddress}
           communityToken={communityToken}

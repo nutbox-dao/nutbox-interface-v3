@@ -25,7 +25,6 @@ export const CommunityABI = [
   'function activedPools(uint256) view returns (address)',
   'function createdPools(uint256) view returns (address)',
   'function poolActived(address) view returns (bool)',
-  'function poolRatios(address) view returns (uint16)',
   'function getShareAcc(address) view returns (uint256)',
   'function getLastRewardCursor() view returns (uint256)',
   'function getPoolPendingRewards(address pool, address user) view returns (uint256)',
@@ -243,6 +242,14 @@ export const PancakeV4CLPoolManagerABI = [
   'function poolIdToPoolKey(bytes32 id) view returns (tuple(address currency0,address currency1,address hooks,address poolManager,uint24 fee,bytes32 parameters))',
   'function getSlot0(bytes32 id) view returns (uint160 sqrtPriceX96,int24 tick,uint24 protocolFee,uint24 lpFee)',
   'function getLiquidity(bytes32 id) view returns (uint128)',
+];
+
+export const NutboxSwapWrapperABI = [
+  'function getImportedMarket(address token) view returns (bool registered,address community,address deployer)',
+  'function quoteBuy(address token,uint8 sourceType,bytes sourceData,uint256 nativeAmountIn) returns (uint256 tokenAmountOut)',
+  'function quoteSell(address token,uint8 sourceType,bytes sourceData,uint256 tokenAmountIn) returns (uint256 nativeAmountOut)',
+  'function buyToken(address token,uint8 sourceType,bytes sourceData,uint256 minimumTokenOut,address recipient,uint256 deadline,address sellsman) payable returns (uint256 tokenOut)',
+  'function sellToken(address token,uint8 sourceType,bytes sourceData,uint256 amountIn,uint256 minimumNativeOut,address recipient,uint256 deadline,address sellsman) returns (uint256 nativeOut)',
 ];
 
 export const BasketTVLMiningPoolABI = [

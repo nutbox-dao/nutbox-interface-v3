@@ -5,6 +5,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { HourlyTickCalculatorABI, ERC20ABI } from '../../config/abis';
 import { formatTokenAmount } from '../../utils/helpers';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 
 export default function InjectModal({ communityAddress, tokenInfo, onClose, onSuccess }) {
   const { t, language } = useLanguage();
@@ -18,7 +19,7 @@ export default function InjectModal({ communityAddress, tokenInfo, onClose, onSu
   const [amount, setAmount] = useState('');
   const [balance, setBalance] = useState(0n);
   const [allowance, setAllowance] = useState(0n);
-  const [loading, setLoading] = useState(null); // 'approve' | 'inject' | null
+  const [loading, setLoading] = useTimedActionLoading(null); // 'approve' | 'inject' | null
 
   const refresh = useCallback(async () => {
     if (!readProvider || !account || !tokenAddress) return;

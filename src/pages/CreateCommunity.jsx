@@ -7,6 +7,7 @@ import { CommunityFactoryABI } from '../config/abis';
 import { encodeMintableTokenMeta, encodeDistributionPolicy } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import { getChainPath } from '../config/contracts';
+import useTimedActionLoading from '../hooks/useTimedActionLoading';
 import './CreateCommunity.css';
 
 // Format a Date to datetime-local string (YYYY-MM-DDTHH:mm:ss)
@@ -31,7 +32,7 @@ export default function CreateCommunity() {
   const navigate = useNavigate();
 
   const [step, setStep] = useState(1);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useTimedActionLoading(false);
   const [createFee, setCreateFee] = useState(null);
 
   // Step 1: Token config

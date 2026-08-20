@@ -4,6 +4,7 @@ import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
 import { CommunityABI } from '../../config/abis';
 import { useLanguage } from '../../contexts/LanguageContext';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 
 export default function CommunitySettingsModal({ communityAddress, community, retainedRevenue, communityToken, onClose, onSuccess }) {
   const { t, language } = useLanguage();
@@ -12,9 +13,9 @@ export default function CommunitySettingsModal({ communityAddress, community, re
 
   const [devFund, setDevFund] = useState('');
   const [feeRatioPercent, setFeeRatioPercent] = useState('');
-  const [devLoading, setDevLoading] = useState(false);
-  const [feeLoading, setFeeLoading] = useState(false);
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
+  const [devLoading, setDevLoading] = useTimedActionLoading(false);
+  const [feeLoading, setFeeLoading] = useTimedActionLoading(false);
+  const [withdrawLoading, setWithdrawLoading] = useTimedActionLoading(false);
   const [settingsFee, setSettingsFee] = useState(0n);
 
   useEffect(() => {

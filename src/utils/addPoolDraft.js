@@ -123,16 +123,18 @@ function sanitizeDraft(value) {
   };
 }
 
-export function getAddPoolDraftStorageKey({ chainId, communityAddress, account }) {
+export function getAddPoolDraftStorageKey({ chainId, communityAddress, account, scope = '' }) {
   if (!String(chainId || '').trim() || !String(communityAddress || '').trim() || !String(account || '').trim()) {
     return '';
   }
-  return [
+  const parts = [
     ADD_POOL_DRAFT_PREFIX,
     normalizeScopePart(chainId, 'unknown-chain'),
     normalizeScopePart(communityAddress, 'unknown-community'),
     normalizeScopePart(account, 'anonymous'),
-  ].join(':');
+  ];
+  if (String(scope || '').trim()) parts.push(normalizeScopePart(scope, 'default'));
+  return parts.join(':');
 }
 
 export function getAddPoolDraftPoolKeys(activePools = []) {

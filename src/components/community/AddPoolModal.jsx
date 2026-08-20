@@ -16,6 +16,7 @@ import {
 import { getPoolTypeLabel, getPoolTypeBadgeClass, shortenAddress } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { registerMiningPool } from '../../config/subgraph';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import IndexBrokerNFTPoolFields from './IndexBrokerNFTPoolFields';
 import {
   DEFAULT_INDEX_BROKER_CONFIG,
@@ -30,6 +31,7 @@ import {
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
 import { multicallRead } from '../../utils/multicall';
+import { discoverPancakePricePools } from '../../utils/dexPoolDiscovery';
 import {
   buildAddPoolDraft,
   getAddPoolDraftPoolKeys,
@@ -136,7 +138,15 @@ function effectiveAmmFee(value) {
   return total.toFixed(2).replace(/\.?0+$/, '');
 }
 
-export default function AddPoolModal({ communityAddress, communityTokenAddress, activePools, onClose, onSuccess }) {
+export default function AddPoolModal({
+  communityAddress,
+  communityTokenAddress,
+  activePools,
+  initialPoolType = '',
+  draftScope = '',
+  onClose,
+  onSuccess,
+}) {
   const { t, language } = useLanguage();
   const { account, getWriteSigner, readProvider, contracts, network } = useWeb3();
   const toast = useToast();
@@ -145,13 +155,36 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     chainId: network.id,
     communityAddress,
     account,
+    scope: draftScope,
+  });
+  const legacyDraftStorageKey = getAddPoolDraftStorageKey({
+    chainId: network.id,
+    communityAddress,
+    account,
   });
   // CommunityDetail keys this modal by chain, community and account, so this
   // synchronous lazy read cannot leak one wallet's draft into another scope.
-  const [restoredDraft] = useState(() => loadAddPoolDraft(draftStorageKey));
+  const [restoredDraft] = useState(() => {
+    const scopedDraft = loadAddPoolDraft(draftStorageKey);
+    if (!draftScope && !initialPoolType && scopedDraft?.poolType === 'index-broker-nft') {
+      const nftDraftKey = getAddPoolDraftStorageKey({
+        chainId: network.id,
+        communityAddress,
+        account,
+        scope: 'create-nft',
+      });
+      if (saveAddPoolDraft(nftDraftKey, scopedDraft)) removeAddPoolDraft(draftStorageKey);
+      return null;
+    }
+    if (scopedDraft || !draftScope || !initialPoolType) return scopedDraft;
+    const legacyDraft = loadAddPoolDraft(legacyDraftStorageKey);
+    if (legacyDraft?.poolType !== initialPoolType) return null;
+    if (saveAddPoolDraft(draftStorageKey, legacyDraft)) removeAddPoolDraft(legacyDraftStorageKey);
+    return legacyDraft;
+  });
   const initialActivePoolKeys = getAddPoolDraftPoolKeys(activePools);
 
-  const [poolType, setPoolType] = useState(restoredDraft?.poolType || '');
+  const [poolType, setPoolType] = useState(initialPoolType || restoredDraft?.poolType || '');
   const [poolName, setPoolName] = useState(restoredDraft?.poolName || '');
   const [stakeTokenAddress, setStakeTokenAddress] = useState(restoredDraft?.stakeTokenAddress || '');
   const [lockDuration, setLockDuration] = useState(restoredDraft?.lockDuration || '');
@@ -181,8 +214,12 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     ...(restoredDraft?.previewParams || {}),
   }));
   const [inputRatios, setInputRatios] = useState(() => restoreAddPoolDraftRatios(restoredDraft, activePools));
-  const [loading, setLoading] = useState(false);
-  const [wizardStep, setWizardStep] = useState(restoredDraft?.wizardStep || 0);
+  const [loading, setLoading] = useTimedActionLoading(false);
+  const [wizardStep, setWizardStep] = useState(() => (
+    initialPoolType
+      ? Math.max(1, restoredDraft?.poolType === initialPoolType ? (restoredDraft.wizardStep || 1) : 1)
+      : (restoredDraft?.wizardStep || 0)
+  ));
   const [stepError, setStepError] = useState('');
   const wizardBodyRef = useRef(null);
   const activePoolKeysRef = useRef(initialActivePoolKeys);
@@ -218,10 +255,17 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     error: '',
     details: null,
   });
+  const [indexBrokerPoolDiscovery, setIndexBrokerPoolDiscovery] = useState({
+    loading: false,
+    pools: [],
+    error: '',
+  });
+  const [indexBrokerPoolDiscoveryNonce, setIndexBrokerPoolDiscoveryNonce] = useState(0);
   const [indexTokenValidation, setIndexTokenValidation] = useState({
     loading: false,
     valid: false,
     token: '',
+    symbol: '',
     version: null,
     router: '',
     error: '',
@@ -550,11 +594,11 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     const registry = String(indexBrokerContext.basketRegistry || '').trim();
 
     if (poolType !== 'index-broker-nft') {
-      setIndexTokenValidation({ loading: false, valid: false, token: '', version: null, router: '', error: '' });
+      setIndexTokenValidation({ loading: false, valid: false, token: '', symbol: '', version: null, router: '', error: '' });
       return undefined;
     }
     if (indexBrokerContext.loading) {
-      setIndexTokenValidation({ loading: true, valid: false, token, version: null, router: '', error: '' });
+      setIndexTokenValidation({ loading: true, valid: false, token, symbol: '', version: null, router: '', error: '' });
       return undefined;
     }
     if (!token || !ethers.isAddress(token) || token === ethers.ZeroAddress) {
@@ -562,6 +606,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         loading: false,
         valid: false,
         token,
+        symbol: '',
         version: null,
         router: '',
         error: language === 'zh' ? '请填写有效的指数代币地址' : 'Enter a valid index-token address',
@@ -573,6 +618,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         loading: false,
         valid: false,
         token,
+        symbol: '',
         version: null,
         router: '',
         error: language === 'zh' ? '无法读取 Basket Registry 配置' : 'Could not resolve the Basket Registry configuration',
@@ -582,7 +628,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
 
     let cancelled = false;
     const normalizedToken = ethers.getAddress(token);
-    setIndexTokenValidation({ loading: true, valid: false, token: normalizedToken, version: null, router: '', error: '' });
+    setIndexTokenValidation({ loading: true, valid: false, token: normalizedToken, symbol: '', version: null, router: '', error: '' });
 
     (async () => {
       try {
@@ -594,6 +640,10 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
           {
             key: 'version', target: registry, contractInterface: BASKET_REGISTRY_INTERFACE,
             functionName: 'basketVersion', args: [normalizedToken],
+          },
+          {
+            key: 'symbol', target: normalizedToken, contractInterface: ERC20_INTERFACE,
+            functionName: 'symbol', args: [], allowFailure: true,
           },
         ]);
         const version = Number(basket.version || 0);
@@ -708,6 +758,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
             loading: false,
             valid: true,
             token: normalizedToken,
+            symbol: String(basket.symbol || '').trim(),
             version,
             router: ethers.getAddress(router),
             error: '',
@@ -720,6 +771,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
           loading: false,
           valid: false,
           token: normalizedToken,
+          symbol: '',
           version: null,
           router: '',
           error: error.message || (language === 'zh' ? '无法验证指数代币' : 'Could not validate the index token'),
@@ -758,6 +810,49 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     contracts.PancakeV3Factory,
     indexBrokerConfig.officialToken,
     indexBrokerConfig.sourceType,
+    poolType,
+  ]);
+
+  useEffect(() => {
+    if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false) {
+      setIndexBrokerPoolDiscovery({ loading: false, pools: [], error: '' });
+      return undefined;
+    }
+    if (!communityTokenAddress) {
+      setIndexBrokerPoolDiscovery({
+        loading: false,
+        pools: [],
+        error: language === 'zh' ? '缺少社区代币地址，无法查找价格池' : 'The Community Token address is missing',
+      });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setIndexBrokerPoolDiscovery(current => ({ ...current, loading: true, error: '' }));
+    discoverPancakePricePools({
+      networkSlug: network.slug,
+      communityToken: communityTokenAddress,
+      signal: controller.signal,
+      force: indexBrokerPoolDiscoveryNonce > 0,
+    }).then(result => {
+      setIndexBrokerPoolDiscovery({ loading: false, pools: result.pools, error: '' });
+    }).catch(error => {
+      if (error.name === 'AbortError') return;
+      console.error('Failed to discover Pancake price pools:', error);
+      setIndexBrokerPoolDiscovery({
+        loading: false,
+        pools: [],
+        error: error.message || (language === 'zh' ? '无法查找 Pancake 候选池' : 'Could not discover Pancake pools'),
+      });
+    });
+
+    return () => controller.abort();
+  }, [
+    communityTokenAddress,
+    indexBrokerConfig.officialToken,
+    indexBrokerPoolDiscoveryNonce,
+    language,
+    network.slug,
     poolType,
   ]);
 
@@ -1247,15 +1342,20 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     : poolType === 'nft-mining'
       ? nftMiningSteps
       : standardSteps;
-  const currentStep = wizardSteps[Math.min(wizardStep, wizardSteps.length - 1)];
+  const firstWizardStep = initialPoolType && poolType === initialPoolType ? 1 : 0;
+  const visibleWizardSteps = wizardSteps.slice(firstWizardStep);
+  const currentStepIndex = Math.max(firstWizardStep, Math.min(wizardStep, wizardSteps.length - 1));
+  const currentStep = wizardSteps[currentStepIndex];
+  const visibleWizardStepIndex = currentStepIndex - firstWizardStep;
 
   useEffect(() => {
-    if (wizardStep >= wizardSteps.length) setWizardStep(wizardSteps.length - 1);
-  }, [wizardStep, wizardSteps.length]);
+    if (wizardStep < firstWizardStep) setWizardStep(firstWizardStep);
+    else if (wizardStep >= wizardSteps.length) setWizardStep(wizardSteps.length - 1);
+  }, [firstWizardStep, wizardStep, wizardSteps.length]);
 
   const goToWizardStep = nextStep => {
     setStepError('');
-    setWizardStep(Math.max(0, Math.min(nextStep, wizardSteps.length - 1)));
+    setWizardStep(Math.max(firstWizardStep, Math.min(nextStep, wizardSteps.length - 1)));
     requestAnimationFrame(() => wizardBodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' }));
   };
 
@@ -1503,7 +1603,8 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
           ? indexBrokerConfig.sourcePoolId.trim()
           : indexBrokerConfig.sourcePool.trim();
         if (indexBrokerSource.loading) throw new Error(zh ? '正在验证 DEX 价格源，请稍候' : 'The DEX price source is still being verified');
-        if (!sourceValue) throw new Error(zh ? '请填写 DEX 价格池' : 'Enter a DEX price pool');
+        if (indexBrokerPoolDiscovery.loading) throw new Error(zh ? '正在查找候选价格池，请稍候' : 'Candidate price pools are still loading');
+        if (!sourceValue) throw new Error(zh ? '请选择一个通过支持检查的价格源池' : 'Select a supported price-source pool');
         if (!indexBrokerSource.resolved || indexBrokerSource.poolId.toLowerCase() !== sourceValue.toLowerCase()) {
           throw new Error(indexBrokerSource.error || (zh ? '该 DEX 价格池未通过验证' : 'This DEX price pool could not be verified'));
         }
@@ -1799,6 +1900,9 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
     },
   ];
   const selectedType = poolTypeOptions.find(option => option.value === poolType);
+  const selectablePoolTypes = initialPoolType
+    ? poolTypeOptions
+    : poolTypeOptions.filter(option => option.value !== 'index-broker-nft');
   const indexBrokerMintAccessMode = getIndexBrokerMintAccessMode(indexBrokerConfig);
 
   const deployFromWizard = () => {
@@ -1828,31 +1932,34 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
       <div className="modal-content add-pool-modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="add-pool-wizard-title">
-            <h2 className="modal-title">{zh ? '创建矿池' : 'Create a Pool'}</h2>
+            <h2 className="modal-title">{initialPoolType === 'index-broker-nft' ? (zh ? '创建 NFT' : 'Create NFT') : (zh ? '创建矿池' : 'Create a Pool')}</h2>
             <small>{selectedType?.title || (zh ? '为社区添加新的奖励矿池' : 'Add a new reward pool to this community')}</small>
           </div>
           <button className="modal-close" type="button" onClick={closeModal} disabled={loading} aria-label={zh ? '关闭' : 'Close'}>×</button>
         </div>
 
-        <div className="add-pool-wizard-stepper" style={{ '--wizard-step-count': wizardSteps.length }}>
-          {wizardSteps.map((step, index) => (
-            <button
-              type="button"
-              key={step.key}
-              className={`add-pool-wizard-step ${index < wizardStep ? 'is-complete' : ''} ${index === wizardStep ? 'is-current' : ''}`}
-              aria-current={index === wizardStep ? 'step' : undefined}
-              disabled={index >= wizardStep || loading}
-              onClick={() => goToWizardStep(index)}
-            >
-              <span className="wizard-step-marker">{index < wizardStep ? '✓' : index + 1}</span>
-              <span className="wizard-step-label">{step.label}</span>
-            </button>
-          ))}
+        <div className="add-pool-wizard-stepper" style={{ '--wizard-step-count': visibleWizardSteps.length }}>
+          {visibleWizardSteps.map((step, index) => {
+            const actualIndex = index + firstWizardStep;
+            return (
+              <button
+                type="button"
+                key={step.key}
+                className={`add-pool-wizard-step ${actualIndex < wizardStep ? 'is-complete' : ''} ${actualIndex === wizardStep ? 'is-current' : ''}`}
+                aria-current={actualIndex === wizardStep ? 'step' : undefined}
+                disabled={actualIndex >= wizardStep || loading}
+                onClick={() => goToWizardStep(actualIndex)}
+              >
+                <span className="wizard-step-marker">{actualIndex < wizardStep ? '✓' : index + 1}</span>
+                <span className="wizard-step-label">{step.label}</span>
+              </button>
+            );
+          })}
         </div>
-        <div className="add-pool-wizard-mobile-progress" style={{ '--wizard-progress': `${((wizardStep + 1) / wizardSteps.length) * 100}%` }}>
+        <div className="add-pool-wizard-mobile-progress" style={{ '--wizard-progress': `${((visibleWizardStepIndex + 1) / visibleWizardSteps.length) * 100}%` }}>
           <div className="wizard-mobile-progress-copy">
             <strong>{currentStep.title}</strong>
-            <span>{zh ? `第 ${wizardStep + 1}/${wizardSteps.length} 步` : `Step ${wizardStep + 1} of ${wizardSteps.length}`}</span>
+            <span>{zh ? `第 ${visibleWizardStepIndex + 1}/${visibleWizardSteps.length} 步` : `Step ${visibleWizardStepIndex + 1} of ${visibleWizardSteps.length}`}</span>
           </div>
           <div className="wizard-mobile-progress-bar"><span /></div>
         </div>
@@ -1860,7 +1967,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         <div className="add-pool-wizard-body" ref={wizardBodyRef}>
           <div className="add-pool-wizard-panel" key={`${poolType || 'none'}-${currentStep.key}`}>
             <div className="wizard-step-intro">
-              <span className="wizard-step-eyebrow">{zh ? `第 ${wizardStep + 1} 步，共 ${wizardSteps.length} 步` : `Step ${wizardStep + 1} of ${wizardSteps.length}`}</span>
+              <span className="wizard-step-eyebrow">{zh ? `第 ${visibleWizardStepIndex + 1} 步，共 ${visibleWizardSteps.length} 步` : `Step ${visibleWizardStepIndex + 1} of ${visibleWizardSteps.length}`}</span>
               <h3>{currentStep.title}</h3>
               <p>{currentStep.description}</p>
             </div>
@@ -1872,7 +1979,7 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
             )}
             {currentStep.key === 'type' && (
               <div className="wizard-choice-grid wizard-pool-type-grid">
-                {poolTypeOptions.map(option => (
+                {selectablePoolTypes.map(option => (
                   <button
                     type="button"
                     key={option.value}
@@ -2243,6 +2350,8 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
                 tokenInfo={indexBrokerContext}
                 loadingContext={indexBrokerContext.loading}
                 sourceResolution={indexBrokerSource}
+                poolDiscovery={indexBrokerPoolDiscovery}
+                onRetryPoolDiscovery={() => setIndexBrokerPoolDiscoveryNonce(value => value + 1)}
                 sourceCapabilities={{
                   pancakeV2: Boolean(contracts.PancakeV2Factory),
                   pancakeV3: Boolean(contracts.PancakeV3Factory),
@@ -2379,6 +2488,18 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '公开铸造收款' : 'Public mint receiver'}</span><span className="wizard-summary-value">{!indexBrokerConfig.fundsReceiver.trim() || indexBrokerConfig.fundsReceiver.toLowerCase() === ethers.ZeroAddress.toLowerCase() ? (zh ? '专属 AMM 回购池' : 'Dedicated AMM buyback pool') : shortenAddress(indexBrokerConfig.fundsReceiver)}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '图片重生成' : 'Image rerolls'}</span><span className="wizard-summary-value">{indexBrokerConfig.rerollEnabled ? `${zh ? '启用' : 'Enabled'} · ${Number(indexBrokerConfig.recommitPrice || 0) === 0 ? indexBrokerConfig.communityTokenPrice : indexBrokerConfig.recommitPrice} ${indexBrokerContext.symbol}` : (zh ? '关闭' : 'Disabled')}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">AMM</span><span className="wizard-summary-value">{zh ? '普通' : 'Normal'} {effectiveAmmFee(indexBrokerConfig.normalFeePercent)}% · {zh ? '指定' : 'Specific'} {effectiveAmmFee(indexBrokerConfig.specificFeePercent)}%</span></div>
+                      {indexBrokerConfig.officialToken === false && (
+                        <div className="wizard-summary-row">
+                          <span className="wizard-summary-label">{zh ? '价格源池' : 'Price-source pool'}</span>
+                          <span className="wizard-summary-value">
+                            {Number(indexBrokerConfig.sourceType) === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
+                              ? 'Pancake V2'
+                              : Number(indexBrokerConfig.sourceType) === INDEX_BROKER_SOURCE_TYPES.V3_POOL
+                                ? 'Pancake V3'
+                                : 'Pancake V4 CL'} · {shortenAddress(isIndexBrokerV4Source(indexBrokerConfig.sourceType) ? indexBrokerConfig.sourcePoolId : indexBrokerConfig.sourcePool)}
+                          </span>
+                        </div>
+                      )}
                     </>
                   )}
                   {poolType === 'nft-mining' && (
@@ -2400,10 +2521,10 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
         <div className="add-pool-wizard-actions">
           <div className="wizard-action-copy">
             <strong>{currentStep.title}</strong>
-            <span>{zh ? `第 ${wizardStep + 1} 步，共 ${wizardSteps.length} 步` : `Step ${wizardStep + 1} of ${wizardSteps.length}`}</span>
+            <span>{zh ? `第 ${visibleWizardStepIndex + 1} 步，共 ${visibleWizardSteps.length} 步` : `Step ${visibleWizardStepIndex + 1} of ${visibleWizardSteps.length}`}</span>
           </div>
           <div className="wizard-action-buttons">
-            <button type="button" className="btn btn-ghost" onClick={() => goToWizardStep(wizardStep - 1)} disabled={wizardStep === 0 || loading}>
+            <button type="button" className="btn btn-ghost" onClick={() => goToWizardStep(wizardStep - 1)} disabled={wizardStep === firstWizardStep || loading}>
               {zh ? '上一步' : 'Back'}
             </button>
             {wizardStep === wizardSteps.length - 1 ? (

@@ -341,6 +341,11 @@ async function fetchOnChainCommunities(chainId) {
         official: metadata?.official || null,
         distribution: normalizeArray(metadata?.distribution),
         infoCreatedAt: null,
+        tokenVersion: metadata?.version == null ? null : Number(metadata.version),
+        dexVersion: metadata?.dexVersion == null ? null : Number(metadata.dexVersion),
+        isImport: Boolean(Number(metadata?.isImport || 0)),
+        tradePair: metadata?.pair || null,
+        listedBlock: metadata?.listedBlock == null ? null : Number(metadata.listedBlock),
       };
     }));
   })();
@@ -964,6 +969,11 @@ function mapCommunity(raw, chainId) {
     official: info?.official || null,
     distribution: normalizeArray(info?.distribution),
     infoCreatedAt: info?.createAt || null,
+    tokenVersion: info?.version == null ? null : Number(info.version),
+    dexVersion: info?.dexVersion == null ? null : Number(info.dexVersion),
+    isImport: Boolean(Number(info?.isImport || 0)),
+    tradePair: info?.pair || null,
+    listedBlock: info?.listedBlock == null ? null : Number(info.listedBlock),
   };
 }
 

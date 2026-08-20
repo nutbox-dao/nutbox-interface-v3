@@ -6,6 +6,7 @@ import { useLanguage } from '../../contexts/LanguageContext';
 import { ERC20StakingABI, ERC20LockingABI, ERC20ABI, CommunityABI } from '../../config/abis';
 import { formatTokenAmount, shortenAddress, formatDuration, getPoolTypeBadgeClass } from '../../utils/helpers';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import './PoolCard.css';
 
 export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
@@ -20,7 +21,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   const [pendingRewards, setPendingRewards] = useState(0n);
   const [allowance, setAllowance] = useState(0n);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState('');
+  const [actionLoading, setActionLoading] = useTimedActionLoading('');
   const [stakeAmount, setStakeAmount] = useState('');
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [showStake, setShowStake] = useState(false);

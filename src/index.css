@@ -493,6 +493,25 @@ select.input {
   border-width: 3px;
 }
 
+button.transaction-loading {
+  cursor: wait;
+}
+
+button.transaction-loading::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+button.transaction-loading > .spinner {
+  display: none;
+}
+
 @keyframes spin {
   to { transform: rotate(360deg); }
 }

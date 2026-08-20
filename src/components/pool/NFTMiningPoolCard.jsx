@@ -6,6 +6,7 @@ import { useToast } from '../../contexts/ToastContext';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { CommunityABI, ERC20ABI, NFTMiningPoolABI } from '../../config/abis';
 import { getChainPath } from '../../config/contracts';
+import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import {
   fetchNftMiningAccounts,
   fetchNftMiningEvents,
@@ -85,7 +86,7 @@ export default function NFTMiningPoolCard({
   const [paymentInfo, setPaymentInfo] = useState({ symbol: network.nativeCurrency.symbol, decimals: 18 });
   const [allowance, setAllowance] = useState(0n);
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState('');
+  const [actionLoading, setActionLoading] = useTimedActionLoading('');
   const [referrerTokenId, setReferrerTokenId] = useState('');
   const [showReferralPicker, setShowReferralPicker] = useState(false);
   const [showReferralGuide, setShowReferralGuide] = useState(false);
