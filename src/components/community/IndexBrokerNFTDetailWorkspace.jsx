@@ -5,7 +5,7 @@ import IndexBrokerNFTPoolCard from '../pool/IndexBrokerNFTPoolCard';
 const SECTIONS = {
   zh: [
     { value: 'mint-amm', label: 'Mint & AMM', hint: '铸造、买入或卖出 NFT' },
-    { value: 'nft-management', label: 'NFT 管理', hint: '揭图与重新生成' },
+    { value: 'holdings', label: '持仓', hint: '查看当前钱包持有的 NFT' },
     { value: 'mining', label: '激活挖矿', hint: '指数权重与奖励' },
     { value: 'referral', label: '推荐升级', hint: '等级与社区挖矿' },
     { value: 'rewards', label: '奖励与回购', hint: '注入奖励、收割与回购' },
@@ -14,7 +14,7 @@ const SECTIONS = {
   ],
   en: [
     { value: 'mint-amm', label: 'Mint & AMM', hint: 'Mint, buy or sell NFTs' },
-    { value: 'nft-management', label: 'NFT management', hint: 'Reveal and reroll artwork' },
+    { value: 'holdings', label: 'Holdings', hint: 'View NFTs held by the connected wallet' },
     { value: 'mining', label: 'Activate mining', hint: 'Index weight and rewards' },
     { value: 'referral', label: 'Referral upgrades', hint: 'Levels and community mining' },
     { value: 'rewards', label: 'Rewards & buyback', hint: 'Inject, harvest and buy back' },

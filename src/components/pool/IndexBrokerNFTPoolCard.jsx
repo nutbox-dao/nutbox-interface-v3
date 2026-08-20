@@ -1363,7 +1363,7 @@ export default function IndexBrokerNFTPoolCard({
   const showAmm = detail && (showAllDetail || section === 'mint-amm' || section === 'amm');
   const showReferral = detail && section === 'referral';
   const showMining = detail && section === 'mining';
-  const showNftManagement = detail && section === 'nft-management';
+  const showOwnedCollection = detail && section === 'holdings';
   const showHoldings = showAllDetail;
   const compactDetailLayout = embedded || organized;
   const showActivity = detail && (
@@ -1419,7 +1419,7 @@ export default function IndexBrokerNFTPoolCard({
       }
       return;
     }
-    if (organized) onSectionChange?.('nft-management');
+    if (organized) onSectionChange?.('holdings');
   };
 
   if (loadError === 'Unsupported legacy Index Broker NFT contract') return null;
@@ -1755,17 +1755,23 @@ export default function IndexBrokerNFTPoolCard({
         </section>
       )}
 
-      {showNftManagement && (
+      {showOwnedCollection && (
         <section className="index-broker-nft-section glass-card index-broker-owned-feature">
           <div className="index-broker-section-heading">
             <div>
-              <h2>{language === 'zh' ? 'NFT 图像管理' : 'NFT artwork management'}</h2>
-              <p>{language === 'zh' ? '在这里完成揭图、过期后重新提交，或为已揭示的 NFT 付费重新生成图像。' : 'Reveal an NFT, recommit after an expired reveal window, or pay to reroll an already revealed NFT.'}</p>
+              <h2>{language === 'zh' ? '我的 NFT 持仓' : 'My NFT holdings'}</h2>
+              <p>
+                {isConnected && account
+                  ? (language === 'zh'
+                    ? `${shortenAddress(account)} 当前持有 ${data.ownedNftCount.toString()} 枚 NFT`
+                    : `${shortenAddress(account)} currently holds ${data.ownedNftCount.toString()} NFTs`)
+                  : (language === 'zh' ? '连接钱包后查看当前地址的 NFT 持仓。' : 'Connect a wallet to view NFTs held by the current address.')}
+              </p>
             </div>
           </div>
           {!isConnected ? (
             <div className="index-broker-owned-gate">
-              <p>{language === 'zh' ? '连接钱包后管理你持有的 NFT。' : 'Connect your wallet to manage your NFTs.'}</p>
+              <p>{language === 'zh' ? '连接钱包后查看你持有的 NFT。' : 'Connect your wallet to view your NFTs.'}</p>
               <button className="btn btn-primary" disabled={connecting} onClick={connect}>{language === 'zh' ? '连接钱包' : 'Connect wallet'}</button>
             </div>
           ) : ownedNfts.length === 0 ? (
@@ -1797,27 +1803,27 @@ export default function IndexBrokerNFTPoolCard({
                     </div>
                     <div className="index-broker-nft-body">
                       <div className="index-broker-nft-title"><strong>{data.name} #{id}</strong><span>Lv.{Number(info.level)}</span></div>
-                      <div className="index-broker-management-status">
-                        <span>{language === 'zh' ? '图像状态' : 'Artwork status'}</span>
-                        <strong>
-                          {!requiresSeedReveal
-                            ? (language === 'zh' ? 'Renderer 不依赖 Seed，无需揭图' : 'This Renderer does not require a seed')
-                            : revealCountdownText(revealState, language)}
-                        </strong>
-                      </div>
-                      <div className="index-broker-nft-actions">
-                        {revealReady && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('reveal', nft.tokenId, 'reveal', language === 'zh' ? '正在揭示 NFT…' : 'Revealing NFT…', language === 'zh' ? 'NFT 已揭示' : 'NFT revealed')}>{c.reveal}</button>}
-                        {revealExpired && (
-                          recommitApprovalNeeded
-                            ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => approveCommunityToken(pool.id, 'approve-recommit')}>{c.approveRecommit}</button>
-                            : <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('recommit', nft.tokenId, 'commitReveal', language === 'zh' ? '正在重新提交揭图…' : 'Committing reveal…', language === 'zh' ? '揭图已重新提交' : 'Reveal recommitted')}>{c.recommit}</button>
-                        )}
-                        {requiresSeedReveal && !info.revealPending && data.rerollEnabled && (
-                          recommitApprovalNeeded
-                            ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => approveCommunityToken(pool.id, 'approve-reroll')}>{c.approveRecommit}</button>
-                            : <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('reroll', nft.tokenId, 'commitReveal', language === 'zh' ? '正在提交重新生成…' : 'Committing reroll…', language === 'zh' ? '重新生成已提交' : 'Reroll committed')}>{c.reroll}</button>
-                        )}
-                      </div>
+                      {requiresSeedReveal && info.revealPending && (
+                        <div className="index-broker-management-status">
+                          <span>{language === 'zh' ? '揭图状态' : 'Reveal status'}</span>
+                          <strong>{revealCountdownText(revealState, language)}</strong>
+                        </div>
+                      )}
+                      {(revealReady || revealExpired || (requiresSeedReveal && !info.revealPending && data.rerollEnabled)) && (
+                        <div className="index-broker-nft-actions">
+                          {revealReady && <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('reveal', nft.tokenId, 'reveal', language === 'zh' ? '正在揭示 NFT…' : 'Revealing NFT…', language === 'zh' ? 'NFT 已揭示' : 'NFT revealed')}>{c.reveal}</button>}
+                          {revealExpired && (
+                            recommitApprovalNeeded
+                              ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => approveCommunityToken(pool.id, 'approve-recommit')}>{c.approveRecommit}</button>
+                              : <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('recommit', nft.tokenId, 'commitReveal', language === 'zh' ? '正在重新提交揭图…' : 'Committing reveal…', language === 'zh' ? '揭图已重新提交' : 'Reveal recommitted')}>{c.recommit}</button>
+                          )}
+                          {requiresSeedReveal && !info.revealPending && data.rerollEnabled && (
+                            recommitApprovalNeeded
+                              ? <button className="btn btn-secondary btn-sm" disabled={busy} onClick={() => approveCommunityToken(pool.id, 'approve-reroll')}>{c.approveRecommit}</button>
+                              : <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => tokenAction('reroll', nft.tokenId, 'commitReveal', language === 'zh' ? '正在提交重新生成…' : 'Committing reroll…', language === 'zh' ? '重新生成已提交' : 'Reroll committed')}>{c.reroll}</button>
+                          )}
+                        </div>
+                      )}
                       {requiresSeedReveal && info.revealPending && (
                         <small className={`index-broker-reveal-status is-${revealState.status}`}>
                           {revealCountdownText(revealState, language)}
@@ -2301,7 +2307,7 @@ export default function IndexBrokerNFTPoolCard({
                   type="button"
                   onClick={() => {
                     setMintResult(null);
-                    onSectionChange?.('nft-management');
+                    onSectionChange?.('holdings');
                   }}
                 >
                   {mintResultRevealState.status === 'ready'

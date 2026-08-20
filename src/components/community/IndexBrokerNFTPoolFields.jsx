@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { ethers } from 'ethers';
 import {
   INDEX_BROKER_MINT_ACCESS_MODES,
@@ -8,6 +9,148 @@ import {
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
 
 const ZERO_ADDRESS = ethers.ZeroAddress;
+
+const RENDERER_INTERFACE_EXAMPLE = `interface IIndexBrokerNFTRenderer {
+    struct RenderParams {
+        string collectionName;
+        uint256 tokenId;
+        uint256 seed;
+        uint256 referralCount;
+        uint256 referrerTokenId;
+        uint256 miningWeight;
+        uint256 indexMiningWeight;
+        uint256 indexMiningTokenUnit;
+        uint32 level;
+        bool miningActive;
+        bool indexMiningActive;
+    }
+
+    function renderSVG(RenderParams calldata params)
+        external view returns (string memory);
+    function renderTokenURI(RenderParams calldata params)
+        external view returns (string memory);
+    function renderContractURI(string calldata collectionName)
+        external view returns (string memory);
+}`;
+
+const SEED_SVG_RENDERER_EXAMPLE = `contract SeedSvgRenderer is IIndexBrokerNFTRenderer {
+    using Strings for uint256;
+
+    function renderSVG(RenderParams calldata p)
+        external pure returns (string memory)
+    {
+        return _svg(p);
+    }
+
+    function renderTokenURI(RenderParams calldata p)
+        external pure returns (string memory)
+    {
+        string memory image = string.concat(
+            "data:image/svg+xml;base64,",
+            Base64.encode(bytes(_svg(p)))
+        );
+        string memory json = string.concat(
+            '{"name":"', p.collectionName, " #", p.tokenId.toString(),
+            '","image":"', image, '"}'
+        );
+        return string.concat(
+            "data:application/json;base64,",
+            Base64.encode(bytes(json))
+        );
+    }
+
+    function renderContractURI(string calldata name)
+        external pure returns (string memory)
+    {
+        string memory json = string.concat(
+            '{"name":"', name,
+            '","description":"Generated fully on-chain"}'
+        );
+        return string.concat(
+            "data:application/json;base64,",
+            Base64.encode(bytes(json))
+        );
+    }
+
+    function _svg(RenderParams calldata p)
+        private pure returns (string memory)
+    {
+        if (p.seed == 0) {
+            return '<svg xmlns="http://www.w3.org/2000/svg" '
+                'viewBox="0 0 320 320"><rect width="320" height="320" '
+                'fill="#111827"/><text x="160" y="165" fill="white" '
+                'text-anchor="middle">UNREVEALED</text></svg>';
+        }
+
+        uint256 x = 50 + uint256(
+            keccak256(abi.encode(p.seed, p.tokenId))
+        ) % 220;
+        string memory color = p.seed % 2 == 0 ? "#7c3aed" : "#06b6d4";
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320">',
+            '<rect width="320" height="320" fill="#080b1f"/>',
+            '<circle cx="', x.toString(), '" cy="160" r="72" fill="',
+            color, '"/></svg>'
+        );
+    }
+}`;
+
+const IPFS_RENDERER_EXAMPLE = `contract SeedIpfsRenderer is IIndexBrokerNFTRenderer {
+    using Strings for uint256;
+
+    uint256 constant IMAGE_COUNT = 1000;
+    string constant IPFS_BASE = "ipfs://bafy.../";
+    string constant HTTPS_GATEWAY =
+        "https://cloudflare-ipfs.com/ipfs/bafy.../";
+
+    function _file(RenderParams calldata p)
+        private pure returns (string memory)
+    {
+        if (p.seed == 0) return "unrevealed.png";
+        uint256 id = uint256(
+            keccak256(abi.encode(p.seed, p.tokenId))
+        ) % IMAGE_COUNT + 1;
+        return string.concat(id.toString(), ".png");
+    }
+
+    function renderSVG(RenderParams calldata p)
+        external pure returns (string memory)
+    {
+        // SVG preview uses HTTPS because many browsers do not load ipfs://
+        return string.concat(
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000">',
+            '<image width="1000" height="1000" href="',
+            HTTPS_GATEWAY, _file(p), '"/></svg>'
+        );
+    }
+
+    function renderTokenURI(RenderParams calldata p)
+        external pure returns (string memory)
+    {
+        // Metadata keeps the canonical ipfs:// image URI.
+        string memory json = string.concat(
+            '{"name":"', p.collectionName, " #", p.tokenId.toString(),
+            '","image":"', IPFS_BASE, _file(p), '"}'
+        );
+        return string.concat(
+            "data:application/json;base64,",
+            Base64.encode(bytes(json))
+        );
+    }
+
+    function renderContractURI(string calldata name)
+        external pure returns (string memory)
+    {
+        string memory json = string.concat(
+            '{"name":"', name, '","image":"',
+            IPFS_BASE, 'collection.png"}'
+        );
+        return string.concat(
+            "data:application/json;base64,",
+            Base64.encode(bytes(json))
+        );
+    }
+}`;
 
 function Field({ label, children, wide = false, hint }) {
   return (
@@ -24,6 +167,120 @@ function SectionHeading({ title, description }) {
     <div className="nft-pool-config-heading">
       <strong>{title}</strong>
       {description && <span>{description}</span>}
+    </div>
+  );
+}
+
+function RendererGuide({ expanded, onToggle, zh }) {
+  return (
+    <div className="renderer-guide-shell nft-pool-form-wide">
+      <button
+        type="button"
+        className="renderer-guide-toggle"
+        onClick={onToggle}
+        aria-expanded={expanded}
+        aria-controls="index-broker-renderer-guide"
+      >
+        <span className="renderer-guide-toggle-icon" aria-hidden="true">{'</>'}</span>
+        <span>
+          <strong>How to make Renderer</strong>
+          <small>{zh ? '自定义 NFT 图片与元数据合约开发指南' : 'Build a custom NFT image and metadata contract'}</small>
+        </span>
+        <span className={`renderer-guide-chevron ${expanded ? 'is-expanded' : ''}`} aria-hidden="true">⌄</span>
+      </button>
+
+      {expanded && (
+        <div id="index-broker-renderer-guide" className="renderer-guide" role="region">
+          <div className="renderer-guide-intro">
+            <strong>{zh ? '先部署 Renderer，再填写合约地址' : 'Deploy the Renderer first, then enter its contract address'}</strong>
+            <p>
+              {zh
+                ? 'Renderer 是一个只读合约，负责根据 NFT 状态生成图片和元数据。创建矿池后 Renderer 地址不能修改，因此请先在 BSC 部署并完整测试。留空则使用平台默认 Renderer。'
+                : 'A Renderer is a read-only contract that generates NFT images and metadata from NFT state. Its address cannot be changed after pool creation, so deploy and fully test it on BSC first. Leave the field blank to use the platform default.'}
+            </p>
+          </div>
+
+          <section className="renderer-guide-section">
+            <div className="renderer-guide-section-heading">
+              <span>1</span>
+              <div>
+                <strong>{zh ? '必须实现的合约接口' : 'Required contract interface'}</strong>
+                <p>{zh ? '三个函数缺少任何一个，或在合法参数下执行失败，创建页面都会判定为不兼容。无需实现 ERC165。' : 'All three functions are required and must not revert for valid parameters. ERC165 support is not required.'}</p>
+              </div>
+            </div>
+            <pre className="renderer-guide-code"><code>{RENDERER_INTERFACE_EXAMPLE}</code></pre>
+          </section>
+
+          <section className="renderer-guide-section">
+            <div className="renderer-guide-section-heading">
+              <span>2</span>
+              <div>
+                <strong>{zh ? '返回值与参数规则' : 'Return-value and parameter rules'}</strong>
+                <p>{zh ? '合约会在铸造、揭图、升级与展示时读取这些函数。' : 'The NFT contract reads these functions during minting, reveal, upgrades, and display.'}</p>
+              </div>
+            </div>
+            <div className="renderer-guide-rules">
+              <div><code>renderSVG</code><span>{zh ? '返回原始 <svg> 字符串，不要返回 data URI。' : 'Return a raw <svg> string, not a data URI.'}</span></div>
+              <div><code>renderTokenURI</code><span>{zh ? '返回完整 NFT 元数据 URI；推荐 data:application/json;base64 或有效的 ipfs:// URI。' : 'Return a complete NFT metadata URI; use a Base64 JSON data URI or a valid ipfs:// URI.'}</span></div>
+              <div><code>renderContractURI</code><span>{zh ? '返回合集级元数据 URI，例如合集名称、描述和封面。' : 'Return collection-level metadata such as name, description, and cover image.'}</span></div>
+              <div><code>seed</code><span>{zh ? '揭图前为 0；揭图后为非零随机种子。使用 seed 的 Renderer 应在 seed=0 时返回未揭图占位图。' : 'It is 0 before reveal and non-zero afterward. Seed-based renderers should return an unrevealed placeholder when seed=0.'}</span></div>
+            </div>
+            <details className="renderer-guide-params">
+              <summary>{zh ? '查看全部 RenderParams 参数说明' : 'View all RenderParams fields'}</summary>
+              <div className="renderer-guide-param-grid">
+                <div><code>collectionName</code><span>{zh ? 'NFT 合集名称' : 'NFT collection name'}</span></div>
+                <div><code>tokenId</code><span>{zh ? '当前 NFT 编号' : 'Current NFT identifier'}</span></div>
+                <div><code>referralCount</code><span>{zh ? '该 NFT 的有效推荐人数' : 'Valid referrals credited to this NFT'}</span></div>
+                <div><code>referrerTokenId</code><span>{zh ? '铸造时登记的推荐 NFT' : 'Referrer NFT recorded at mint'}</span></div>
+                <div><code>miningWeight</code><span>{zh ? '社区挖矿权重' : 'Community mining weight'}</span></div>
+                <div><code>indexMiningWeight</code><span>{zh ? '指数挖矿原始权重' : 'Raw index-mining weight'}</span></div>
+                <div><code>indexMiningTokenUnit</code><span>{zh ? '指数挖矿代币显示单位' : 'Display unit for index-mining tokens'}</span></div>
+                <div><code>level</code><span>{zh ? '当前推荐等级' : 'Current referral level'}</span></div>
+                <div><code>miningActive</code><span>{zh ? '社区挖矿是否激活' : 'Whether community mining is active'}</span></div>
+                <div><code>indexMiningActive</code><span>{zh ? '指数挖矿是否激活' : 'Whether index mining is active'}</span></div>
+              </div>
+            </details>
+          </section>
+
+          <div className="renderer-guide-example-grid">
+            <section className="renderer-guide-section">
+              <div className="renderer-guide-section-heading">
+                <span>3A</span>
+                <div>
+                  <strong>{zh ? '案例：使用 seed 生成链上 SVG' : 'Example: generate on-chain SVG from seed'}</strong>
+                  <p>{zh ? '相同的 seed 与 tokenId 必须始终得到相同结果。示例省略 import，请使用 OpenZeppelin Base64 与 Strings。' : 'The same seed and tokenId must always produce the same result. Imports are omitted; use OpenZeppelin Base64 and Strings.'}</p>
+                </div>
+              </div>
+              <pre className="renderer-guide-code"><code>{SEED_SVG_RENDERER_EXAMPLE}</code></pre>
+            </section>
+
+            <section className="renderer-guide-section">
+              <div className="renderer-guide-section-heading">
+                <span>3B</span>
+                <div>
+                  <strong>{zh ? '案例：使用 seed 选择 IPFS 图片' : 'Example: select an IPFS image from seed'}</strong>
+                  <p>{zh ? '元数据中保留标准 ipfs:// 地址；仅在 SVG 预览的 <image> 中使用 HTTPS Gateway，以兼容浏览器。' : 'Keep canonical ipfs:// URLs in metadata. Use an HTTPS gateway only inside the SVG <image> element for browser compatibility.'}</p>
+                </div>
+              </div>
+              <pre className="renderer-guide-code"><code>{IPFS_RENDERER_EXAMPLE}</code></pre>
+            </section>
+          </div>
+
+          <section className="renderer-guide-checklist">
+            <strong>{zh ? '部署前检查' : 'Pre-deployment checklist'}</strong>
+            <ul>
+              <li>{zh ? '地址是 BSC 上已部署的合约，不是钱包地址。' : 'The address is a deployed BSC contract, not a wallet address.'}</li>
+              <li>{zh ? '分别使用 seed=0 和非零 seed 调用三个接口，确认都不会回滚。' : 'Call all three functions with seed=0 and a non-zero seed; none may revert.'}</li>
+              <li>{zh ? 'SVG、JSON 和特殊字符都已正确转义，tokenURI 可被钱包和市场解析。' : 'SVG, JSON, and special characters are escaped correctly, and wallets/markets can parse tokenURI.'}</li>
+              <li>{zh ? '如果 Renderer 完全不使用 seed，请联系平台把地址加入“无需揭图”列表，否则铸造后仍会提示用户揭图。' : 'If the Renderer never uses seed, ask the platform to add it to the no-reveal list; otherwise users will still be prompted to reveal after minting.'}</li>
+            </ul>
+          </section>
+          <button type="button" className="renderer-guide-collapse" onClick={onToggle}>
+            <span aria-hidden="true">↑</span>
+            {zh ? '收起 How to make Renderer' : 'Collapse How to make Renderer'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -51,14 +308,6 @@ function TemplateCard({ selected, disabled, icon, title, description, status, on
 
 function shortValue(value) {
   return value ? `${value.slice(0, 8)}…${value.slice(-6)}` : '';
-}
-
-function estimateReferral(nativePrice, platformFeeBps, referralPercent) {
-  const price = Number(nativePrice);
-  const referral = Number(referralPercent);
-  const platform = Number(platformFeeBps || 0);
-  if (!Number.isFinite(price) || !Number.isFinite(referral) || price <= 0 || referral <= 0) return null;
-  return Math.max(0, price * (1 - platform / 10_000) * referral / 100);
 }
 
 function effectiveFee(value) {
@@ -111,6 +360,7 @@ export default function IndexBrokerNFTPoolFields({
   stakeTokenValidation,
 }) {
   const zh = language === 'zh';
+  const [rendererGuideExpanded, setRendererGuideExpanded] = useState(false);
   const update = (key, value) => onChange(current => ({ ...current, [key]: value }));
   const sourceType = Number(config.sourceType);
   const currentSourceInput = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
@@ -139,12 +389,6 @@ export default function IndexBrokerNFTPoolFields({
   const stakeMode = config.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
   const receiver = String(config.fundsReceiver || '').trim();
   const receiverUsesBuyback = !receiver || receiver.toLowerCase() === ZERO_ADDRESS.toLowerCase();
-  const estimatedReferral = estimateReferral(
-    whitelistOnly ? '0' : config.nativePrice,
-    tokenInfo.platformFeeBps,
-    whitelistOnly ? '0' : config.referralPercent,
-  );
-
   const updateMiningMode = miningMode => onChange(current => ({
     ...current,
     miningMode,
@@ -395,18 +639,6 @@ export default function IndexBrokerNFTPoolFields({
             ? '返佣从公开铸造支付的 BNB 中分出，不会向铸造者额外收费。'
             : 'Commission is taken from public-mint BNB and does not add an extra charge to the minter.'}
         />
-        <div className="wizard-callout">
-          <strong>{zh ? '返佣计算方式' : 'How commission is calculated'}</strong>
-          <span>
-            {zh
-              ? `推荐佣金 = 公开铸造 BNB 价格 ×（1 − ${Number(tokenInfo.platformFeeBps || 0) / 100}% 平台费）× 推荐比例`
-              : `Referral commission = public-mint BNB price × (1 − ${Number(tokenInfo.platformFeeBps || 0) / 100}% platform fee) × referral rate`}
-            {estimatedReferral !== null
-              ? (zh ? `；按当前费率估算约为 ${estimatedReferral.toFixed(6)} BNB / 枚。` : `; approximately ${estimatedReferral.toFixed(6)} BNB per NFT at the current fee rate.`)
-              : ''}
-          </span>
-          <span>{zh ? '仅带有效推荐 NFT 的付费公开铸造产生返佣，佣金发给推荐 NFT 的当前持有人；平台费率后续可能调整。' : 'Only paid public mints with a valid referrer NFT earn commission. It is paid to that NFT’s current owner, and the platform fee may change later.'}</span>
-        </div>
         <div className="nft-pool-form-grid">
           <Field label={zh ? '推荐返佣比例' : 'Referral commission'} hint={whitelistOnly ? (zh ? '纯白名单模式没有付费公开铸造，返佣固定为 0%。' : 'Whitelist-only access has no paid public mints, so referral commission is fixed at 0%.') : undefined}>
             <div className="input-with-suffix"><input type="number" min="0" max="100" step="0.01" className="input" value={whitelistOnly ? '0' : config.referralPercent} onChange={event => update('referralPercent', event.target.value)} disabled={whitelistOnly} /><span>%</span></div>
@@ -452,9 +684,14 @@ export default function IndexBrokerNFTPoolFields({
             : 'Use the default Renderer or a compatible custom contract; simulation values are not deployed.'}
         />
         <div className="nft-pool-form-grid">
-          <Field wide label="Renderer" hint={zh ? '留空使用 V11 默认 Stonk Broker Renderer。' : 'Blank uses the default V11 Stonk Broker Renderer.'}>
+          <Field wide label="Renderer" hint={zh ? '留空使用默认 Stonk Broker Renderer。' : 'Blank uses the default Stonk Broker Renderer.'}>
             <input className="input" value={config.renderer} onChange={event => update('renderer', event.target.value)} placeholder="0x..." />
           </Field>
+          <RendererGuide
+            expanded={rendererGuideExpanded}
+            onToggle={() => setRendererGuideExpanded(current => !current)}
+            zh={zh}
+          />
           <label className="index-broker-check wizard-option-card nft-pool-form-wide">
             <input type="checkbox" checked={config.rerollEnabled} onChange={event => update('rerollEnabled', event.target.checked)} />
             <span>
@@ -502,8 +739,11 @@ export default function IndexBrokerNFTPoolFields({
               : (zh ? '外部代币必须提供已支持的 DEX 价格源。' : 'External tokens require a supported DEX price source.')}
         />
         <div className="wizard-callout">
-          <strong>{zh ? '实际交易手续费' : 'Effective trading fee'}</strong>
-          <span>{zh ? '下方配置费会留在 AMM 作为指数回购储备；每笔交易还会固定收取 0.5% 平台费。' : 'The configured fee remains in the AMM for index buybacks; every trade also includes a fixed 0.5% platform fee.'}</span>
+          <span className="wizard-callout-icon" aria-hidden="true">i</span>
+          <div>
+            <strong>{zh ? '实际交易手续费' : 'Effective trading fee'}</strong>
+            <span>{zh ? '下方配置费会留在 AMM 作为指数回购储备；每笔交易还会固定收取 0.5% 平台费。' : 'The configured fee remains in the AMM for index buybacks; every trade also includes a fixed 0.5% platform fee.'}</span>
+          </div>
         </div>
         <div className="nft-pool-form-grid">
           <Field label={zh ? '普通买卖配置费' : 'Normal configured fee'} hint={zh ? `实际总费率：${effectiveFee(config.normalFeePercent)}` : `Effective total: ${effectiveFee(config.normalFeePercent)}`}>
