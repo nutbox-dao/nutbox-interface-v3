@@ -44,7 +44,8 @@ const COPY = {
     amm: 'Dedicated NFT AMM', ammActive: 'AMM active', ammWaiting: 'Waiting for official token listing',
     activateAmm: 'Activate AMM', inventory: 'NFT inventory', reserve: 'Community Token reserve', tradeAmount: 'Community Token per trade',
     normalFee: 'Normal BNB fee', specificFee: 'Specific NFT BNB fee', buyNext: 'Buy oldest NFT',
-    buy: 'Buy this NFT', sell: 'Sell to AMM', approveAmmToken: 'Approve AMM token', approveNft: 'Approve NFT sale',
+    buy: 'Buy this NFT', sell: 'Sell to AMM', approveAmmToken: 'Approve AMM token', approveNft: 'Approve NFT, then sell',
+    approveBeforeSell: 'Approve the AMM first; the Sell button will become available after confirmation.',
     transferWarning: 'AMM trades transfer the NFT, disable index mining, and retain only 80% of its index weight per transfer.',
     stakeTransferWarning: 'The staked principal and its index-mining weight follow the NFT when it is transferred.',
     emptyInventory: 'The AMM has no NFT inventory.', rankings: 'Holder ranking', activity: 'Recent activity',
@@ -78,7 +79,8 @@ const COPY = {
     amm: '专属 NFT AMM', ammActive: 'AMM 已激活', ammWaiting: '等待官方代币上市',
     activateAmm: '激活 AMM', inventory: 'NFT 库存', reserve: '社区代币储备', tradeAmount: '每次交易社区代币数量',
     normalFee: '普通交易 BNB 费用', specificFee: '指定 NFT BNB 费用', buyNext: '买入队首 NFT',
-    buy: '买入该 NFT', sell: '出售给 AMM', approveAmmToken: '授权 AMM 使用代币', approveNft: '授权出售 NFT',
+    buy: '买入该 NFT', sell: '出售给 AMM', approveAmmToken: '授权 AMM 使用代币', approveNft: '授权 NFT，随后出售',
+    approveBeforeSell: '需要先授权 AMM 接收该 NFT；授权确认后即可点击“出售给 AMM”。',
     transferWarning: 'AMM 交易会转移 NFT、停用指数挖矿，并在每次转移时只保留 80% 的指数权重。',
     stakeTransferWarning: 'NFT 转移时，已质押本金及对应指数挖矿权重会随 NFT 一并转移。',
     emptyInventory: 'AMM 当前没有 NFT 库存。', rankings: '持有人排行', activity: '最近动态',
@@ -140,8 +142,24 @@ function toBigInt(value, fallback = 0n) {
   }
 }
 
-function svgDataUrl(svg) {
-  return svg ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` : '';
+function nftArtworkUrl(svg) {
+  if (!svg) return '';
+  const imageHref = svg.match(/<image\b[^>]*(?:href|xlink:href)\s*=\s*["']([^"']+)["']/i)?.[1]
+    ?.replaceAll('&amp;', '&');
+  if (/^https?:\/\//i.test(imageHref || '')) return imageHref;
+  if (/^ipfs:\/\//i.test(imageHref || '')) {
+    return `https://ipfs.io/ipfs/${imageHref.slice('ipfs://'.length)}`;
+  }
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+}
+
+function NftArtwork({ src, alt, fallback }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [src]);
+  if (!src || failed) {
+    return <div className="index-broker-image-placeholder">{fallback}</div>;
+  }
+  return <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
 }
 
 function withFeeBuffer(value) {
@@ -606,7 +624,7 @@ export default function IndexBrokerNFTPoolCard({
         return {
           tokenId,
           info,
-          image: svgDataUrl(nftData[`nft-svg:${key}`] || ''),
+          image: nftArtworkUrl(nftData[`nft-svg:${key}`] || ''),
           approved: nftData[`nft-approved:${key}`] || ethers.ZeroAddress,
         };
       };
@@ -973,7 +991,7 @@ export default function IndexBrokerNFTPoolCard({
                 const saleApproved = nft.approved?.toLowerCase() === data.ammAddress.toLowerCase();
                 return (
                   <article className="index-broker-nft" key={id}>
-                    {nft.image ? <img src={nft.image} alt={`${data.name} #${id}`} /> : <div className="index-broker-image-placeholder">NFT #{id}</div>}
+                    <NftArtwork src={nft.image} alt={`${data.name} #${id}`} fallback={`NFT #${id}`} />
                     <div className="index-broker-nft-body">
                       <div className="index-broker-nft-title"><strong>#{id} · Lv.{Number(info.level)}</strong><span>{info.referralCount.toString()} refs</span></div>
                       <div className="index-broker-mining-columns">
@@ -1015,9 +1033,17 @@ export default function IndexBrokerNFTPoolCard({
                           <small>{c.miningBalance}: {formatTokenAmount(data.miningBalance, data.miningToken.decimals)} {data.miningToken.symbol}</small>
                         </div>
                       )}
-                      {data.amm.active && (
+                      {data.ammAddress && (
                         <div className="index-broker-sell-row">
-                          {!saleApproved ? <button className="btn btn-secondary btn-xs" disabled={busy} onClick={() => approveNftSale(nft)}>{c.approveNft}</button> : <button className="btn btn-danger btn-xs" disabled={busy || data.amm.tokenReserve < data.amm.tokensPerNFT} onClick={() => sellNft(nft)}>{c.sell}</button>}
+                          {!saleApproved && <button className="btn btn-secondary btn-xs" disabled={busy || !data.amm.active} onClick={() => approveNftSale(nft)}>{c.approveNft}</button>}
+                          <button
+                            className="btn btn-danger btn-xs"
+                            disabled={busy || !data.amm.active || !saleApproved || data.amm.tokenReserve < data.amm.tokensPerNFT}
+                            onClick={() => sellNft(nft)}
+                          >
+                            {c.sell}
+                          </button>
+                          {!saleApproved && <small>{c.approveBeforeSell}</small>}
                         </div>
                       )}
                     </div>
@@ -1089,7 +1115,7 @@ export default function IndexBrokerNFTPoolCard({
             <div className="index-broker-inventory-grid">
               {inventory.map(nft => (
                 <article key={nft.tokenId.toString()}>
-                  {nft.image ? <img src={nft.image} alt={`${data.name} #${nft.tokenId}`} /> : <div className="index-broker-image-placeholder">NFT #{nft.tokenId.toString()}</div>}
+                  <NftArtwork src={nft.image} alt={`${data.name} #${nft.tokenId}`} fallback={`NFT #${nft.tokenId.toString()}`} />
                   <strong>#{nft.tokenId.toString()} · Lv.{Number(nft.info.level)}</strong>
                   {isConnected && data.amm.active && !ammApprovalNeeded && <button className="btn btn-secondary btn-xs" disabled={busy} onClick={() => buyNft(nft.tokenId)}>{c.buy}</button>}
                 </article>

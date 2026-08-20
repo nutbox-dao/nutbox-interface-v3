@@ -146,8 +146,7 @@
   background: rgba(8, 9, 16, 0.52);
 }
 
-.index-broker-nft > img,
-.index-broker-image-placeholder {
+.index-broker-nft > img {
   display: block;
   width: 100%;
   aspect-ratio: 1;
@@ -158,8 +157,13 @@
 .index-broker-image-placeholder {
   display: grid;
   place-items: center;
+  width: 100%;
+  min-height: 160px;
+  padding: var(--space-4);
+  background: radial-gradient(circle at 30% 20%, rgba(245, 211, 111, 0.18), transparent 55%), #0c0d16;
   color: rgba(245, 211, 111, 0.7);
   font-weight: 700;
+  text-align: center;
 }
 
 .index-broker-nft-body {
@@ -218,6 +222,11 @@
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-top: var(--space-3);
+}
+
+.index-broker-sell-row small {
+  flex-basis: 100%;
+  color: var(--color-text-tertiary);
 }
 
 .index-broker-reveal-status {
@@ -301,11 +310,15 @@
   background: rgba(255, 255, 255, 0.025);
 }
 
-.index-broker-inventory-grid img,
-.index-broker-inventory-grid .index-broker-image-placeholder {
+.index-broker-inventory-grid img {
   width: 100%;
   aspect-ratio: 1;
   object-fit: cover;
+}
+
+.index-broker-inventory-grid .index-broker-image-placeholder {
+  width: 100%;
+  min-height: 112px;
 }
 
 .index-broker-inventory-grid strong,
