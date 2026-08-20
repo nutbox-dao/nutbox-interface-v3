@@ -36,8 +36,10 @@ const COPY = {
     referralRate: 'Public-mint referral', copyReferral: 'Copy referral link', referralCopied: 'Referral link copied', referralCopyFailed: 'Could not copy referral link',
     myWeight: 'My community weight', communityRewards: 'Community rewards', claimCommunity: 'Claim community rewards',
     approveMint: 'Approve mint token', mint: 'Mint NFT', referrer: 'Referrer NFT ID (optional)',
-    whitelistMint: 'Your next mint uses a whitelist slot and pays no BNB.',
-    publicMint: 'Public mint pays the exact BNB price plus the Community Token cost.',
+    whitelistMint: 'Your next mint uses a whitelist slot and only requires the Community Token payment.',
+    publicMint: 'Public mint requires both the Community Token and BNB payments shown below.',
+    mintPayment: 'Mint payment',
+    whitelistPaymentOnly: 'Whitelist mint only charges Community Tokens; no BNB mint price is required (gas still applies).',
     mintBalances: 'Wallet balance',
     mintTokenInsufficient: 'Insufficient {symbol}: minting requires {required}, but this wallet has {balance}.',
     mintNativeInsufficient: 'Insufficient {symbol}: public minting requires {required}, and the wallet must also keep some {symbol} for gas. Current balance: {balance}.',
@@ -84,8 +86,10 @@ const COPY = {
     referralRate: '公开 Mint 推荐返佣', copyReferral: '复制推荐链接', referralCopied: '推荐链接已复制', referralCopyFailed: '复制推荐链接失败',
     myWeight: '我的社区挖矿权重', communityRewards: '社区奖励', claimCommunity: '领取社区奖励',
     approveMint: '授权铸造代币', mint: '铸造 NFT', referrer: '推荐 NFT ID（可选）',
-    whitelistMint: '你下一次铸造使用白名单额度，无需支付 BNB。',
-    publicMint: '公开铸造需精确支付 BNB 价格，并同时支付社区代币。',
+    whitelistMint: '你下一次铸造使用白名单额度，只需支付社区代币。',
+    publicMint: '公开铸造需同时支付下方展示的社区代币和 BNB。',
+    mintPayment: '本次铸造支付',
+    whitelistPaymentOnly: '白名单铸造只收取社区代币，无需支付 BNB 铸造价格（仍需预留少量 BNB 支付 Gas）。',
     mintBalances: '钱包余额',
     mintTokenInsufficient: '{symbol} 余额不足：铸造需要 {required}，当前只有 {balance}。',
     mintNativeInsufficient: '{symbol} 余额不足：公开铸造需要 {required}，并且还要预留少量 {symbol} 支付 Gas；当前余额为 {balance}。',
@@ -1288,9 +1292,11 @@ export default function IndexBrokerNFTPoolCard({
   );
 
   const copyReferralLink = async tokenId => {
-    const url = new URL(window.location.href);
-    url.hash = '';
-    url.searchParams.delete('chainId');
+    const detailPath = getChainPath(
+      network.id,
+      `community/${communityAddress}/pool/${pool.id}`,
+    );
+    const url = new URL(detailPath, window.location.origin);
     url.searchParams.set('referrerTokenId', tokenId.toString());
     if (await copyToClipboard(url.toString())) {
       toast.success(c.referralCopied);
@@ -1615,6 +1621,17 @@ export default function IndexBrokerNFTPoolCard({
             <div>
               <h3>{c.mint}</h3>
               <p>{mintUsesWhitelist ? c.whitelistMint : c.publicMint}</p>
+              <div className={`index-broker-mint-costs ${mintUsesWhitelist ? 'is-whitelist' : ''}`}>
+                <span>{c.mintPayment}{language === 'zh' ? '：' : ':'}</span>
+                <strong>{formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}</strong>
+                {!mintUsesWhitelist && (
+                  <>
+                    <i>+</i>
+                    <strong>{formatTokenAmount(data.nativePrice, network.nativeCurrency.decimals)} {network.nativeCurrency.symbol}</strong>
+                  </>
+                )}
+                {mintUsesWhitelist && <small>{c.whitelistPaymentOnly}</small>}
+              </div>
               {requiresSeedReveal && (
                 <div className="index-broker-mint-reveal-warning">
                   <strong>{language === 'zh' ? 'Mint 后必须及时揭图' : 'Reveal promptly after minting'}</strong>

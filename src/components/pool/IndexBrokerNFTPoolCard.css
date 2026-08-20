@@ -384,6 +384,38 @@
   line-height: 1.5;
 }
 
+.index-broker-mint-costs {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: var(--space-3);
+  font-size: var(--font-size-sm);
+}
+
+.index-broker-mint-costs small {
+  flex-basis: 100%;
+}
+
+.index-broker-mint-costs > span {
+  color: var(--color-text-tertiary);
+}
+
+.index-broker-mint-costs > strong {
+  color: var(--color-text-primary);
+}
+
+.index-broker-mint-costs > i {
+  color: var(--color-text-tertiary);
+  font-style: normal;
+}
+
+.index-broker-mint-costs small {
+  color: var(--color-green);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .index-broker-mint-balance {
   margin-top: var(--space-2);
   font-size: 11px;

@@ -393,12 +393,14 @@ export default function NFTMiningPoolCard({
   const canMint = batch.active && !batch.paused && batch.minted < batch.maxSupply;
   const busy = Boolean(actionLoading);
   const walletDataReady = Boolean(account && ownedNFTAccount === account.toLowerCase());
-  const referralReady = walletDataReady;
+  const referralReady = walletDataReady && ownedNFTs.length > 0;
 
   const copyReferralLink = async (tokenId) => {
-    const url = new URL(window.location.href);
-    url.hash = '';
-    url.searchParams.delete('chainId');
+    const detailPath = getChainPath(
+      network.id,
+      `community/${communityAddress}/pool/${pool.id}`,
+    );
+    const url = new URL(detailPath, window.location.origin);
     if (tokenId) {
       url.searchParams.set('referrerTokenId', tokenId.toString());
     } else {
