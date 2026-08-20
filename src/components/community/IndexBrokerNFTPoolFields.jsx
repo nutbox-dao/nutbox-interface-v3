@@ -81,6 +81,7 @@ export default function IndexBrokerNFTPoolFields({
   poolName,
   onPoolNameChange,
   readProvider,
+  multicallAddress,
   templateAddresses,
   defaultPreviewExpanded = false,
   onRendererStatusChange,
@@ -444,6 +445,7 @@ export default function IndexBrokerNFTPoolFields({
             indexMiningTokenAddress={stakeMode ? config.stakingToken : ''}
             language={language}
             readProvider={readProvider}
+            multicallAddress={multicallAddress}
             defaultExpanded={defaultPreviewExpanded}
             onStatusChange={onRendererStatusChange}
           />

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { IndexBrokerNFTRendererABI } from '../../config/abis';
 import { shortenAddress } from '../../utils/helpers';
+import { multicallRead } from '../../utils/multicall';
 
 function randomSeed() {
   return BigInt(ethers.hexlify(ethers.randomBytes(32))).toString();
@@ -15,7 +16,137 @@ function unsignedInteger(value, label) {
   return BigInt(normalized);
 }
 
-function PreviewField({ label, value, onChange, placeholder }) {
+function tokenAmount(value, decimals, label) {
+  const normalized = String(value ?? '').trim();
+  if (!normalized || !/^\d+(?:\.\d+)?$/.test(normalized)) {
+    throw new Error(`${label} must be a token amount`);
+  }
+  try {
+    return ethers.parseUnits(normalized, decimals);
+  } catch (cause) {
+    throw new Error(`${label} exceeds the token precision`, { cause });
+  }
+}
+
+function decodeBase64Utf8(value) {
+  const bytes = Uint8Array.from(atob(value), character => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
+}
+
+function parseTokenImage(tokenUri) {
+  const uri = String(tokenUri || '').trim();
+  if (!uri) return '';
+
+  try {
+    let json;
+    if (uri.startsWith('data:application/json;base64,')) {
+      json = decodeBase64Utf8(uri.slice('data:application/json;base64,'.length));
+    } else if (uri.startsWith('data:application/json,')) {
+      json = decodeURIComponent(uri.slice('data:application/json,'.length));
+    } else if (uri.startsWith('{')) {
+      json = uri;
+    } else {
+      return '';
+    }
+    return String(JSON.parse(json).image || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function previewImageUris(uri) {
+  const value = String(uri || '').trim();
+  if (value.startsWith('ipfs://')) {
+    const path = value.slice('ipfs://'.length).replace(/^ipfs\//, '');
+    const [cid, ...segments] = path.split('/');
+    const suffix = segments.length ? `/${segments.join('/')}` : '';
+    return [
+      ...(cid && /^[\da-z]+$/i.test(cid) ? [`https://${cid}.ipfs.4everland.io${suffix}`] : []),
+      `https://ipfs.io/ipfs/${path}`,
+      `https://dweb.link/ipfs/${path}`,
+    ];
+  }
+  if (/^https?:\/\//i.test(value) || /^data:image\//i.test(value)) return [value];
+  return [];
+}
+
+function extractSvgImage(svg) {
+  try {
+    const document = new DOMParser().parseFromString(String(svg || ''), 'image/svg+xml');
+    const image = document.querySelector('image');
+    return String(image?.getAttribute('href') || image?.getAttribute('xlink:href') || '').trim();
+  } catch {
+    return '';
+  }
+}
+
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function preloadImage(source, signal, timeoutMs = 12_000) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    const cleanup = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', abort);
+      image.onload = null;
+      image.onerror = null;
+    };
+    const abort = () => {
+      cleanup();
+      image.src = '';
+      reject(new Error('Image load aborted'));
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      image.src = '';
+      reject(new Error('Image load timed out'));
+    }, timeoutMs);
+    image.onload = () => {
+      cleanup();
+      resolve(source);
+    };
+    image.onerror = () => {
+      cleanup();
+      reject(new Error('Image load failed'));
+    };
+    if (signal?.aborted) {
+      abort();
+      return;
+    }
+    signal?.addEventListener('abort', abort, { once: true });
+    image.src = source;
+  });
+}
+
+async function firstLoadableImage(candidates, parentSignal) {
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  parentSignal?.addEventListener('abort', abort, { once: true });
+  try {
+    return await Promise.any(candidates.map(source => preloadImage(source, controller.signal)));
+  } catch (cause) {
+    throw new Error('All preview image sources failed', { cause });
+  } finally {
+    controller.abort();
+    parentSignal?.removeEventListener('abort', abort);
+  }
+}
+
+function compatibilityErrorMessage(error, zh) {
+  const code = error?.code || error?.info?.error?.code || error?.cause?.code;
+  if (['TIMEOUT', 'NETWORK_ERROR', 'SERVER_ERROR'].includes(code)) {
+    return zh
+      ? '验证 Renderer 时 RPC 请求失败，请稍后重试'
+      : 'The RPC request failed while validating the Renderer; please retry';
+  }
+  return zh
+    ? 'Renderer 必须兼容 renderSVG、renderTokenURI 和 renderContractURI'
+    : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI';
+}
+
+function PreviewField({ label, value, onChange, placeholder, inputMode = 'numeric' }) {
   return (
     <div className="input-group">
       <label>{label}</label>
@@ -24,7 +155,7 @@ function PreviewField({ label, value, onChange, placeholder }) {
         value={value}
         onChange={event => onChange(event.target.value)}
         placeholder={placeholder}
-        inputMode="numeric"
+        inputMode={inputMode}
         spellCheck="false"
       />
     </div>
@@ -39,6 +170,7 @@ export default function IndexBrokerRendererPreview({
   indexMiningTokenAddress,
   language,
   readProvider,
+  multicallAddress,
   defaultExpanded = false,
   onStatusChange,
 }) {
@@ -57,7 +189,7 @@ export default function IndexBrokerRendererPreview({
     miningActive: true,
     indexMiningActive: true,
   });
-  const [preview, setPreview] = useState({ loading: false, image: '', address: '', error: '' });
+  const [preview, setPreview] = useState({ loading: false, image: '', imageCandidates: [], address: '', error: '' });
   const [compatibility, setCompatibility] = useState({ loading: false, valid: false, address: '', error: '' });
   const [unitContext, setUnitContext] = useState({ loading: false, decimals: tokenDecimals, error: '' });
   const rendererAddress = String(customRenderer || '').trim() || String(defaultRenderer || '').trim();
@@ -99,7 +231,7 @@ export default function IndexBrokerRendererPreview({
   }, [compatibility, onStatusChange]);
 
   useEffect(() => {
-    if (!readProvider || !rendererAddress || !ethers.isAddress(rendererAddress)) {
+    if (!readProvider || !multicallAddress || !rendererAddress || !ethers.isAddress(rendererAddress)) {
       setCompatibility({ loading: false, valid: false, address: rendererAddress, error: '' });
       return undefined;
     }
@@ -108,8 +240,6 @@ export default function IndexBrokerRendererPreview({
     setCompatibility({ loading: true, valid: false, address: rendererAddress, error: '' });
     const timer = setTimeout(async () => {
       try {
-        if (await readProvider.getCode(rendererAddress) === '0x') throw new Error('Renderer has no contract code');
-        const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, readProvider);
         const canonicalParams = {
           collectionName: poolName.trim() || 'Index Broker Compatibility Check',
           tokenId: 1n,
@@ -123,10 +253,28 @@ export default function IndexBrokerRendererPreview({
           miningActive: true,
           indexMiningActive: true,
         };
-        const [svg, tokenUri, contractUri] = await Promise.all([
-          renderer.renderSVG(canonicalParams),
-          renderer.renderTokenURI(canonicalParams),
-          renderer.renderContractURI(canonicalParams.collectionName),
+        const { svg, tokenUri, contractUri } = await multicallRead(readProvider, multicallAddress, [
+          {
+            key: 'svg',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderSVG',
+            args: [canonicalParams],
+          },
+          {
+            key: 'tokenUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderTokenURI',
+            args: [canonicalParams],
+          },
+          {
+            key: 'contractUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderContractURI',
+            args: [canonicalParams.collectionName],
+          },
         ]);
         if (!String(svg).trimStart().startsWith('<svg') || !String(tokenUri).trim() || !String(contractUri).trim()) {
           throw new Error('Renderer returned invalid metadata');
@@ -139,9 +287,7 @@ export default function IndexBrokerRendererPreview({
           loading: false,
           valid: false,
           address: rendererAddress,
-          error: zh
-            ? 'Renderer 必须兼容 renderSVG、renderTokenURI 和 renderContractURI'
-            : 'The Renderer must support renderSVG, renderTokenURI, and renderContractURI',
+          error: compatibilityErrorMessage(error, zh),
         });
       }
     }, 450);
@@ -150,14 +296,15 @@ export default function IndexBrokerRendererPreview({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
+  }, [multicallAddress, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
 
   useEffect(() => {
     if (!expanded) return undefined;
-    if (!readProvider || !rendererAddress) {
+    if (!readProvider || !multicallAddress || !rendererAddress) {
       setPreview({
         loading: false,
         image: '',
+        imageCandidates: [],
         address: rendererAddress,
         error: zh ? '正在读取默认 Renderer 地址…' : 'Resolving the default Renderer address…',
       });
@@ -167,6 +314,7 @@ export default function IndexBrokerRendererPreview({
       setPreview({
         loading: false,
         image: '',
+        imageCandidates: [],
         address: rendererAddress,
         error: zh ? '请输入有效的 Renderer 地址' : 'Enter a valid Renderer address',
       });
@@ -174,11 +322,13 @@ export default function IndexBrokerRendererPreview({
     }
 
     let cancelled = false;
+    const requestController = new AbortController();
     setPreview(current => ({ ...current, loading: true, address: rendererAddress, error: '' }));
     const timer = setTimeout(async () => {
       try {
         const level = unsignedInteger(params.level, 'Level');
         if (level > 4_294_967_295n) throw new Error('Level exceeds uint32');
+        const indexMiningTokenDecimals = Number.isInteger(unitContext.decimals) ? unitContext.decimals : 18;
         const renderParams = {
           collectionName: params.collectionName.trim() || poolName.trim() || 'Index Broker Preview',
           tokenId: unsignedInteger(params.tokenId, 'Token ID'),
@@ -186,7 +336,11 @@ export default function IndexBrokerRendererPreview({
           referralCount: unsignedInteger(params.referralCount, 'Referral count'),
           referrerTokenId: unsignedInteger(params.referrerTokenId, 'Referrer token ID'),
           miningWeight: unsignedInteger(params.miningWeight, 'Mining weight'),
-          indexMiningWeight: unsignedInteger(params.indexMiningWeight, 'Index mining weight'),
+          indexMiningWeight: tokenAmount(
+            params.indexMiningWeight,
+            indexMiningTokenDecimals,
+            'Index mining weight',
+          ),
           indexMiningTokenUnit: unsignedInteger(
             params.indexMiningTokenUnit || tokenUnitPlaceholder,
             'Index mining token unit',
@@ -195,13 +349,38 @@ export default function IndexBrokerRendererPreview({
           miningActive: params.miningActive,
           indexMiningActive: params.indexMiningActive,
         };
-        const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, readProvider);
-        const svg = await renderer.renderSVG(renderParams);
+        const { svg, tokenUri } = await multicallRead(readProvider, multicallAddress, [
+          {
+            key: 'svg',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderSVG',
+            args: [renderParams],
+          },
+          {
+            key: 'tokenUri',
+            target: rendererAddress,
+            contractInterface: IndexBrokerNFTRendererABI,
+            functionName: 'renderTokenURI',
+            args: [renderParams],
+          },
+        ]);
         if (!String(svg).trimStart().startsWith('<svg')) throw new Error('Renderer returned invalid SVG');
+        const externalSvgImage = extractSvgImage(svg);
+        const imageCandidates = unique([
+          ...previewImageUris(parseTokenImage(tokenUri)),
+          ...previewImageUris(externalSvgImage),
+          ...(!externalSvgImage ? [`data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`] : []),
+        ]);
+        if (imageCandidates.length === 0) throw new Error('Renderer returned no supported preview image');
+        if (cancelled) return;
+        const image = await firstLoadableImage(imageCandidates, requestController.signal);
         if (!cancelled) {
+          const orderedCandidates = [image, ...imageCandidates.filter(candidate => candidate !== image)];
           setPreview({
             loading: false,
-            image: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`,
+            image,
+            imageCandidates: orderedCandidates,
             address: rendererAddress,
             error: '',
           });
@@ -209,13 +388,19 @@ export default function IndexBrokerRendererPreview({
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to preview Index Broker Renderer:', error);
+          const imageLoadFailed = error.message === 'All preview image sources failed';
           setPreview({
             loading: false,
             image: '',
+            imageCandidates: [],
             address: rendererAddress,
-            error: zh
-              ? '无法使用这些参数调用 Renderer，请检查各字段和合约地址'
-              : 'Could not call the Renderer with these parameters; check the fields and contract address',
+            error: imageLoadFailed
+              ? (zh
+                ? '图片资源加载失败，请检查 IPFS 网关连接'
+                : 'The image could not be loaded; check the IPFS gateway connection')
+              : (zh
+                ? '无法使用这些参数调用 Renderer，请检查各字段和合约地址'
+                : 'Could not call the Renderer with these parameters; check the fields and contract address'),
           });
         }
       }
@@ -223,9 +408,10 @@ export default function IndexBrokerRendererPreview({
 
     return () => {
       cancelled = true;
+      requestController.abort();
       clearTimeout(timer);
     };
-  }, [expanded, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, zh]);
+  }, [expanded, multicallAddress, params, poolName, readProvider, rendererAddress, tokenUnitPlaceholder, unitContext.decimals, zh]);
 
   return (
     <div className="index-broker-renderer-preview nft-pool-form-wide">
@@ -288,7 +474,12 @@ export default function IndexBrokerRendererPreview({
             <PreviewField label={zh ? '推荐数量' : 'Referral count'} value={params.referralCount} onChange={value => update('referralCount', value)} />
             <PreviewField label={zh ? '推荐人 NFT ID' : 'Referrer NFT ID'} value={params.referrerTokenId} onChange={value => update('referrerTokenId', value)} />
             <PreviewField label={zh ? '社区挖矿权重' : 'Community mining weight'} value={params.miningWeight} onChange={value => update('miningWeight', value)} />
-            <PreviewField label={zh ? '指数挖矿权重' : 'Index mining weight'} value={params.indexMiningWeight} onChange={value => update('indexMiningWeight', value)} />
+            <PreviewField
+              label={zh ? '指数挖矿权重（代币数量）' : 'Index mining weight (tokens)'}
+              value={params.indexMiningWeight}
+              onChange={value => update('indexMiningWeight', value)}
+              inputMode="decimal"
+            />
             <PreviewField
               label={zh ? '指数挖矿代币单位' : 'Index mining token unit'}
               value={params.indexMiningTokenUnit}
@@ -322,7 +513,25 @@ export default function IndexBrokerRendererPreview({
             ) : preview.error ? (
               <div className="renderer-preview-status is-error">{preview.error}</div>
             ) : preview.image ? (
-              <img src={preview.image} alt={zh ? 'Index Broker Renderer 预览' : 'Index Broker Renderer preview'} />
+              <img
+                src={preview.image}
+                alt={zh ? 'Index Broker Renderer 预览' : 'Index Broker Renderer preview'}
+                onError={() => {
+                  setPreview(current => {
+                    const currentIndex = current.imageCandidates.indexOf(current.image);
+                    const nextImage = current.imageCandidates[currentIndex + 1];
+                    return nextImage
+                      ? { ...current, image: nextImage }
+                      : {
+                        ...current,
+                        image: '',
+                        error: zh
+                          ? '图片资源加载失败，请检查 IPFS 网关连接'
+                          : 'The image could not be loaded; check the IPFS gateway connection',
+                      };
+                  });
+                }}
+              />
             ) : null}
           </div>
         </div>
