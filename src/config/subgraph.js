@@ -417,9 +417,19 @@ export async function registerBasketChildPool(parentPool, txHash, chainId = DEFA
   return data.child;
 }
 
-export async function registerBasketMiningPool(txHash, chainId = DEFAULT_CHAIN_ID) {
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// Receipt 尚未被后端 RPC 看到时可以重试；验签失败（422 等）不要重试。
+function isRetryablePoolRegisterError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return /not found|pending|receipt|timeout|network|failed to fetch|502|503|429/.test(message);
+}
+
+async function registerMiningPoolOnce(txHash, chainId) {
   const data = await fetchAPI(
-    '/mining/basket-pools/register',
+    '/mining/pools/register',
     chainId,
     {
       method: 'POST',
@@ -431,6 +441,30 @@ export async function registerBasketMiningPool(txHash, chainId = DEFAULT_CHAIN_I
     ...data,
     pool: data.pool ? mapPool(data.pool, chainId) : null,
   };
+}
+
+// 五类矿池创建成功后统一走这个接口。后端用 txHash 验交易 / Factory / Community / 创建事件 / 池状态，再幂等入库。
+export async function registerMiningPool(
+  txHash,
+  chainId = DEFAULT_CHAIN_ID,
+  { retries = 3, retryDelayMs = 1000 } = {},
+) {
+  let lastError;
+  for (let attempt = 0; attempt < retries; attempt += 1) {
+    try {
+      return await registerMiningPoolOnce(txHash, chainId);
+    } catch (error) {
+      lastError = error;
+      if (!isRetryablePoolRegisterError(error) || attempt === retries - 1) throw error;
+      await sleep(retryDelayMs);
+    }
+  }
+  throw lastError;
+}
+
+// 旧 Basket 专用入口，内部转发到统一注册接口。
+export async function registerBasketMiningPool(txHash, chainId = DEFAULT_CHAIN_ID) {
+  return registerMiningPool(txHash, chainId);
 }
 
 function buildQuery(params = {}) {

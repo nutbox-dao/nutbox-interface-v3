@@ -433,6 +433,7 @@ export const translations = {
       btnCreating: 'Creating...',
       toastCreating: 'Creating pool...',
       toastSuccess: 'Pool created successfully!',
+      toastWaitingIndex: 'The pool was created on-chain and will appear after indexing',
       operationFee: 'Operation Fee: {fee} {symbol}',
     },
     inject: {
@@ -925,6 +926,7 @@ export const translations = {
       btnCreating: '部署中...',
       toastCreating: '正在向社区添加新矿池...',
       toastSuccess: '矿池创建成功！',
+      toastWaitingIndex: '矿池已在链上创建，后台索引完成后会自动显示',
       operationFee: '操作服务费: {fee} {symbol}',
     },
     inject: {

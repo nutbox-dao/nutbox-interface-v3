@@ -15,7 +15,7 @@ import {
 } from '../../config/abis';
 import { getPoolTypeLabel, getPoolTypeBadgeClass, shortenAddress } from '../../utils/helpers';
 import { useLanguage } from '../../contexts/LanguageContext';
-import { registerBasketMiningPool } from '../../config/subgraph';
+import { registerMiningPool } from '../../config/subgraph';
 import IndexBrokerNFTPoolFields from './IndexBrokerNFTPoolFields';
 import {
   DEFAULT_INDEX_BROKER_CONFIG,
@@ -1732,53 +1732,17 @@ export default function AddPoolModal({ communityAddress, communityTokenAddress, 
       );
 
       toast.info(t('addPool.toastCreating'));
-      const receipt = await tx.wait();
+      await tx.wait();
       draftCompletedRef.current = true;
       removeAddPoolDraft(draftStorageKey);
 
+      // 链上已成功。注册失败只提示等索引，不能当成创建失败。
       let registration = null;
-      if (poolType === 'basket-tvl') {
-        try {
-          registration = await registerBasketMiningPool(tx.hash, network.id);
-        } catch (registrationError) {
-          console.error('Register Basket TVL pool failed:', registrationError);
-          toast.info(language === 'zh'
-            ? '矿池已在链上创建，后台索引完成后会自动显示'
-            : 'The pool was created on-chain and will appear after indexing');
-        }
-      } else if (poolType === 'index-broker-nft') {
-        const factoryInterface = new ethers.Interface(IndexBrokerNFTFactoryABI);
-        const created = receipt.logs
-          .filter(log => log.address.toLowerCase() === contracts.IndexBrokerNFTFactory.toLowerCase())
-          .map(log => {
-            try { return factoryInterface.parseLog(log); } catch { return null; }
-          })
-          .find(parsed => parsed?.name === 'IndexBrokerNFTCreated');
-        if (created) {
-          const createdPool = created.args.pool;
-          registration = {
-            source: 'transaction-receipt',
-            pool: {
-              id: createdPool,
-              index: null,
-              poolIndex: null,
-              name: created.args.name || poolName,
-              status: 'OPENED',
-              poolType: 'INDEX_BROKER_NFT',
-              totalAmount: '0',
-              asset: communityTokenAddress,
-              ratio: ratioArr[ratioArr.length - 1],
-              stakersCount: 0,
-              lockDuration: null,
-              poolFactory: contracts.IndexBrokerNFTFactory,
-              createdAt: null,
-            },
-            ratios: [
-              ...activePools.map((pool, index) => ({ pool: pool.id, ratio: ratioArr[index] })),
-              { pool: createdPool, ratio: ratioArr[ratioArr.length - 1] },
-            ],
-          };
-        }
+      try {
+        registration = await registerMiningPool(tx.hash, network.id);
+      } catch (registrationError) {
+        console.error('Register mining pool failed:', registrationError);
+        toast.info(t('addPool.toastWaitingIndex'));
       }
 
       toast.success(t('addPool.toastSuccess'));
