@@ -40,7 +40,7 @@ export default function IndexBrokerNFTDetailWorkspace({
   const activeSection = current?.value || 'mint-amm';
 
   return (
-    <div className="index-broker-detail-workspace">
+    <div className="index-broker-detail-workspace" data-active-section={activeSection}>
       <div className="index-broker-detail-navigation glass-card">
         <div className="index-broker-detail-tabs" role="tablist" aria-label={language === 'zh' ? 'NFT 详情功能' : 'NFT detail features'}>
           {sections.map(item => (

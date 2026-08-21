@@ -56,8 +56,12 @@
 }
 
 .index-broker-detail-workspace {
+  --detail-tab-bar-surface: #0a0c22;
+  --detail-tab-surface: #111633;
+  --detail-content-surface: #111633;
+  --detail-frame-border: rgba(124, 58, 237, 0.38);
   display: grid;
-  gap: var(--space-4);
+  gap: 0;
 }
 
 .index-broker-detail-workspace > .index-broker-organized {
@@ -66,34 +70,56 @@
 
 .index-broker-detail-navigation {
   order: 2;
-  position: sticky;
+  position: relative;
   z-index: 8;
-  top: 72px;
-  overflow: hidden;
-  padding: 10px;
-  border-color: rgba(124, 58, 237, 0.42);
-  background:
-    linear-gradient(135deg, rgba(124, 58, 237, 0.09), rgba(14, 165, 233, 0.045)),
-    rgba(10, 11, 28, 0.96);
-  box-shadow:
-    0 16px 36px rgba(2, 6, 23, 0.28),
-    inset 0 1px 0 rgba(255, 255, 255, 0.035);
+  top: auto;
+  overflow: visible;
+  padding: 12px 18px 0;
+  border: 1px solid var(--detail-frame-border);
+  border-top: 0;
+  border-bottom: 0;
+  border-radius: 0;
+  background: var(--detail-tab-bar-surface);
+  box-shadow: none;
   backdrop-filter: blur(16px);
+}
+
+.index-broker-detail-navigation:hover {
+  border-color: var(--detail-frame-border);
+  background: var(--detail-tab-bar-surface);
+  box-shadow: none;
+  transform: none;
 }
 
 .index-broker-detail-workspace .index-broker-overview-card {
   position: relative;
   order: 1;
   overflow: hidden;
-  padding: var(--space-4);
+  margin-bottom: 0;
+  padding: var(--space-4) var(--space-4) 0;
+  border-color: var(--detail-frame-border);
+  border-bottom: 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--detail-tab-bar-surface);
+  box-shadow: none;
+}
+
+.index-broker-detail-workspace .index-broker-overview-card:hover {
+  border-color: var(--detail-frame-border);
+  background: var(--detail-tab-bar-surface);
+  box-shadow: none;
+  transform: none;
 }
 
 .index-broker-detail-workspace .index-broker-overview-card::before {
-  content: '';
-  position: absolute;
-  inset: 0 0 auto;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, #f5d36f, #8a5cf6, transparent);
+  display: none;
+}
+
+.index-broker-detail-workspace .index-broker-overview-card .index-broker-compact-header {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .index-broker-detail-workspace > .index-broker-organized > :not(.index-broker-overview-card),
@@ -103,19 +129,106 @@
   order: 3;
 }
 
+/* The first visible section shares its top edge with the Chrome-style tab strip. */
+.index-broker-detail-workspace > .index-broker-organized > :nth-child(2) {
+  margin-top: 0;
+  border-top-color: transparent;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
+.index-broker-detail-workspace > .index-broker-organized > .index-broker-mint-panel:nth-child(2) {
+  border-color: var(--detail-frame-border);
+  border-top: 0;
+  background: var(--detail-content-surface);
+}
+
+/* Mint and AMM are one continuous tab panel on the organized detail page. */
+.index-broker-detail-workspace[data-active-section='mint-amm']
+  > .index-broker-organized
+  > .index-broker-mint-panel:nth-child(2) {
+  border-bottom: 0;
+  border-bottom-right-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+.index-broker-detail-workspace[data-active-section='mint-amm'] > .index-broker-amm-trade {
+  margin-top: 0;
+  padding: var(--space-6);
+  border-color: var(--detail-frame-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--detail-content-surface);
+  box-shadow: none;
+}
+
+.index-broker-detail-workspace[data-active-section='mint-amm']
+  > .index-broker-amm-trade
+  > .index-broker-amm-trade-frame {
+  width: min(100%, 960px);
+  margin: 0 auto;
+  border: 1px solid rgba(138, 92, 246, 0.3);
+  border-radius: var(--radius-xl);
+  background: rgba(8, 10, 28, 0.38);
+}
+
+.index-broker-detail-workspace[data-active-section='mint-amm'] > .index-broker-amm-trade:hover {
+  border-color: var(--detail-frame-border);
+  border-top: 0;
+  background: var(--detail-content-surface);
+  box-shadow: none;
+  transform: none;
+}
+
+.index-broker-detail-workspace > .index-broker-organized > .index-broker-about:nth-child(2) {
+  padding: var(--space-5);
+  border: 1px solid var(--detail-frame-border);
+  border-top: 0;
+  border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  background: var(--detail-content-surface);
+}
+
+.index-broker-detail-workspace[data-active-section='holdings'] > .index-broker-owned-feature,
+.index-broker-detail-workspace[data-active-section='mining'] > .index-broker-owned-feature,
+.index-broker-detail-workspace[data-active-section='referral'] > .index-broker-referral,
+.index-broker-detail-workspace[data-active-section='rewards'] > .index-broker-rewards,
+.index-broker-detail-workspace[data-active-section='admin'] > .index-broker-admin {
+  margin-top: 0;
+  border-color: var(--detail-frame-border);
+  border-top: 0;
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  background: var(--detail-content-surface);
+}
+
+.index-broker-detail-workspace > .index-broker-organized > .index-broker-mint-panel:nth-child(2):hover,
+.index-broker-detail-workspace > .index-broker-organized > .index-broker-about:nth-child(2):hover,
+.index-broker-detail-workspace[data-active-section='holdings'] > .index-broker-owned-feature:hover,
+.index-broker-detail-workspace[data-active-section='mining'] > .index-broker-owned-feature:hover,
+.index-broker-detail-workspace[data-active-section='referral'] > .index-broker-referral:hover,
+.index-broker-detail-workspace[data-active-section='rewards'] > .index-broker-rewards:hover,
+.index-broker-detail-workspace[data-active-section='admin'] > .index-broker-admin:hover {
+  background: var(--detail-content-surface);
+  transform: none;
+}
+
 .index-broker-detail-tabs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
-  gap: 8px;
+  align-items: end;
+  gap: 6px;
+  min-width: 0;
 }
 
 .index-broker-detail-tabs button {
+  position: relative;
+  z-index: 1;
   min-width: 0;
-  min-height: 48px;
-  padding: 12px 10px;
-  border: 1px solid rgba(124, 58, 237, 0.18);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.026);
+  min-height: 52px;
+  padding: 13px 12px 15px;
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  background: transparent;
   color: var(--color-text-secondary);
   cursor: pointer;
   font: inherit;
@@ -131,11 +244,10 @@
 }
 
 .index-broker-detail-tabs button:hover {
-  transform: translateY(-1px);
-  border-color: rgba(124, 58, 237, 0.48);
+  transform: none;
   color: var(--color-text-primary);
-  background: rgba(124, 58, 237, 0.1);
-  box-shadow: 0 6px 16px rgba(30, 27, 75, 0.18);
+  background: rgba(124, 58, 237, 0.08);
+  box-shadow: none;
 }
 
 .index-broker-detail-tabs button:focus-visible {
@@ -144,13 +256,45 @@
 }
 
 .index-broker-detail-tabs button.active {
-  transform: none;
-  border-color: rgba(255, 255, 255, 0.72);
-  color: #fff;
-  background: linear-gradient(135deg, #7c3aed, #0e8ed8);
-  box-shadow:
-    0 10px 24px rgba(55, 48, 163, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  z-index: 3;
+  bottom: -1px;
+  border: 0;
+  color: #f5d36f;
+  background: var(--detail-tab-surface);
+  box-shadow: none;
+  text-shadow: 0 0 14px rgba(245, 211, 111, 0.28);
+}
+
+.index-broker-detail-tabs button.active:focus-visible {
+  outline: 0;
+}
+
+.index-broker-detail-tabs button.active::before,
+.index-broker-detail-tabs button.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+}
+
+.index-broker-detail-tabs button.active::before {
+  left: -14px;
+  background: radial-gradient(
+    circle at 0 0,
+    transparent 0 14px,
+    var(--detail-tab-surface) 14.5px
+  );
+}
+
+.index-broker-detail-tabs button.active::after {
+  right: -14px;
+  background: radial-gradient(
+    circle at 100% 0,
+    transparent 0 14px,
+    var(--detail-tab-surface) 14.5px
+  );
 }
 
 @media (max-width: 700px) {
@@ -168,8 +312,13 @@
   }
 
   .index-broker-detail-navigation {
-    top: 64px;
-    padding: 8px;
+    top: auto;
+    overflow: hidden;
+    padding: 8px 10px 0;
+  }
+
+  .index-broker-detail-workspace[data-active-section='mint-amm'] > .index-broker-amm-trade {
+    padding: var(--space-4);
   }
 
   .index-broker-detail-tabs {
@@ -185,7 +334,30 @@
   .index-broker-detail-tabs button {
     flex: 0 0 auto;
     min-height: 44px;
-    padding-right: var(--space-4);
-    padding-left: var(--space-4);
+    padding: 11px var(--space-4) 13px;
+  }
+
+  .index-broker-detail-tabs button.active::before,
+  .index-broker-detail-tabs button.active::after {
+    width: 10px;
+    height: 10px;
+  }
+
+  .index-broker-detail-tabs button.active::before {
+    left: -10px;
+    background: radial-gradient(
+      circle at 0 0,
+      transparent 0 10px,
+      var(--detail-tab-surface) 10.5px
+    );
+  }
+
+  .index-broker-detail-tabs button.active::after {
+    right: -10px;
+    background: radial-gradient(
+      circle at 100% 0,
+      transparent 0 10px,
+      var(--detail-tab-surface) 10.5px
+    );
   }
 }

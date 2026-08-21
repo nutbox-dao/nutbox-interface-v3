@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useToast } from '../../contexts/ToastContext';
@@ -11,6 +11,7 @@ import {
   HourlyTickCalculatorABI,
   IndexBrokerNFTABI,
   IndexBrokerNFTAMMABI,
+  IndexBrokerNFTRendererABI,
   LinearCalculatorABI,
   Multicall3ABI,
 } from '../../config/abis';
@@ -284,6 +285,7 @@ function mergeTransactionRows(current, incoming) {
 
 const POOL_INTERFACE = new ethers.Interface(IndexBrokerNFTABI);
 const AMM_INTERFACE = new ethers.Interface(IndexBrokerNFTAMMABI);
+const RENDERER_INTERFACE = new ethers.Interface(IndexBrokerNFTRendererABI);
 const COMMUNITY_INTERFACE = new ethers.Interface(CommunityABI);
 const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
 const ERC20_INTERFACE = new ethers.Interface(ERC20ABI);
@@ -415,6 +417,42 @@ function nftArtworkUrl(svg) {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 
+function randomUint256() {
+  const value = BigInt(ethers.hexlify(ethers.randomBytes(32)));
+  return value === 0n ? 1n : value;
+}
+
+function indexBrokerRenderParams({
+  collectionName,
+  indexMiningTokenUnit,
+  info,
+  initialMiningWeight = 0n,
+  referrerTokenId = 0n,
+  seed,
+  tokenId,
+}) {
+  return {
+    collectionName,
+    tokenId: toBigInt(tokenId),
+    seed: toBigInt(seed, 1n),
+    referralCount: toBigInt(info?.referralCount),
+    referrerTokenId: toBigInt(info?.referrerTokenId, toBigInt(referrerTokenId)),
+    miningWeight: toBigInt(info?.miningWeight, toBigInt(initialMiningWeight)),
+    indexMiningWeight: toBigInt(info?.indexMiningWeight),
+    indexMiningTokenUnit: toBigInt(indexMiningTokenUnit),
+    level: Number(info?.level || 1),
+    miningActive: info?.miningActive === undefined ? true : Boolean(info.miningActive),
+    indexMiningActive: Boolean(info?.indexMiningActive),
+  };
+}
+
+async function renderIndexBrokerArtwork(rendererAddress, provider, params) {
+  const renderer = new ethers.Contract(rendererAddress, IndexBrokerNFTRendererABI, provider);
+  const svg = await renderer.renderSVG(params);
+  if (!String(svg).trimStart().startsWith('<svg')) throw new Error('Renderer returned invalid SVG');
+  return nftArtworkUrl(svg);
+}
+
 function mintedTokenIdFromReceipt(receipt, poolAddress, recipient) {
   const normalizedPool = String(poolAddress || '').toLowerCase();
   const normalizedRecipient = String(recipient || '').toLowerCase();
@@ -543,6 +581,7 @@ export default function IndexBrokerNFTPoolCard({
     account, getWriteSigner, readProvider, isConnected, connecting, connect, contracts, network,
   } = useWeb3();
   const { language } = useLanguage();
+  const location = useLocation();
   const toast = useToast();
   const c = COPY[language] || COPY.en;
   const requestRef = useRef(0);
@@ -553,10 +592,15 @@ export default function IndexBrokerNFTPoolCard({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionLoading, setActionLoading] = useTimedActionLoading('');
-  const [referrerTokenId, setReferrerTokenId] = useState('');
+  const referrerTokenIdParam = new URLSearchParams(location.search).get('referrerTokenId') || '';
+  const referrerTokenId = /^\d+$/.test(referrerTokenIdParam) && BigInt(referrerTokenIdParam) > 0n
+    ? referrerTokenIdParam
+    : '';
   const [upgradeAmounts, setUpgradeAmounts] = useState({});
   const [indexRewardAmount, setIndexRewardAmount] = useState('');
   const [mintResult, setMintResult] = useState(null);
+  const [mintPreview, setMintPreview] = useState({ items: [], index: 0, loading: false, error: '' });
+  const mintPreviewTimerRef = useRef(null);
   const [mintAttempted, setMintAttempted] = useState(false);
   const [buybackQuote, setBuybackQuote] = useState({
     loading: false,
@@ -566,7 +610,7 @@ export default function IndexBrokerNFTPoolCard({
     error: '',
   });
   const [ammTradeSide, setAmmTradeSide] = useState('buy');
-  const [ammTradeMode, setAmmTradeMode] = useState('swap');
+  const [ammTradeMode, setAmmTradeMode] = useState('mint');
   const [tradeBalanceError, setTradeBalanceError] = useState('');
   const [selectedInventoryTokenId, setSelectedInventoryTokenId] = useState('');
   const [selectedOwnedTokenId, setSelectedOwnedTokenId] = useState('');
@@ -660,14 +704,6 @@ export default function IndexBrokerNFTPoolCard({
   useEffect(() => {
     setTradeBalanceError('');
   }, [ammTradeMode, ammTradeSide, selectedInventoryTokenId]);
-
-  useEffect(() => {
-    if (!detail) return;
-    const value = new URLSearchParams(window.location.search).get('referrerTokenId');
-    if (value && /^\d+$/.test(value) && BigInt(value) > 0n) {
-      setReferrerTokenId(value);
-    }
-  }, [detail, pool.id]);
 
   const loadIndexedInsights = useCallback(async () => {
     const key = `${network.id}:${pool.id.toLowerCase()}`;
@@ -1569,26 +1605,45 @@ export default function IndexBrokerNFTPoolCard({
   };
 
   const loadMintResult = async (tokenId) => {
-    setMintResult({ tokenId, image: '', info: null, loading: true, error: '' });
+    setMintResult({
+      tokenId,
+      image: '',
+      info: null,
+      currentBlock: data.currentBlock,
+      revealSeed: 0n,
+      revealArtworkReady: false,
+      visible: true,
+      loading: true,
+      error: '',
+    });
     try {
       const nft = new ethers.Contract(pool.id, IndexBrokerNFTABI, readProvider);
-      const [info, svg] = await Promise.all([
+      const [info, svg, currentBlock] = await Promise.all([
         nft.getNFTInfo(tokenId),
         nft.tokenSVG(tokenId).catch(() => ''),
+        readProvider.getBlockNumber(),
       ]);
-      setMintResult({
+      setMintResult(current => ({
         tokenId,
         image: nftArtworkUrl(svg),
         info,
+        currentBlock: toBigInt(currentBlock),
+        revealSeed: toBigInt(info.seed),
+        revealArtworkReady: !info.revealPending || toBigInt(info.seed) > 0n,
+        visible: current?.tokenId === tokenId && current.visible === false ? false : true,
         loading: false,
         error: '',
-      });
+      }));
     } catch (error) {
       console.warn('Failed to load newly minted NFT:', error);
       setMintResult({
         tokenId,
         image: '',
         info: null,
+        currentBlock: data.currentBlock,
+        revealSeed: 0n,
+        revealArtworkReady: false,
+        visible: true,
         loading: false,
         error: language === 'zh' ? 'NFT 已铸造，但图片暂时读取失败。' : 'The NFT was minted, but its artwork could not be loaded yet.',
       });
@@ -1619,8 +1674,6 @@ export default function IndexBrokerNFTPoolCard({
       receipt = await tx.wait();
       toast.success(language === 'zh' ? 'NFT 铸造成功' : 'NFT minted');
       setMintAttempted(false);
-      await loadPoolData();
-      onRefresh?.();
     } catch (error) {
       toast.error(error.shortMessage || error.reason || error.message || c.txFailed);
     } finally {
@@ -1646,10 +1699,16 @@ export default function IndexBrokerNFTPoolCard({
         tokenId: 0n,
         image: '',
         info: null,
+        currentBlock: data.currentBlock,
+        revealSeed: 0n,
+        revealArtworkReady: false,
+        visible: true,
         loading: false,
         error: language === 'zh' ? 'NFT 已铸造，但暂时无法识别 Token ID。' : 'The NFT was minted, but its token ID could not be resolved yet.',
       });
     }
+    await loadPoolData();
+    onRefresh?.();
 
     if (requiresSeedReveal) {
       toast.info(language === 'zh'
@@ -1866,8 +1925,13 @@ export default function IndexBrokerNFTPoolCard({
   const requiresSeedReveal = rendererKnown
     && indexBrokerRendererRequiresSeed(data.rendererAddress);
   const mintResultRevealState = requiresSeedReveal && mintResult?.info?.revealPending
-    ? revealWindowState(mintResult.info, data.currentBlock)
+    ? revealWindowState(mintResult.info, mintResult.currentBlock ?? data.currentBlock)
     : null;
+  const mintResultArtworkPending = Boolean(
+    requiresSeedReveal
+    && toBigInt(mintResult?.tokenId) > 0n
+    && !mintResult.revealArtworkReady,
+  );
   const seedRevealNfts = requiresSeedReveal
     ? ownedNfts
       .filter(nft => nft.info?.revealPending)
@@ -1992,6 +2056,269 @@ export default function IndexBrokerNFTPoolCard({
     data.minimumIndexMiningWeight,
   );
   const holdingAprBps = referralAprBps(data.levelRules[0]?.weight || 0n);
+  const mintInitialMiningWeight = data.levelRules[0]?.weight || 0n;
+  const activeMintPreview = mintPreview.items[mintPreview.index] || null;
+
+  useEffect(() => {
+    if (
+      !showMint
+      || !showAmm
+      || !compactDetailLayout
+      || ammTradeSide !== 'buy'
+      || ammTradeMode !== 'mint'
+      || !rendererKnown
+      || !readProvider
+      || !ethers.isAddress(contracts.Multicall3)
+    ) {
+      setMintPreview({ items: [], index: 0, loading: false, error: '' });
+      return undefined;
+    }
+
+    let cancelled = false;
+    let checking = false;
+    let previewTokenId = 0n;
+    const seeds = Array.from({ length: 10 }, randomUint256);
+    const nft = new ethers.Contract(pool.id, IndexBrokerNFTABI, readProvider);
+    setMintPreview({ items: [], index: 0, loading: true, error: '' });
+
+    const refreshNextTokenPreview = async () => {
+      if (checking || cancelled) return;
+      checking = true;
+      try {
+        const nextTokenId = toBigInt(await nft.totalSupply()) + 1n;
+        if (nextTokenId === previewTokenId) return;
+
+        previewTokenId = nextTokenId;
+        setMintPreview({ items: [], index: 0, loading: true, error: '' });
+        const results = await multicallRead(
+          readProvider,
+          contracts.Multicall3,
+          seeds.map((seed, index) => ({
+            key: `mint-preview:${index}`,
+            target: data.rendererAddress,
+            contractInterface: RENDERER_INTERFACE,
+            functionName: 'renderSVG',
+            args: [indexBrokerRenderParams({
+              collectionName: data.name,
+              tokenId: nextTokenId,
+              seed,
+              referrerTokenId: mintUsesWhitelist ? 0n : toBigInt(referrerTokenId),
+              initialMiningWeight: mintInitialMiningWeight,
+              indexMiningTokenUnit: data.minimumIndexMiningWeight,
+            })],
+            allowFailure: true,
+          })),
+        );
+        if (cancelled) return;
+
+        // Do not display an artwork batch if another wallet minted while it was rendering.
+        const verifiedNextTokenId = toBigInt(await nft.totalSupply()) + 1n;
+        if (verifiedNextTokenId !== nextTokenId) {
+          previewTokenId = 0n;
+          return;
+        }
+
+        const items = seeds.map((seed, index) => {
+          const svg = results[`mint-preview:${index}`];
+          if (!String(svg || '').trimStart().startsWith('<svg')) return null;
+          return { seed, image: nftArtworkUrl(svg) };
+        }).filter(Boolean);
+        if (items.length === 0) throw new Error('Renderer returned no preview artwork');
+        setMintPreview({ items, index: 0, loading: false, error: '' });
+      } catch (error) {
+        console.warn('Failed to refresh next NFT previews:', error);
+        previewTokenId = 0n;
+        if (cancelled) return;
+        setMintPreview(current => (current.items.length > 0 ? current : {
+          items: [],
+          index: 0,
+          loading: false,
+          error: language === 'zh' ? '图片预览暂时不可用' : 'Artwork preview is temporarily unavailable',
+        }));
+      } finally {
+        checking = false;
+      }
+    };
+
+    refreshNextTokenPreview();
+    const tokenIdTimer = window.setInterval(refreshNextTokenPreview, 2_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(tokenIdTimer);
+    };
+  }, [
+    ammTradeMode,
+    ammTradeSide,
+    compactDetailLayout,
+    data.minimumIndexMiningWeight,
+    data.name,
+    data.rendererAddress,
+    contracts.Multicall3,
+    language,
+    mintInitialMiningWeight,
+    mintUsesWhitelist,
+    pool.id,
+    readProvider,
+    referrerTokenId,
+    rendererKnown,
+    showAmm,
+    showMint,
+  ]);
+
+  useEffect(() => {
+    window.clearInterval(mintPreviewTimerRef.current);
+    if (mintPreview.items.length <= 1) return undefined;
+    mintPreviewTimerRef.current = window.setInterval(() => {
+      setMintPreview(current => ({
+        ...current,
+        index: current.items.length > 0 ? (current.index + 1) % current.items.length : 0,
+      }));
+    }, 500);
+    return () => window.clearInterval(mintPreviewTimerRef.current);
+  }, [mintPreview.items.length]);
+
+  const mintResultRevealKey = requiresSeedReveal && mintResult?.info?.revealPending
+    ? `${mintResult.tokenId}:${mintResult.info.revealBlock}:${mintResult.info.revealRound}`
+    : '';
+
+  useEffect(() => {
+    if (!mintResultRevealKey || !readProvider || !ethers.isAddress(account)) return undefined;
+    let cancelled = false;
+    let timer = null;
+    let previewResolved = toBigInt(mintResult?.revealSeed) > 0n;
+    let userNotified = previewResolved;
+    const tokenId = toBigInt(mintResult.tokenId);
+    const revealBlock = toBigInt(mintResult.info.revealBlock);
+    const revealRound = toBigInt(mintResult.info.revealRound);
+    const pollInterval = Math.max(1_000, Math.min(3_000, Number(network.blockTimeSeconds || 3) * 500));
+
+    const schedulePoll = () => {
+      if (!cancelled) timer = window.setTimeout(checkRevealSeed, pollInterval);
+    };
+
+    const checkRevealSeed = async () => {
+      try {
+        const currentBlock = toBigInt(await readProvider.getBlockNumber());
+        if (cancelled) return;
+        setMintResult(current => current?.tokenId === tokenId
+          ? { ...current, currentBlock }
+          : current);
+        const state = revealWindowState(mintResult.info, currentBlock);
+        if (state.status === 'expired') return;
+
+        if (state.status === 'ready' && !previewResolved) {
+          const nft = new ethers.Contract(pool.id, IndexBrokerNFTABI, readProvider);
+          let seed;
+          try {
+            seed = toBigInt(await nft.getFunction('reveal').staticCall(tokenId, { from: account }));
+          } catch (simulationError) {
+            const revealBlockData = await readProvider.getBlock(Number(revealBlock));
+            if (!revealBlockData?.hash) throw simulationError;
+            seed = BigInt(ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(
+              ['address', 'uint256', 'uint256', 'uint256', 'bytes32'],
+              [pool.id, network.id, tokenId, revealRound, revealBlockData.hash],
+            )));
+            if (seed === 0n) seed = 1n;
+          }
+          if (cancelled || seed <= 0n) return;
+          try {
+            const image = await renderIndexBrokerArtwork(
+              data.rendererAddress,
+              readProvider,
+              indexBrokerRenderParams({
+                collectionName: data.name,
+                tokenId,
+                seed,
+                info: mintResult.info,
+                indexMiningTokenUnit: data.minimumIndexMiningWeight,
+              }),
+            );
+            if (!cancelled) {
+              previewResolved = true;
+              setMintResult(current => current?.tokenId === tokenId
+                ? {
+                  ...current,
+                  image,
+                  revealSeed: seed,
+                  revealArtworkReady: true,
+                  visible: true,
+                  error: '',
+                }
+                : current);
+              if (!userNotified) {
+                userNotified = true;
+                toast.info(language === 'zh'
+                  ? `NFT #${tokenId} 的最终图片已生成，请立即发起交易保留图片。`
+                  : `The final artwork for NFT #${tokenId} is ready. Confirm the transaction now to keep it.`);
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to render the pending reveal artwork:', error);
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to monitor the minted NFT reveal seed:', error);
+      }
+      schedulePoll();
+    };
+
+    checkRevealSeed();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    account,
+    data.minimumIndexMiningWeight,
+    data.name,
+    data.rendererAddress,
+    language,
+    mintResult?.info,
+    mintResult?.revealSeed,
+    mintResult?.tokenId,
+    mintResultRevealKey,
+    network.blockTimeSeconds,
+    network.id,
+    pool.id,
+    readProvider,
+    toast,
+  ]);
+
+  const revealMintResultArtwork = async () => {
+    const tokenId = toBigInt(mintResult?.tokenId);
+    if (tokenId <= 0n || !mintResult?.revealSeed) return;
+    const key = `reveal-${tokenId}`;
+    setActionLoading(key);
+    try {
+      const writeSigner = await getWriteSigner();
+      const tx = await new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).reveal(tokenId);
+      toast.info(language === 'zh' ? '正在保留这张 NFT 图片…' : 'Saving this NFT artwork…');
+      await tx.wait();
+      toast.success(language === 'zh' ? 'NFT 图片已保留' : 'NFT artwork saved');
+      await Promise.all([loadMintResult(tokenId), loadPoolData()]);
+      onRefresh?.();
+    } catch (error) {
+      toast.error(error.shortMessage || error.reason || error.message || c.txFailed);
+    } finally {
+      setActionLoading('');
+    }
+  };
+
+  const closeMintResult = () => {
+    setMintResult(current => {
+      if (
+        requiresSeedReveal
+        && toBigInt(current?.tokenId) > 0n
+        && !current?.revealArtworkReady
+      ) {
+        // Keep the reveal watcher alive even if the user hides the question
+        // card. The modal opens again automatically when final artwork exists.
+        return { ...current, visible: false };
+      }
+      return null;
+    });
+  };
 
   const handleRevealAlertAction = () => {
     if (!urgentRevealNft) return;
@@ -2275,7 +2602,7 @@ export default function IndexBrokerNFTPoolCard({
           </PoolCardFooter>
         )}
 
-        {showMint && (
+        {showMint && !compactDetailLayout && (
           <section className="index-broker-mint-panel">
             <div>
               <h3>{c.mint}</h3>
@@ -2323,12 +2650,7 @@ export default function IndexBrokerNFTPoolCard({
             {!isConnected ? (
               <button className="btn btn-primary" disabled={connecting} onClick={connect}>{c.connect}</button>
             ) : (
-              <>
-                {!mintUsesWhitelist && (
-                  <input className="input" type="number" min="0" step="1" value={referrerTokenId} onChange={event => setReferrerTokenId(event.target.value)} placeholder={c.referrer} />
-                )}
-                <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{c.mint}</button>
-              </>
+              <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{c.mint}</button>
             )}
           </section>
         )}
@@ -2767,9 +3089,13 @@ export default function IndexBrokerNFTPoolCard({
 
       {showAmm && (compactDetailLayout ? (
         <section className="index-broker-amm-trade glass-card">
-          {ammTradeSide === 'buy' ? (
-            <>
+          <div className="index-broker-amm-trade-frame">
+            {ammTradeSide === 'buy' ? (
+              <>
               <div className="index-broker-trade-tabs" role="tablist" aria-label={c.buyNftMode}>
+                <button type="button" role="tab" aria-selected={ammTradeMode === 'mint'} className={ammTradeMode === 'mint' ? 'active mint' : ''} onClick={() => setAmmTradeMode('mint')}>
+                  <strong>Mint</strong>
+                </button>
                 <button type="button" role="tab" aria-selected={ammTradeMode === 'swap'} className={ammTradeMode === 'swap' ? 'active swap' : ''} onClick={() => setAmmTradeMode('swap')}>
                   <strong>↝ {c.swapNext}</strong><span>({c.nextAvailable})</span>
                 </button>
@@ -2778,6 +3104,72 @@ export default function IndexBrokerNFTPoolCard({
                 </button>
               </div>
 
+              {ammTradeMode === 'mint' ? (
+                <div className="index-broker-trade-mint">
+                  <div className="index-broker-next-mint-preview">
+                    <div className="index-broker-next-mint-preview-heading">
+                      <strong>{language === 'zh' ? '下一枚 NFT 效果预览' : 'Next NFT artwork preview'}</strong>
+                    </div>
+                    <div className="index-broker-next-mint-artwork">
+                      {activeMintPreview ? (
+                        <img
+                          key={activeMintPreview.seed.toString()}
+                          src={activeMintPreview.image}
+                          alt={language === 'zh' ? '下一枚 NFT 效果预览' : 'Next NFT artwork preview'}
+                          onError={() => {
+                            setMintPreview(current => ({
+                              ...current,
+                              items: current.items.filter(item => item.seed !== activeMintPreview.seed),
+                              index: 0,
+                            }));
+                          }}
+                        />
+                      ) : (
+                        <div className="index-broker-next-mint-placeholder">
+                          {mintPreview.loading ? <span className="spinner" /> : <span>?</span>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="index-broker-trade-mint-controls">
+                    <div className="index-broker-trade-mint-price">
+                      <span>{language === 'zh' ? '铸造价格' : 'Mint price'}</span>
+                      <strong>
+                        {formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}
+                        {!mintUsesWhitelist && ` + ${formatTokenAmount(data.nativePrice, network.nativeCurrency.decimals)} ${network.nativeCurrency.symbol}`}
+                      </strong>
+                      {mintUsesWhitelist && <small>{c.whitelistPaymentOnly}</small>}
+                    </div>
+                    {!isConnected ? (
+                      <button className="btn btn-primary index-broker-trade-mint-action" disabled={connecting} onClick={connect}>{c.connect}</button>
+                    ) : (
+                      <button className="btn btn-primary index-broker-trade-mint-action" disabled={busy || !canMint} onClick={handleMint}>
+                        {actionLoading === 'mint' ? <span className="spinner" /> : c.mint}
+                      </button>
+                    )}
+                    {isConnected && !loading && (
+                      <div className="index-broker-trade-mint-balance">
+                        <span>
+                          {c.mintBalances}: {formatTokenAmount(data.communityBalance, data.communityAsset.decimals)} {data.communityAsset.symbol}
+                          {' · '}{formatTokenAmount(data.nativeBalance, network.nativeCurrency.decimals)} {network.nativeCurrency.symbol}
+                        </span>
+                        {mintBalanceError && <strong>{mintBalanceError}</strong>}
+                      </div>
+                    )}
+                    {requiresSeedReveal && (
+                      <div className="index-broker-mint-reveal-warning index-broker-trade-mint-reveal">
+                        <strong>{language === 'zh' ? 'Mint 后必须及时揭图' : 'Reveal promptly after minting'}</strong>
+                        <span>
+                          {language === 'zh'
+                            ? 'Mint 成功后，请在 256 个区块的窗口内完成揭图，否则本轮图片可能无法揭示。'
+                            : 'After minting, reveal within the 256-block window or this artwork may no longer be revealable.'}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <>
               <div className="index-broker-trade-body">
                 <div className="index-broker-trade-label"><strong>{c.youSend}</strong><span>{c.balance}: {isConnected ? formatTokenAmount(data.communityBalance, data.communityAsset.decimals) : '—'}</span></div>
                 <div className="index-broker-trade-asset">
@@ -2828,9 +3220,11 @@ export default function IndexBrokerNFTPoolCard({
                   {tradeBalanceError && <div className="index-broker-trade-balance-warning">{tradeBalanceError}</div>}
                 </>
               )}
-            </>
-          ) : (
-            <>
+                </>
+              )}
+              </>
+            ) : (
+              <>
               <div className="index-broker-trade-body index-broker-sell-body">
                 <div className="index-broker-trade-label"><strong>{c.youSend}</strong><span>{ownedNfts.length} {c.inWallet}</span></div>
                 <div className="index-broker-snipe-prompt">{selectedOwnedNft ? `${data.name} #${selectedOwnedNft.tokenId.toString()}` : c.selectOwnedNft}</div>
@@ -2871,9 +3265,12 @@ export default function IndexBrokerNFTPoolCard({
               ) : (
                 <button className="btn btn-primary index-broker-trade-action" disabled={busy || !data.amm.active} onClick={() => sellNft(selectedOwnedNft)}>{c.sellSelected} #{selectedOwnedNft.tokenId.toString()}</button>
               )}
-            </>
-          )}
-          <div className="index-broker-warning">⚠ {data.miningMode === 'stake' ? c.stakeTransferWarning : c.transferWarning}</div>
+              </>
+            )}
+            {!(ammTradeSide === 'buy' && ammTradeMode === 'mint') && (
+              <div className="index-broker-warning">⚠ {data.miningMode === 'stake' ? c.stakeTransferWarning : c.transferWarning}</div>
+            )}
+          </div>
         </section>
       ) : (
         <section className="index-broker-amm glass-card">
@@ -3085,8 +3482,8 @@ export default function IndexBrokerNFTPoolCard({
         </section>
       )}
 
-      {mintResult && (
-        <div className="modal-overlay index-broker-mint-result-overlay" onClick={() => setMintResult(null)}>
+      {mintResult && mintResult.visible !== false && (
+        <div className="modal-overlay index-broker-mint-result-overlay" onClick={closeMintResult}>
           <section
             className="modal-content index-broker-mint-result-modal"
             role="dialog"
@@ -3101,11 +3498,20 @@ export default function IndexBrokerNFTPoolCard({
                   {data.name}{mintResult.tokenId > 0n ? ` #${mintResult.tokenId}` : ''}
                 </h2>
               </div>
-              <button className="modal-close" type="button" aria-label={language === 'zh' ? '关闭' : 'Close'} onClick={() => setMintResult(null)}>×</button>
+              <button className="modal-close" type="button" aria-label={language === 'zh' ? '关闭' : 'Close'} onClick={closeMintResult}>×</button>
             </div>
 
             <div className="index-broker-mint-result-artwork">
-              {mintResult.loading ? (
+              {mintResultArtworkPending ? (
+                <div className="index-broker-mint-result-mystery" role="status">
+                  <span>?</span>
+                  <strong>
+                    {mintResultRevealState?.status === 'ready'
+                      ? (language === 'zh' ? '正在生成最终图片' : 'Generating final artwork')
+                      : (language === 'zh' ? '等待随机 Seed 区块' : 'Waiting for the random-seed block')}
+                  </strong>
+                </div>
+              ) : mintResult.loading ? (
                 <div className="index-broker-mint-result-loading"><span className="spinner" /><span>{language === 'zh' ? '正在读取 NFT 图片…' : 'Loading NFT artwork…'}</span></div>
               ) : (
                 <NftArtwork
@@ -3120,12 +3526,20 @@ export default function IndexBrokerNFTPoolCard({
 
             {mintResultRevealState && (
               <div className={`index-broker-mint-result-reveal is-${mintResultRevealState.status}`} role="alert">
-                <strong>{language === 'zh' ? '这枚 NFT 需要及时揭图' : 'This NFT must be revealed in time'}</strong>
+                <strong>
+                  {mintResult.revealArtworkReady
+                    ? (language === 'zh' ? '最终图片已生成，请立即保留' : 'Final artwork ready — keep it now')
+                    : (language === 'zh' ? '这枚 NFT 需要及时揭图' : 'This NFT must be revealed in time')}
+                </strong>
                 <span>{revealCountdownText(mintResultRevealState, language)}</span>
                 <small>
-                  {language === 'zh'
-                    ? '错过 256 个区块的窗口后，图片可能无法继续揭示，重新提交还可能需要再次支付代币。'
-                    : 'If the 256-block window is missed, the artwork may no longer be revealable and recommitting may require another token payment.'}
+                  {mintResult.revealArtworkReady
+                    ? (language === 'zh'
+                      ? '上方就是本轮将保存的图片。请在窗口结束前发起揭图交易，将 Seed 和图片永久写入 NFT。'
+                      : 'The artwork above is the image this round will save. Confirm the reveal transaction before the window closes.')
+                    : (language === 'zh'
+                      ? '错过 256 个区块的窗口后，图片可能无法继续揭示，重新提交还可能需要再次支付代币。'
+                      : 'If the 256-block window is missed, the artwork may no longer be revealable and recommitting may require another token payment.')}
                 </small>
               </div>
             )}
@@ -3140,17 +3554,19 @@ export default function IndexBrokerNFTPoolCard({
                 <button
                   className="btn btn-primary"
                   type="button"
-                  onClick={() => {
-                    setMintResult(null);
-                    onSectionChange?.('holdings');
-                  }}
+                  disabled={busy || mintResultRevealState.status !== 'ready' || !mintResult.revealSeed}
+                  onClick={revealMintResultArtwork}
                 >
-                  {mintResultRevealState.status === 'ready'
-                    ? (language === 'zh' ? '立即去揭图' : 'Reveal now')
-                    : (language === 'zh' ? '查看揭图进度' : 'View reveal progress')}
+                  {actionLoading === `reveal-${mintResult.tokenId}`
+                    ? <span className="spinner" />
+                    : mintResultRevealState.status === 'ready' && mintResult.revealSeed
+                      ? (language === 'zh' ? '发起交易，保留图片' : 'Confirm transaction to keep artwork')
+                      : mintResultRevealState.status === 'expired'
+                        ? (language === 'zh' ? '本轮揭图已超时' : 'Reveal window expired')
+                        : (language === 'zh' ? `等待揭图区块（${mintResultRevealState.blocks}）` : `Waiting for reveal (${mintResultRevealState.blocks})`)}
                 </button>
               )}
-              <button className={`btn ${mintResultRevealState ? 'btn-secondary' : 'btn-primary'}`} type="button" onClick={() => setMintResult(null)}>
+              <button className={`btn ${mintResultRevealState ? 'btn-secondary' : 'btn-primary'}`} type="button" onClick={closeMintResult}>
                 {language === 'zh' ? '完成' : 'Done'}
               </button>
             </div>
