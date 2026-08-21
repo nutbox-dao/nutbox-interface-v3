@@ -6,13 +6,13 @@ const SECTIONS = {
   zh: [
     ['mint-amm', 'Mint & AMM 交易'],
     ['mining', '激活挖矿'],
-    ['referral', '推荐升级'],
+    ['referral', '持有分红'],
     ['about', '简介'],
   ],
   en: [
     ['mint-amm', 'Mint & AMM trading'],
     ['mining', 'Activate mining'],
-    ['referral', 'Referral upgrades'],
+    ['referral', 'Holder rewards'],
     ['about', 'About'],
   ],
 };

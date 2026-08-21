@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
-import { shortenAddress } from '../utils/helpers';
+import { copyToClipboard, shortenAddress } from '../utils/helpers';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useWeb3 } from '../contexts/Web3Context';
+import { useToast } from '../contexts/ToastContext';
 import { getChainPath } from '../config/contracts';
 import './Home.css';
 
@@ -115,15 +116,45 @@ export default function Home() {
 function CommunityCard({ community }) {
   const activePools = community.pools?.filter(p => p.status === 'OPENED') || [];
   const tags = Array.isArray(community.tags) ? community.tags : [];
-  const displayName = community.name || `Community #${community.index?.toString() || '?'}`;
-  const { t } = useLanguage();
+  const previewBadges = [
+    ...tags.map((tag, index) => ({
+      key: `tag-${tag}-${index}`,
+      label: `#${tag}`,
+      className: 'badge-staking',
+    })),
+    ...activePools.map(pool => ({
+      key: `pool-${pool.id}`,
+      label: pool.name || pool.poolType,
+      className: pool.poolType?.includes('LOCKING') ? 'badge-locking' : 'badge-staking',
+    })),
+  ];
+  const displayName = community.name
+    || community.tokenName
+    || community.tokenSymbol
+    || shortenAddress(community.cToken);
+  const { t, language } = useLanguage();
   const { activeChainId } = useWeb3();
+  const toast = useToast();
+
+  const handleCopyCommunityAddress = async event => {
+    event.preventDefault();
+    event.stopPropagation();
+    const copied = await copyToClipboard(community.id);
+    if (copied) {
+      toast.info(t('common.copySuccess'));
+    } else {
+      toast.error(language === 'zh' ? '复制地址失败' : 'Failed to copy address');
+    }
+  };
 
   return (
     <Link to={getChainPath(activeChainId, `community/${community.id}`)} className="community-card glass-card" id={`community-${community.id}`}>
       <div className="community-card-header">
         <div className="community-avatar">
-          {community.tick?.slice(0, 2) || community.cToken?.slice(2, 4).toUpperCase() || 'N'}
+          {community.tick?.slice(0, 2)
+            || community.tokenSymbol?.slice(0, 2)
+            || community.cToken?.slice(2, 4).toUpperCase()
+            || 'N'}
           {community.logo && (
             <img
               src={community.logo}
@@ -138,8 +169,17 @@ function CommunityCard({ community }) {
             {displayName}
             {community.tick && <span className="community-tick">${community.tick}</span>}
           </div>
-          <div className="community-owner">
-            by {shortenAddress(community.owner?.id)}
+          <div className="community-address" title={community.id}>
+            <span>{shortenAddress(community.id)}</span>
+            <button
+              type="button"
+              className="community-address-copy"
+              onClick={handleCopyCommunityAddress}
+              title={language === 'zh' ? '复制社区合约地址' : 'Copy community contract address'}
+              aria-label={language === 'zh' ? '复制社区合约地址' : 'Copy community contract address'}
+            >
+              📋
+            </button>
           </div>
         </div>
       </div>
@@ -163,23 +203,15 @@ function CommunityCard({ community }) {
         </div>
       </div>
 
-      {tags.length > 0 && (
-        <div className="community-pools-preview">
-          {tags.map(tag => (
-            <span key={tag} className="badge badge-staking">#{tag}</span>
-          ))}
-        </div>
-      )}
-
-      <div className="community-pools-preview">
-        {activePools.slice(0, 3).map(pool => (
-          <span key={pool.id} className={`badge ${pool.poolType?.includes('LOCKING') ? 'badge-locking' : 'badge-staking'}`}>
-            {pool.name || pool.poolType}
+      <div className="community-badges-preview" aria-hidden={previewBadges.length === 0}>
+        {previewBadges.slice(0, 3).map(badge => (
+          <span key={badge.key} className={`badge ${badge.className}`}>
+            {badge.label}
           </span>
         ))}
-        {activePools.length > 3 && (
-          <span className="badge" style={{ background: 'var(--color-bg-glass)', color: 'var(--color-text-tertiary)' }}>
-            +{activePools.length - 3}
+        {previewBadges.length > 3 && (
+          <span className="badge community-preview-more">
+            +{previewBadges.length - 3}
           </span>
         )}
       </div>

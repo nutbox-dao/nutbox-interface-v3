@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { ethers } from 'ethers';
 import {
   INDEX_BROKER_MINT_ACCESS_MODES,
   INDEX_BROKER_MINING_MODES,
@@ -7,8 +6,6 @@ import {
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
-
-const ZERO_ADDRESS = ethers.ZeroAddress;
 
 const RENDERER_INTERFACE_EXAMPLE = `interface IIndexBrokerNFTRenderer {
     struct RenderParams {
@@ -387,8 +384,7 @@ export default function IndexBrokerNFTPoolFields({
     }
   }
   const stakeMode = config.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
-  const receiver = String(config.fundsReceiver || '').trim();
-  const receiverUsesBuyback = !receiver || receiver.toLowerCase() === ZERO_ADDRESS.toLowerCase();
+  const receiverUsesBuyback = config.useBuybackPool !== false;
   const updateMiningMode = miningMode => onChange(current => ({
     ...current,
     miningMode,
@@ -517,7 +513,7 @@ export default function IndexBrokerNFTPoolFields({
             label={zh ? 'NFT 合集名称' : 'NFT collection name'}
             hint={zh ? '最多 64 个 UTF-8 字节，且不能使用 Factory 保留名称。' : 'Up to 64 UTF-8 bytes and cannot use a Factory-reserved name.'}
           >
-            <input className="input" value={poolName} onChange={event => onPoolNameChange(event.target.value)} placeholder={zh ? '例如：社区指数经纪人' : 'e.g. Community Index Brokers'} />
+            <input className="input" value={poolName} onChange={event => onPoolNameChange(event.target.value)} placeholder={zh ? '例如：社区 NFT' : 'e.g. Community NFT'} />
           </Field>
           <Field label="NFT Symbol" hint={zh ? '1–16 个 UTF-8 字节。' : '1–16 UTF-8 bytes.'}>
             <input className="input" value={config.symbol} onChange={event => update('symbol', event.target.value)} placeholder="e.g. STONK" />
@@ -645,17 +641,30 @@ export default function IndexBrokerNFTPoolFields({
           </Field>
           <Field
             wide
-            label={zh ? '公开铸造收款地址' : 'Public mint receiver'}
+            label={zh ? '铸造BNB资金流向' : 'Mint BNB destination'}
             hint={receiverUsesBuyback
               ? (zh ? '当前将使用专属 AMM，公开铸造净 BNB 进入指数回购储备。' : 'The dedicated AMM is selected; net public-mint BNB enters the index-buyback reserve.')
               : (zh ? '公开铸造净 BNB 会发送到这个地址。' : 'Net public-mint BNB is sent to this address.')}
           >
-            <div className="wizard-inline-field-action">
-              <input className="input" value={config.fundsReceiver} onChange={event => update('fundsReceiver', event.target.value)} placeholder={ZERO_ADDRESS} />
-              <button type="button" className={`btn btn-sm ${receiverUsesBuyback ? 'btn-secondary' : 'btn-ghost'}`} onClick={() => update('fundsReceiver', ZERO_ADDRESS)}>
-                {zh ? '进入回购池' : 'Use buyback pool'}
-              </button>
-            </div>
+            <label className="index-broker-check wizard-option-card">
+              <input
+                type="checkbox"
+                checked={receiverUsesBuyback}
+                onChange={event => update('useBuybackPool', event.target.checked)}
+              />
+              <span>
+                <strong>{zh ? '进入回购池' : 'Send to buyback pool'}</strong>
+                <small>{zh ? '铸造净 BNB 将用于指数回购。' : 'Net mint BNB will be reserved for index buybacks.'}</small>
+              </span>
+            </label>
+            {!receiverUsesBuyback && (
+              <input
+                className="input"
+                value={config.fundsReceiver}
+                onChange={event => update('fundsReceiver', event.target.value)}
+                placeholder="0x..."
+              />
+            )}
           </Field>
           <Field
             label={zh ? '等级推荐门槛' : 'Referral thresholds'}

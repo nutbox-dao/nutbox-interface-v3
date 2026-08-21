@@ -227,11 +227,18 @@ export default function AddPoolModal({
   const draftCompletedRef = useRef(false);
   const draftStorageWarningRef = useRef(false);
   const [settingsFee, setSettingsFee] = useState(null);
-  const [indexBrokerConfig, setIndexBrokerConfig] = useState(() => ({
-    ...DEFAULT_INDEX_BROKER_CONFIG,
-    fundsReceiver: account || '',
-    ...(restoredDraft?.indexBrokerConfig || {}),
-  }));
+  const [indexBrokerConfig, setIndexBrokerConfig] = useState(() => {
+    const restoredConfig = restoredDraft?.indexBrokerConfig;
+    const restoredReceiver = String(restoredConfig?.fundsReceiver || '').trim();
+    return {
+      ...DEFAULT_INDEX_BROKER_CONFIG,
+      fundsReceiver: account || '',
+      ...(restoredConfig || {}),
+      useBuybackPool: typeof restoredConfig?.useBuybackPool === 'boolean'
+        ? restoredConfig.useBuybackPool
+        : (!restoredConfig || !restoredReceiver || restoredReceiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()),
+    };
+  });
   const [indexBrokerContext, setIndexBrokerContext] = useState({
     loading: false,
     symbol: '',
@@ -509,7 +516,7 @@ export default function AddPoolModal({
       setIndexBrokerContext(current => ({
         ...current,
         loading: false,
-        error: language === 'zh' ? '无法读取 Index Broker 创建配置' : 'Could not load Index Broker creation settings',
+        error: language === 'zh' ? '无法读取 NFT 创建配置' : 'Could not load NFT creation settings',
       }));
     });
 
@@ -1057,8 +1064,8 @@ export default function AddPoolModal({
         resolved: false,
         poolId,
         error: language === 'zh'
-          ? '当前 Index Broker 部署未启用 Uniswap V4 价格源'
-          : 'The current Index Broker deployment does not enable Uniswap V4 pricing',
+          ? '当前 NFT 部署未启用 Uniswap V4 价格源'
+          : 'The current NFT deployment does not enable Uniswap V4 pricing',
         details: null,
       });
       return undefined;
@@ -1559,7 +1566,12 @@ export default function AddPoolModal({
       const whitelistOnly = getIndexBrokerMintAccessMode(indexBrokerConfig) === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY;
       const percentage = whitelistOnly ? 0 : Number(indexBrokerConfig.referralPercent);
       validatePercentage(percentage, zh ? '推荐返佣' : 'Referral commission');
-      if (indexBrokerConfig.fundsReceiver.trim() && !ethers.isAddress(indexBrokerConfig.fundsReceiver.trim())) throw new Error(zh ? '公开铸造收款地址无效' : 'Invalid public-mint receiver');
+      if (!indexBrokerConfig.useBuybackPool) {
+        const receiver = indexBrokerConfig.fundsReceiver.trim();
+        if (!ethers.isAddress(receiver) || receiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
+          throw new Error(zh ? '请填写有效的铸造 BNB 收款地址' : 'Enter a valid mint BNB receiver');
+        }
+      }
       validateIntegerLevels(indexBrokerConfig.levelThresholds, indexBrokerConfig.levelWeights);
       return;
     }
@@ -1739,7 +1751,7 @@ export default function AddPoolModal({
       } else if (poolType === 'index-broker-nft') {
         factoryAddress = contracts.IndexBrokerNFTFactory;
         if (!factoryAddress || Number(network.id) !== 56) {
-          throw new Error(language === 'zh' ? '当前网络不支持 Index Broker NFT' : 'Index Broker NFT is not supported on this network');
+          throw new Error(language === 'zh' ? '当前网络不支持 NFT' : 'NFT is not supported on this network');
         }
         if (indexBrokerContext.loading || indexBrokerConfig.officialToken === null) {
           throw new Error(language === 'zh' ? '正在读取创建配置，请稍后重试' : 'Creation settings are still loading');
@@ -1883,7 +1895,7 @@ export default function AddPoolModal({
       enabled: Boolean(contracts.ERC20LockingFactory),
     },
     {
-      value: 'index-broker-nft', title: 'Index Broker NFT',
+      value: 'index-broker-nft', title: 'NFT',
       description: zh ? 'NFT 同时参与社区与指数挖矿，并通过专属 AMM 管理指数回购。' : 'NFTs mine community and index rewards, with a dedicated AMM for index buybacks.',
       enabled: Number(network.id) === 56 && Boolean(contracts.IndexBrokerNFTFactory),
       badge: zh ? '新版' : 'New',
@@ -2439,7 +2451,7 @@ export default function AddPoolModal({
                           ? 'NFT Mining'
                           : poolType === 'basket-tvl'
                             ? 'Basket TVL Mining'
-                            : 'Index Broker NFT'}
+                            : 'NFT'}
                   </span>
                 </div>
                 <div className="pool-ratio-control">
@@ -2485,7 +2497,7 @@ export default function AddPoolModal({
                         <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '白名单供应' : 'Whitelist supply'}</span><span className="wizard-summary-value">{indexBrokerConfig.lockWhitelistSlots ? (zh ? '保留额度' : 'Reserved') : (zh ? '不保留额度' : 'Not reserved')}</span></div>
                       )}
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '推荐返佣' : 'Referral commission'}</span><span className="wizard-summary-value">{indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY ? '0' : (indexBrokerConfig.referralPercent || '0')}%</span></div>
-                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '公开铸造收款' : 'Public mint receiver'}</span><span className="wizard-summary-value">{!indexBrokerConfig.fundsReceiver.trim() || indexBrokerConfig.fundsReceiver.toLowerCase() === ethers.ZeroAddress.toLowerCase() ? (zh ? '专属 AMM 回购池' : 'Dedicated AMM buyback pool') : shortenAddress(indexBrokerConfig.fundsReceiver)}</span></div>
+                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '铸造BNB资金流向' : 'Mint BNB destination'}</span><span className="wizard-summary-value">{indexBrokerConfig.useBuybackPool ? (zh ? '专属 AMM 回购池' : 'Dedicated AMM buyback pool') : shortenAddress(indexBrokerConfig.fundsReceiver)}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '图片重生成' : 'Image rerolls'}</span><span className="wizard-summary-value">{indexBrokerConfig.rerollEnabled ? `${zh ? '启用' : 'Enabled'} · ${Number(indexBrokerConfig.recommitPrice || 0) === 0 ? indexBrokerConfig.communityTokenPrice : indexBrokerConfig.recommitPrice} ${indexBrokerContext.symbol}` : (zh ? '关闭' : 'Disabled')}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">AMM</span><span className="wizard-summary-value">{zh ? '普通' : 'Normal'} {effectiveAmmFee(indexBrokerConfig.normalFeePercent)}% · {zh ? '指定' : 'Specific'} {effectiveAmmFee(indexBrokerConfig.specificFeePercent)}%</span></div>
                       {indexBrokerConfig.officialToken === false && (

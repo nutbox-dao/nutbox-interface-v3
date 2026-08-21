@@ -90,6 +90,7 @@
   padding: var(--space-6);
   display: flex;
   flex-direction: column;
+  height: 100%;
   gap: var(--space-4);
   text-decoration: none;
   color: inherit;
@@ -100,6 +101,7 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-height: 48px;
 }
 
 .community-avatar {
@@ -151,10 +153,35 @@
   border-radius: var(--radius-sm);
 }
 
-.community-owner {
+.community-address {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
   font-family: 'Courier New', monospace;
+}
+
+.community-address-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  transition: opacity var(--transition-fast), background var(--transition-fast);
+}
+
+.community-address-copy:hover,
+.community-address-copy:focus-visible {
+  opacity: 1;
+  background: var(--color-bg-glass);
 }
 
 .community-description {
@@ -195,10 +222,28 @@
   color: var(--color-text-tertiary);
 }
 
-.community-pools-preview {
+.community-badges-preview {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: center;
   gap: var(--space-2);
+  min-width: 0;
+  min-height: 28px;
+  overflow: hidden;
+}
+
+.community-badges-preview .badge {
+  min-width: 0;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-badges-preview .community-preview-more {
+  flex: 0 0 auto;
+  background: var(--color-bg-glass);
+  color: var(--color-text-tertiary);
 }
 
 .community-card-footer {
@@ -207,6 +252,7 @@
   align-items: center;
   font-size: var(--font-size-xs);
   color: var(--color-text-tertiary);
+  margin-top: auto;
   padding-top: var(--space-3);
   border-top: 1px solid var(--color-border);
 }

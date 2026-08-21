@@ -183,6 +183,7 @@ export const IndexBrokerNFTABI = [
   'function remainingPaidMints() view returns (uint256)',
   'function totalActiveIndexMiningWeight() view returns (uint256)',
   'function queuedIndexRewards() view returns (uint256)',
+  'function totalIndexRewardsInjected() view returns (uint256)',
   'function mint(uint256 referrerTokenId) payable returns (uint256)',
   'function reveal(uint256 tokenId) returns (uint256)',
   'function commitReveal(uint256 tokenId)',

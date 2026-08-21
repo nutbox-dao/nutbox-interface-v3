@@ -25,6 +25,7 @@ export const INDEX_BROKER_OPEN_MINT_PLACEHOLDER = '0x000000000000000000000000000
 export const DEFAULT_INDEX_BROKER_CONFIG = {
   symbol: '',
   fundsReceiver: '',
+  useBuybackPool: true,
   renderer: '',
   miningMode: INDEX_BROKER_MINING_MODES.BURN,
   nftTemplate: '',
@@ -222,7 +223,13 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
 
   const symbol = String(config.symbol || '').trim();
   if (!symbol || ethers.toUtf8Bytes(symbol).length > 16) throw new Error('NFT symbol must be 1-16 UTF-8 bytes');
-  const fundsReceiver = requireAddress(config.fundsReceiver, 'Funds receiver', true);
+  const enteredFundsReceiver = String(config.fundsReceiver || '').trim();
+  const useBuybackPool = typeof config.useBuybackPool === 'boolean'
+    ? config.useBuybackPool
+    : (!enteredFundsReceiver || enteredFundsReceiver.toLowerCase() === ethers.ZeroAddress.toLowerCase());
+  const fundsReceiver = useBuybackPool
+    ? ethers.ZeroAddress
+    : requireAddress(enteredFundsReceiver, 'Funds receiver');
   const renderer = requireAddress(config.renderer, 'Renderer', true);
   const nftTemplate = requireAddress(config.nftTemplate, 'NFT template');
   const indexToken = requireAddress(config.indexToken, 'Index token', true);

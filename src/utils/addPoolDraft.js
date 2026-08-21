@@ -60,6 +60,7 @@ const INDEX_BROKER_STRING_FIELDS = [
 ];
 
 const INDEX_BROKER_BOOLEAN_FIELDS = [
+  'useBuybackPool',
   'lockWhitelistSlots',
   'rerollEnabled',
 ];

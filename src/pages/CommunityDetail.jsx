@@ -266,6 +266,10 @@ export default function CommunityDetail() {
   const selectedTab = activeTab === 'nft' && indexBrokerNftPools.length === 0
     ? 'pools'
     : (activeTab || (indexBrokerNftPools.length > 0 ? 'nft' : 'pools'));
+  const communityDisplayName = community.name
+    || tokenInfo?.name
+    || tokenInfo?.symbol
+    || shortenAddress(community.cToken);
 
   return (
     <div className="page container">
@@ -273,7 +277,7 @@ export default function CommunityDetail() {
       <nav className="breadcrumb">
         <Link to={getChainPath(activeChainId)}>{t('detail.breadcrumbHome')}</Link>
         <span className="breadcrumb-sep">/</span>
-        <span>{community.name || `Community #${community.index?.toString()}`}</span>
+        <span>{communityDisplayName}</span>
       </nav>
 
       {/* ── Community Header ── */}
@@ -292,7 +296,7 @@ export default function CommunityDetail() {
           </div>
           <div className="community-header-info">
             <h1 className="community-header-title">
-              {community.name || `Community #${community.index?.toString()}`}
+              {communityDisplayName}
               {community.tick && <span className="community-detail-tick">${community.tick}</span>}
               {isOwner && <span className="badge badge-active" style={{ marginLeft: 8 }}>{t('detail.ownerBadge')}</span>}
             </h1>

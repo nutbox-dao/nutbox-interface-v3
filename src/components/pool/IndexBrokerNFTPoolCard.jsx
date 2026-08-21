@@ -8,14 +8,19 @@ import {
   CommitteeABI,
   CommunityABI,
   ERC20ABI,
+  HourlyTickCalculatorABI,
   IndexBrokerNFTABI,
   IndexBrokerNFTAMMABI,
+  LinearCalculatorABI,
   Multicall3ABI,
 } from '../../config/abis';
 import { getChainPath } from '../../config/contracts';
 import { indexBrokerRendererRequiresSeed } from '../../config/indexBrokerNft';
 import useTimedActionLoading from '../../hooks/useTimedActionLoading';
-import { fetchIndexBrokerNftInsights } from '../../config/subgraph';
+import {
+  fetchIndexBrokerNftInsights,
+  fetchIndexBrokerNftRewardSummary,
+} from '../../config/subgraph';
 import {
   copyToClipboard,
   formatDate,
@@ -28,10 +33,12 @@ import { applySwapSlippage } from '../../utils/nutboxSwap';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './IndexBrokerNFTPoolCard.css';
 
+const INDEXED_INSIGHTS_TTL_MS = 60_000;
+
 const COPY = {
   en: {
-    type: 'Index Broker NFT', totalSupply: 'NFT supply', totalWeight: 'Community mining weight',
-    indexWeight: 'Active index weight', mintCost: 'Mint cost',
+    type: 'NFT', totalSupply: 'NFT supply', totalWeight: 'Community mining weight',
+    indexWeight: 'Active index weight', stakeMiningApr: 'Staking mining APR', burnMiningApr: 'Burn mining APR', holdingApr: 'Holding APR', mintCost: 'Mint cost',
     nativeCost: 'Public mint price', whitelistFree: 'Whitelist BNB fee', remainingPublic: 'Public mints left',
     referralRate: 'Public-mint referral', copyReferral: 'Copy referral link', referralCopied: 'Referral link copied', referralCopyFailed: 'Could not copy referral link',
     myWeight: 'My community weight', communityRewards: 'Community rewards', claimCommunity: 'Claim community rewards',
@@ -44,7 +51,7 @@ const COPY = {
     mintTokenInsufficient: 'Insufficient {symbol}: minting requires {required}, but this wallet has {balance}.',
     mintNativeInsufficient: 'Insufficient {symbol}: public minting requires {required}, and the wallet must also keep some {symbol} for gas. Current balance: {balance}.',
     mintGasInsufficient: 'Insufficient {symbol} for gas. Add some {symbol} before minting.',
-    viewDetails: 'Open NFT, mining & AMM', myNfts: 'My Index Broker NFTs', noNfts: 'This wallet does not own an NFT from this pool.',
+    viewDetails: 'Open NFT, mining & AMM', myNfts: 'My NFTs', noNfts: 'This wallet does not own an NFT from this pool.',
     communityMining: 'Community mining', indexMining: 'Index mining', active: 'Active', inactive: 'Inactive',
     pendingIndex: 'Pending index rewards', upgrade: 'Burn tokens to increase weight', activate: 'Reactivate index mining',
     burnMode: 'Burn mining', stakeMode: 'Stake mining', stake: 'Stake tokens', unstake: 'Unstake tokens',
@@ -80,8 +87,8 @@ const COPY = {
     loading: 'Loading live contract state…', txFailed: 'Transaction failed',
   },
   zh: {
-    type: 'Index Broker NFT', totalSupply: 'NFT 供应量', totalWeight: '社区挖矿总权重',
-    indexWeight: '有效指数挖矿权重', mintCost: '每枚铸造成本',
+    type: 'NFT', totalSupply: 'NFT 供应量', totalWeight: '社区挖矿总权重',
+    indexWeight: '有效指数挖矿权重', stakeMiningApr: '质押挖矿 APR', burnMiningApr: '销毁挖矿 APR', holdingApr: '持仓 APR', mintCost: '每枚铸造成本',
     nativeCost: '公开铸造价格', whitelistFree: '白名单 BNB 费用', remainingPublic: '剩余公开额度',
     referralRate: '公开 Mint 推荐返佣', copyReferral: '复制推荐链接', referralCopied: '推荐链接已复制', referralCopyFailed: '复制推荐链接失败',
     myWeight: '我的社区挖矿权重', communityRewards: '社区奖励', claimCommunity: '领取社区奖励',
@@ -94,7 +101,7 @@ const COPY = {
     mintTokenInsufficient: '{symbol} 余额不足：铸造需要 {required}，当前只有 {balance}。',
     mintNativeInsufficient: '{symbol} 余额不足：公开铸造需要 {required}，并且还要预留少量 {symbol} 支付 Gas；当前余额为 {balance}。',
     mintGasInsufficient: '{symbol} 余额不足，无法支付 Gas，请先补充 {symbol}。',
-    viewDetails: '打开 NFT、挖矿和 AMM', myNfts: '我的 Index Broker NFT', noNfts: '当前钱包没有持有该矿池 NFT。',
+    viewDetails: '打开 NFT、挖矿和 AMM', myNfts: '我的 NFT', noNfts: '当前钱包没有持有该矿池 NFT。',
     communityMining: '社区挖矿', indexMining: '指数挖矿', active: '生效中', inactive: '未激活',
     pendingIndex: '待领取指数奖励', upgrade: '销毁代币增加权重', activate: '重新激活指数挖矿',
     burnMode: '销毁挖矿', stakeMode: '质押挖矿', stake: '质押代币', unstake: '赎回代币',
@@ -139,6 +146,7 @@ const EVENT_LABELS = {
   INDEX_BROKER_INDEX_MINING_WEIGHT_UPGRADED: ['Index Weight Upgraded', '指数权重已提升'],
   INDEX_BROKER_INDEX_MINING_STAKED: ['Index Mining Staked', '指数挖矿已质押'],
   INDEX_BROKER_INDEX_MINING_UNSTAKED: ['Index Mining Unstaked', '指数挖矿已赎回'],
+  INDEX_BROKER_INDEX_REWARDS_INJECTED: ['Index Rewards Injected', '指数奖励已注入'],
   INDEX_BROKER_INDEX_REWARDS_CLAIMED: ['Index Rewards Claimed', '指数奖励已领取'],
   INDEX_BROKER_NFT_REVEALED: ['NFT Revealed', 'NFT 已揭示'],
   INDEX_BROKER_NFT_SOLD: ['NFT Sold to AMM', 'NFT 已出售给 AMM'],
@@ -157,12 +165,100 @@ const COMMUNITY_INTERFACE = new ethers.Interface(CommunityABI);
 const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
 const ERC20_INTERFACE = new ethers.Interface(ERC20ABI);
 const MULTICALL_INTERFACE = new ethers.Interface(Multicall3ABI);
+const NUTBOX_ROUTER_ABI = [
+  'function quoteNative(address token, uint256 tokenAmount) view returns (uint256 nativeAmount)',
+];
 const READ_CALL_BATCH_SIZE = 250;
 const NFT_DETAIL_BATCH_SIZE = 12;
 const PLATFORM_FEE_BPS = 50;
 const BUYBACK_SLIPPAGE_BPS = 100;
 const INDEX_BUYBACK_GAS_LIMIT = 5_000_000n;
 const REVEAL_WINDOW_BLOCKS = 256n;
+
+function localDayRangeSeconds() {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return {
+    start: Math.floor(start.getTime() / 1000),
+    end: Math.floor(end.getTime() / 1000),
+  };
+}
+
+function sumLinearEraRewards(eras, rangeStart, rangeEnd) {
+  return eras.reduce((total, era) => {
+    const eraStart = toBigInt(era.startCursor);
+    const eraEnd = toBigInt(era.stopCursor) + 1n;
+    const overlapStart = eraStart > rangeStart ? eraStart : rangeStart;
+    const overlapEnd = eraEnd < rangeEnd ? eraEnd : rangeEnd;
+    if (overlapEnd <= overlapStart) return total;
+    return total + (overlapEnd - overlapStart) * toBigInt(era.amount);
+  }, 0n);
+}
+
+async function loadFullDayCommunityRewards({
+  blockTimeSeconds,
+  calculatorAddress,
+  communityAddress,
+  currentBlock,
+  hourlyCalculatorAddress,
+  linearCalculatorAddress,
+  linearTimeCalculatorAddress,
+  provider,
+}) {
+  if (!ethers.isAddress(calculatorAddress)) return null;
+  const normalized = calculatorAddress.toLowerCase();
+  const { start, end } = localDayRangeSeconds();
+
+  if (hourlyCalculatorAddress?.toLowerCase() === normalized) {
+    const calculator = new ethers.Contract(calculatorAddress, HourlyTickCalculatorABI, provider);
+    const hourCount = Math.max(1, Math.round((end - start) / 3600));
+    const rewards = await calculator.getHourlyRewards(
+      communityAddress,
+      BigInt(start),
+      BigInt(hourCount),
+    );
+    return rewards.reduce((total, amount) => total + toBigInt(amount), 0n);
+  }
+
+  const isBlockCalculator = linearCalculatorAddress?.toLowerCase() === normalized;
+  const isTimeCalculator = linearTimeCalculatorAddress?.toLowerCase() === normalized;
+  if (isBlockCalculator || isTimeCalculator) {
+    const calculator = new ethers.Contract(calculatorAddress, LinearCalculatorABI, provider);
+    const count = Number(await calculator.distributionCountMap(communityAddress));
+    const eras = await Promise.all(
+      Array.from({ length: count }, (_, index) => (
+        calculator.distributionErasMap(communityAddress, index)
+      )),
+    );
+
+    if (isTimeCalculator) {
+      return sumLinearEraRewards(eras, BigInt(start), BigInt(end));
+    }
+
+    const secondsPerBlock = Number(blockTimeSeconds || 3);
+    const now = Math.floor(Date.now() / 1000);
+    const blocksSinceDayStart = BigInt(Math.max(0, Math.floor((now - start) / secondsPerBlock)));
+    const dayBlockCount = BigInt(Math.max(1, Math.round((end - start) / secondsPerBlock)));
+    const dayStartBlock = currentBlock > blocksSinceDayStart
+      ? currentBlock - blocksSinceDayStart
+      : 0n;
+    return sumLinearEraRewards(eras, dayStartBlock, dayStartBlock + dayBlockCount);
+  }
+
+  return null;
+}
+
+function formatApr(aprBps) {
+  if (aprBps === null) return '—';
+  const value = Number(aprBps) / 100;
+  if (!Number.isFinite(value)) return '—';
+  return `${value.toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}%`;
+}
 
 function readCall(key, target, contractInterface, functionName, args = [], allowFailure = false) {
   return { key, target, contractInterface, functionName, args, allowFailure };
@@ -352,7 +448,7 @@ export default function IndexBrokerNFTPoolCard({
   const [ownedNfts, setOwnedNfts] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [recentEvents, setRecentEvents] = useState([]);
-  const [indexedLoading, setIndexedLoading] = useState(detail);
+  const [indexedLoading, setIndexedLoading] = useState(true);
   const [data, setData] = useState({
     name: pool.name || c.type,
     symbol: 'INDEX',
@@ -377,6 +473,11 @@ export default function IndexBrokerNFTPoolCard({
     totalWeight: 0n,
     totalActiveIndexWeight: 0n,
     queuedIndexRewards: 0n,
+    trailingInjectedRewards: null,
+    indexNativeQuote: 0n,
+    miningNativeQuote: 0n,
+    dailyCommunityRewards: null,
+    communityFeeRatio: 0,
     remainingPaidMints: 0n,
     whitelistRemaining: 0n,
     ownedNftCount: 0n,
@@ -426,21 +527,29 @@ export default function IndexBrokerNFTPoolCard({
   }, [detail, pool.id]);
 
   const loadIndexedInsights = useCallback(async () => {
-    if (!detail) return null;
     const key = `${network.id}:${pool.id.toLowerCase()}`;
     const cached = indexedInsightsRef.current;
-    if (cached?.key === key && cached.data) return cached.data;
+    if (cached?.key === key && cached.data && cached.expiresAt > Date.now()) return cached.data;
     if (cached?.key === key && cached.promise) return cached.promise;
 
     setIndexedLoading(true);
     const promise = fetchIndexBrokerNftInsights(
       pool.id,
-      { accountsSize: 10, eventsSize: 12, inventorySize: 24 },
+      {
+        accountsSize: detail ? 10 : 1,
+        eventsSize: detail ? 12 : 1,
+        inventorySize: detail ? 24 : 1,
+      },
       network.id,
     ).then((insights) => {
       if (indexedInsightsRef.current?.key !== key) return insights;
-      indexedInsightsRef.current = { key, data: insights, promise: null };
-      setRecentEvents(insights.recentEvents || []);
+      indexedInsightsRef.current = {
+        key,
+        data: insights,
+        promise: null,
+        expiresAt: Date.now() + INDEXED_INSIGHTS_TTL_MS,
+      };
+      setRecentEvents((insights.recentEvents || []).slice(0, 12));
       return insights;
     }).catch((error) => {
       console.error('Failed to load Index Broker indexed insights:', error);
@@ -456,7 +565,7 @@ export default function IndexBrokerNFTPoolCard({
     }).finally(() => {
       if (indexedInsightsRef.current?.key === key) setIndexedLoading(false);
     });
-    indexedInsightsRef.current = { key, data: null, promise };
+    indexedInsightsRef.current = { key, data: null, promise, expiresAt: 0 };
     return promise;
   }, [detail, network.id, pool.id]);
 
@@ -465,7 +574,12 @@ export default function IndexBrokerNFTPoolCard({
     const requestId = ++requestRef.current;
     setLoadError('');
     try {
-      const indexedInsightsPromise = detail ? loadIndexedInsights() : Promise.resolve(null);
+      const indexedInsightsPromise = loadIndexedInsights();
+      const indexRewardSummaryPromise = fetchIndexBrokerNftRewardSummary(pool.id, network.id)
+        .catch((error) => {
+          console.error('Failed to load Index Broker 24h reward summary:', error);
+          return null;
+        });
       const primaryCalls = [
         ['factoryAddress', 'factory'],
         ['name', 'name'],
@@ -489,6 +603,7 @@ export default function IndexBrokerNFTPoolCard({
         ['totalWeight', 'getTotalStakedAmount'],
         ['totalActiveIndexWeight', 'totalActiveIndexMiningWeight'],
         ['queuedIndexRewards', 'queuedIndexRewards'],
+        ['totalIndexRewardsInjected', 'totalIndexRewardsInjected'],
         ['remainingPaidMints', 'remainingPaidMints'],
       ].map(([key, functionName]) => readCall(
         key,
@@ -510,6 +625,20 @@ export default function IndexBrokerNFTPoolCard({
         MULTICALL_INTERFACE,
         'getBlockNumber',
       ));
+      primaryCalls.push(
+        readCall(
+          'rewardCalculatorAddress',
+          communityAddress,
+          COMMUNITY_INTERFACE,
+          'rewardCalculator',
+        ),
+        readCall(
+          'communityFeeRatio',
+          communityAddress,
+          COMMUNITY_INTERFACE,
+          'feeRatio',
+        ),
+      );
       const indexedPool = pool.indexBroker;
       if (
         ethers.isAddress(indexedPool?.amm)
@@ -572,6 +701,7 @@ export default function IndexBrokerNFTPoolCard({
         readCall('settlementTokenAddress', ammAddress, AMM_INTERFACE, 'indexSettlementToken'),
         readCall('basketVersion', ammAddress, AMM_INTERFACE, 'indexBasketVersion'),
         readCall('basketSwapRouter', ammAddress, AMM_INTERFACE, 'basketSwapRouter'),
+        readCall('nutboxRouterAddress', ammAddress, AMM_INTERFACE, 'nutboxRouter'),
         readCall('tokenReserve', communityTokenAddress, ERC20_INTERFACE, 'balanceOf', [ammAddress]),
         readCall('normalFee', ammAddress, AMM_INTERFACE, 'quoteNormalNativeFee', [], true),
         readCall('specificFee', ammAddress, AMM_INTERFACE, 'quoteSpecificNativeFee', [], true),
@@ -692,6 +822,7 @@ export default function IndexBrokerNFTPoolCard({
       const newestTokenId = toBigInt(secondary.newestTokenId);
       const ownedTokenIds = detail && account ? [...(secondary.ownedTokenIds || [])] : [];
       const indexedInsights = await indexedInsightsPromise;
+      const indexRewardSummary = await indexRewardSummaryPromise;
 
       const inventoryCache = inventoryIdsRef.current;
       const hasInventoryCache = detail
@@ -799,6 +930,37 @@ export default function IndexBrokerNFTPoolCard({
       };
       const nextOwnedNfts = ownedTokenIds.map(mapNft).filter(Boolean);
       const nextInventory = inventoryTokenIds.map(mapNft).filter(Boolean);
+      let dailyCommunityRewards = null;
+      try {
+        dailyCommunityRewards = await loadFullDayCommunityRewards({
+          blockTimeSeconds: network.blockTimeSeconds,
+          calculatorAddress: primary.rewardCalculatorAddress,
+          communityAddress,
+          currentBlock: toBigInt(primary.currentBlock),
+          hourlyCalculatorAddress: contracts.HourlyTickCalculator,
+          linearCalculatorAddress: contracts.LinearCalculator,
+          linearTimeCalculatorAddress: contracts.LinearTimeCalculator,
+          provider: readProvider,
+        });
+      } catch (error) {
+        console.error('Failed to load full-day community rewards:', error);
+      }
+      const trailingInjectedRewards = indexRewardSummary
+        ? toBigInt(indexRewardSummary.injectedAmount)
+        : null;
+      let indexNativeQuote = 0n;
+      let miningNativeQuote = 0n;
+      if (ethers.isAddress(secondary.nutboxRouterAddress)) {
+        const router = new ethers.Contract(secondary.nutboxRouterAddress, NUTBOX_ROUTER_ABI, readProvider);
+        const indexUnit = 10n ** BigInt(indexToken.decimals);
+        const miningUnit = 10n ** BigInt(miningToken.decimals);
+        [indexNativeQuote, miningNativeQuote] = await Promise.all([
+          router.quoteNative(indexToken.address, indexUnit).catch(() => 0n),
+          indexToken.address.toLowerCase() === miningToken.address.toLowerCase()
+            ? router.quoteNative(indexToken.address, indexUnit).catch(() => 0n)
+            : router.quoteNative(miningToken.address, miningUnit).catch(() => 0n),
+        ]);
+      }
 
       const accountState = account ? {
         whitelistRemaining: toBigInt(secondary.whitelistRemaining),
@@ -844,6 +1006,11 @@ export default function IndexBrokerNFTPoolCard({
         totalWeight: toBigInt(primary.totalWeight),
         totalActiveIndexWeight: toBigInt(primary.totalActiveIndexWeight),
         queuedIndexRewards: toBigInt(primary.queuedIndexRewards),
+        trailingInjectedRewards,
+        indexNativeQuote: toBigInt(indexNativeQuote),
+        miningNativeQuote: toBigInt(miningNativeQuote),
+        dailyCommunityRewards,
+        communityFeeRatio: Number(primary.communityFeeRatio || 0),
         remainingPaidMints: toBigInt(primary.remainingPaidMints),
         ...accountState,
         poolOperationFee: toBigInt(secondary.poolOperationFee),
@@ -880,10 +1047,14 @@ export default function IndexBrokerNFTPoolCard({
     communityAddress,
     communityToken,
     contracts.Committee,
+    contracts.HourlyTickCalculator,
     contracts.IndexBrokerNFTFactory,
+    contracts.LinearCalculator,
+    contracts.LinearTimeCalculator,
     contracts.Multicall3,
     detail,
     loadIndexedInsights,
+    network.blockTimeSeconds,
     network.id,
     pool.id,
     pool.indexBroker,
@@ -1132,7 +1303,7 @@ export default function IndexBrokerNFTPoolCard({
     if (!(await validateMintBalances())) return;
     const receipt = await execute(
       'mint',
-      language === 'zh' ? '正在铸造 Index Broker NFT…' : 'Minting Index Broker NFT…',
+      language === 'zh' ? '正在铸造 NFT…' : 'Minting NFT…',
       language === 'zh' ? 'NFT 铸造成功' : 'NFT minted',
       writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).mint(
         data.whitelistRemaining > 0n ? 0n : toBigInt(referrerTokenId),
@@ -1392,6 +1563,88 @@ export default function IndexBrokerNFTPoolCard({
   const selectedOwnedNftApproved = Boolean(selectedOwnedNft)
     && selectedOwnedNft.approved?.toLowerCase() === data.ammAddress.toLowerCase();
   const hasSellReserve = data.amm.tokenReserve >= data.amm.tokensPerNFT;
+  const referralAprBps = (levelWeight) => {
+    if (
+      data.dailyCommunityRewards === null
+      || data.totalWeight <= 0n
+      || data.communityTokenPrice <= 0n
+    ) return null;
+    const poolRatio = toBigInt(pool.ratio);
+    const communityRewardRatio = 10_000n - toBigInt(data.communityFeeRatio);
+    if (poolRatio <= 0n || communityRewardRatio <= 0n) return 0n;
+
+    // Annual reward for one NFT at this level, divided by its Community Token mint cost.
+    const numerator = data.dailyCommunityRewards
+      * 365n
+      * poolRatio
+      * communityRewardRatio
+      * toBigInt(levelWeight)
+      * 10_000n;
+    const denominator = 10_000n
+      * 10_000n
+      * data.totalWeight
+      * data.communityTokenPrice;
+    return numerator / denominator;
+  };
+  const projectedIndexMiningReturn = (
+    addedWeight,
+    principalAmount = addedWeight,
+    alreadyActive = false,
+  ) => {
+    const weight = toBigInt(addedWeight);
+    const principal = toBigInt(principalAmount);
+    if (data.trailingInjectedRewards === null || weight <= 0n || principal <= 0n) {
+      return { annualRewards: null, aprBps: null };
+    }
+    const totalWeightAfter = data.totalActiveIndexWeight + (alreadyActive ? 0n : weight);
+    if (totalWeightAfter <= 0n) return { annualRewards: null, aprBps: null };
+    const annualRewards = data.trailingInjectedRewards * 365n * weight / totalWeightAfter;
+    if (annualRewards === 0n) return { annualRewards, aprBps: 0n };
+
+    if (data.indexToken.address.toLowerCase() === data.miningToken.address.toLowerCase()) {
+      return { annualRewards, aprBps: annualRewards * 10_000n / principal };
+    }
+
+    const indexUnit = 10n ** BigInt(data.indexToken.decimals);
+    const miningUnit = 10n ** BigInt(data.miningToken.decimals);
+    let indexNativeNumerator = data.indexNativeQuote;
+    let indexNativeDenominator = indexUnit;
+    if (
+      indexNativeNumerator <= 0n
+      && buybackQuote.indexOut > 0n
+      && buybackQuote.nativeReserve > 0n
+    ) {
+      indexNativeNumerator = buybackQuote.nativeReserve * 9_900n / 10_000n;
+      indexNativeDenominator = buybackQuote.indexOut;
+    }
+
+    let miningNativeNumerator = data.miningNativeQuote;
+    let miningNativeDenominator = miningUnit;
+    if (
+      miningNativeNumerator <= 0n
+      && data.miningToken.address.toLowerCase() === data.communityAsset.address.toLowerCase()
+      && data.amm.nativeValue > 0n
+      && data.amm.tokensPerNFT > 0n
+    ) {
+      miningNativeNumerator = data.amm.nativeValue;
+      miningNativeDenominator = data.amm.tokensPerNFT;
+    }
+    if (indexNativeNumerator <= 0n || miningNativeNumerator <= 0n) {
+      return { annualRewards, aprBps: null };
+    }
+
+    const aprBps = annualRewards
+      * indexNativeNumerator
+      * miningNativeDenominator
+      * 10_000n
+      / (indexNativeDenominator * principal * miningNativeNumerator);
+    return { annualRewards, aprBps };
+  };
+  const indexMiningPreview = projectedIndexMiningReturn(
+    data.minimumIndexMiningWeight,
+    data.minimumIndexMiningWeight,
+  );
+  const holdingAprBps = referralAprBps(data.levelRules[0]?.weight || 0n);
 
   const handleRevealAlertAction = () => {
     if (!urgentRevealNft) return;
@@ -1433,7 +1686,7 @@ export default function IndexBrokerNFTPoolCard({
           ratio={pool.ratio}
           status={pool.status}
         />
-        <p>{language === 'zh' ? '读取新版 Index Broker NFT 合约失败。' : 'Failed to read the new Index Broker NFT contract.'}</p>
+        <p>{language === 'zh' ? '读取 NFT 合约失败。' : 'Failed to read the NFT contract.'}</p>
         <button className="btn btn-secondary btn-sm" onClick={loadPoolData}>{language === 'zh' ? '重试' : 'Retry'}</button>
       </div>
     );
@@ -1585,8 +1838,8 @@ export default function IndexBrokerNFTPoolCard({
               <>
                 <div className="index-broker-stats">
                   <div><span>{c.totalSupply}</span><strong>{loading ? '…' : `${data.totalSupply} / ${data.maxSupply}`}</strong></div>
-                  <div><span>{c.totalWeight}</span><strong>{loading ? '…' : data.totalWeight.toString()}</strong></div>
-                  <div><span>{c.indexWeight}</span><strong>{loading ? '…' : formatTokenAmount(data.totalActiveIndexWeight, data.miningToken.decimals)}</strong></div>
+                  <div><span>{data.miningMode === 'stake' ? c.stakeMiningApr : c.burnMiningApr}</span><strong>{loading || indexedLoading ? '…' : formatApr(indexMiningPreview.aprBps)}</strong></div>
+                  <div><span>{c.holdingApr}</span><strong>{loading ? '…' : formatApr(holdingAprBps)}</strong></div>
                 </div>
 
                 <div className="index-broker-economics">
@@ -1594,8 +1847,6 @@ export default function IndexBrokerNFTPoolCard({
                   <div><span>{c.nativeCost}</span><strong>{formatTokenAmount(data.nativePrice, 18)} {network.nativeCurrency.symbol}</strong></div>
                   <div><span>{c.referralRate}</span><strong>{(data.referralBps / 100).toFixed(2)}%</strong></div>
                   <div><span>{c.stakingToken}</span><strong>{data.miningToken.symbol || '…'} · {data.miningMode === 'stake' ? c.stakeMode : c.burnMode}</strong></div>
-                  <div><span>{c.remainingPublic}</span><strong>{data.remainingPaidMints.toString()}</strong></div>
-                  <div><span>{c.queuedRewards}</span><strong>{formatTokenAmount(data.queuedIndexRewards, data.indexToken.decimals)} {data.indexToken.symbol}</strong></div>
                 </div>
               </>
             )}
@@ -1695,6 +1946,37 @@ export default function IndexBrokerNFTPoolCard({
               </p>
             </div>
             <span className="index-broker-feature-mode">{data.miningMode === 'stake' ? c.stakeMode : c.burnMode}</span>
+          </div>
+          <div className="index-broker-mining-apr-summary">
+            <div>
+              <span>{language === 'zh' ? '近 24 小时注入奖励' : 'Injected in the last 24h'}</span>
+              <strong>
+                {data.trailingInjectedRewards === null
+                  ? '—'
+                  : `${formatTokenAmount(data.trailingInjectedRewards, data.indexToken.decimals)} ${data.indexToken.symbol}`}
+              </strong>
+            </div>
+            <div>
+              <span>{language === 'zh' ? '当前有效总权重' : 'Current active weight'}</span>
+              <strong>{formatTokenAmount(data.totalActiveIndexWeight, data.miningToken.decimals)} {data.miningToken.symbol}</strong>
+            </div>
+            <div>
+              <span>{language === 'zh' ? '新增最低单位预估 APR' : 'Est. APR for one minimum unit'}</span>
+              <strong>{formatApr(indexMiningPreview.aprBps)}</strong>
+            </div>
+            <small>
+              {data.trailingInjectedRewards === null
+                ? (language === 'zh'
+                  ? '注入记录仍在索引同步中，或近 24 小时记录不完整，因此暂不展示 APR。'
+                  : 'Injection records are still syncing or the 24-hour history is incomplete, so APR is not shown.')
+                : indexMiningPreview.aprBps === null && indexMiningPreview.annualRewards !== null
+                ? (language === 'zh'
+                  ? `暂时缺少 ${data.indexToken.symbol}/${data.miningToken.symbol} 链上价格；预计年化奖励 ${formatTokenAmount(indexMiningPreview.annualRewards, data.indexToken.decimals)} ${data.indexToken.symbol}。`
+                  : `The ${data.indexToken.symbol}/${data.miningToken.symbol} on-chain price is unavailable; estimated annual rewards are ${formatTokenAmount(indexMiningPreview.annualRewards, data.indexToken.decimals)} ${data.indexToken.symbol}.`)
+                : (language === 'zh'
+                  ? `按最近 24 小时注入奖励年化；未立即分配的部分会进入 queued，待有效质押权重出现后分配。假设未来注入速度和当前价格保持不变。新增单位为 ${formatTokenAmount(data.minimumIndexMiningWeight, data.miningToken.decimals)} ${data.miningToken.symbol}。`
+                  : `Annualized from rewards injected in the last 24 hours. Any amount not immediately distributed is queued until active staking weight exists. Assumes the injection rate and current prices remain unchanged. One minimum unit is ${formatTokenAmount(data.minimumIndexMiningWeight, data.miningToken.decimals)} ${data.miningToken.symbol}.`)}
+            </small>
           </div>
           {!isConnected ? (
             <div className="index-broker-owned-gate">
@@ -2186,7 +2468,7 @@ export default function IndexBrokerNFTPoolCard({
         <section className="index-broker-referral glass-card">
           <div className="index-broker-section-heading">
             <div>
-              <h2>{language === 'zh' ? '推荐规则与升级' : 'Referral rules and upgrades'}</h2>
+              <h2>{language === 'zh' ? '持有分红规则' : 'Holder reward rules'}</h2>
               <p>
                 {language === 'zh'
                   ? `公开 Mint 使用某枚 NFT 的推荐链接后，该 NFT 的推荐人数会增加，达到门槛后自动升级并提高社区挖矿权重。当前 BNB 返佣比例为 ${(data.referralBps / 100).toFixed(2)}%。`
@@ -2196,13 +2478,25 @@ export default function IndexBrokerNFTPoolCard({
             <span className="index-broker-referral-rate">{(data.referralBps / 100).toFixed(2)}%</span>
           </div>
           <div className="index-broker-level-rules">
-            {data.levelRules.map(rule => (
-              <div key={rule.level}>
-                <strong>Lv.{rule.level}</strong>
-                <span>{rule.threshold.toString()} {language === 'zh' ? '人推荐' : 'referrals'}</span>
-                <b>{language === 'zh' ? '挖矿权重' : 'Mining weight'} {rule.weight.toString()}</b>
-              </div>
-            ))}
+            {data.levelRules.map(rule => {
+              const apr = referralAprBps(rule.weight);
+              return (
+                <div key={rule.level}>
+                  <strong>Lv.{rule.level}</strong>
+                  <span>{rule.threshold.toString()} {language === 'zh' ? '人推荐' : 'referrals'}</span>
+                  <b>{language === 'zh' ? '挖矿权重' : 'Mining weight'} {rule.weight.toString()}</b>
+                  <div
+                    className="index-broker-level-apr"
+                    title={language === 'zh'
+                      ? '按今日整日社区分发量、矿池分配比例、DAO 扣留比例、当前总挖矿权重及该等级权重估算，并以每枚 NFT 的社区代币铸造成本计算年化收益率。'
+                      : 'Estimated from today\'s full-day community distribution, pool allocation, DAO fee, current total mining weight and this level weight, annualized against the Community Token mint cost per NFT.'}
+                  >
+                    <span>APR</span>
+                    <b>{formatApr(apr)}</b>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           {!isConnected ? (
             <div className="index-broker-owned-gate">

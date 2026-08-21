@@ -241,7 +241,7 @@ export default function IndexBrokerRendererPreview({
     const timer = setTimeout(async () => {
       try {
         const canonicalParams = {
-          collectionName: poolName.trim() || 'Index Broker Compatibility Check',
+          collectionName: poolName.trim() || 'NFT Compatibility Check',
           tokenId: 1n,
           seed: 1n,
           referralCount: 0n,
@@ -330,7 +330,7 @@ export default function IndexBrokerRendererPreview({
         if (level > 4_294_967_295n) throw new Error('Level exceeds uint32');
         const indexMiningTokenDecimals = Number.isInteger(unitContext.decimals) ? unitContext.decimals : 18;
         const renderParams = {
-          collectionName: params.collectionName.trim() || poolName.trim() || 'Index Broker Preview',
+          collectionName: params.collectionName.trim() || poolName.trim() || 'NFT Preview',
           tokenId: unsignedInteger(params.tokenId, 'Token ID'),
           seed: unsignedInteger(params.seed, 'Seed'),
           referralCount: unsignedInteger(params.referralCount, 'Referral count'),
@@ -466,7 +466,7 @@ export default function IndexBrokerRendererPreview({
                 className="input"
                 value={params.collectionName}
                 onChange={event => update('collectionName', event.target.value)}
-                placeholder={poolName.trim() || 'Index Broker Preview'}
+                placeholder={poolName.trim() || 'NFT Preview'}
               />
             </div>
             <PreviewField label="Token ID" value={params.tokenId} onChange={value => update('tokenId', value)} />
@@ -515,7 +515,7 @@ export default function IndexBrokerRendererPreview({
             ) : preview.image ? (
               <img
                 src={preview.image}
-                alt={zh ? 'Index Broker Renderer 预览' : 'Index Broker Renderer preview'}
+                alt={zh ? 'NFT Renderer 预览' : 'NFT Renderer preview'}
                 onError={() => {
                   setPreview(current => {
                     const currentIndex = current.imageCandidates.indexOf(current.image);

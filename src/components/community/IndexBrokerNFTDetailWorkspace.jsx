@@ -7,7 +7,7 @@ const SECTIONS = {
     { value: 'mint-amm', label: 'Mint & AMM', hint: '铸造、买入或卖出 NFT' },
     { value: 'holdings', label: '持仓', hint: '查看当前钱包持有的 NFT' },
     { value: 'mining', label: '激活挖矿', hint: '指数权重与奖励' },
-    { value: 'referral', label: '推荐升级', hint: '等级与社区挖矿' },
+    { value: 'referral', label: '持有分红', hint: '等级与社区挖矿' },
     { value: 'rewards', label: '奖励与回购', hint: '注入奖励、收割与回购' },
     { value: 'about', label: '数据概览', hint: '费率、库存、合约与动态' },
     { value: 'admin', label: '管理员', hint: '矿池管理设置', ownerOnly: true },
@@ -16,7 +16,7 @@ const SECTIONS = {
     { value: 'mint-amm', label: 'Mint & AMM', hint: 'Mint, buy or sell NFTs' },
     { value: 'holdings', label: 'Holdings', hint: 'View NFTs held by the connected wallet' },
     { value: 'mining', label: 'Activate mining', hint: 'Index weight and rewards' },
-    { value: 'referral', label: 'Referral upgrades', hint: 'Levels and community mining' },
+    { value: 'referral', label: 'Holder rewards', hint: 'Levels and community mining' },
     { value: 'rewards', label: 'Rewards & buyback', hint: 'Inject, harvest and buy back' },
     { value: 'about', label: 'Data overview', hint: 'Fees, inventory, contracts and activity' },
     { value: 'admin', label: 'Admin', hint: 'Pool administration', ownerOnly: true },
@@ -42,7 +42,7 @@ export default function IndexBrokerNFTDetailWorkspace({
   return (
     <div className="index-broker-detail-workspace">
       <div className="index-broker-detail-navigation glass-card">
-        <div className="index-broker-detail-tabs" role="tablist" aria-label={language === 'zh' ? 'Index Broker NFT 详情功能' : 'Index Broker NFT detail features'}>
+        <div className="index-broker-detail-tabs" role="tablist" aria-label={language === 'zh' ? 'NFT 详情功能' : 'NFT detail features'}>
           {sections.map(item => (
             <button
               type="button"

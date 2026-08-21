@@ -19,6 +19,7 @@ import {
 const onChainCommunityCache = new Map();
 const miningReadCache = new Map();
 const chainReadProviders = new Map();
+const communityTokenIdentityCache = new Map();
 
 function getChainReadProvider(chainId) {
   if (!chainReadProviders.has(chainId)) {
@@ -50,6 +51,45 @@ function normalizeArray(value) {
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
+  }
+}
+
+function isDeletedCommunity(raw) {
+  return Number(raw?.isDel ?? raw?.is_del ?? 0) !== 0;
+}
+
+async function enrichCommunityTokenIdentity(community, chainId) {
+  if (!community || community.name || !ethers.isAddress(community.cToken)) return community;
+  const key = `${chainId}:${community.cToken.toLowerCase()}`;
+  let promise = communityTokenIdentityCache.get(key);
+  if (!promise) {
+    promise = (async () => {
+      const token = new ethers.Contract(
+        community.cToken,
+        [
+          'function name() view returns (string)',
+          'function symbol() view returns (string)',
+        ],
+        getChainReadProvider(chainId),
+      );
+      const [name, symbol] = await Promise.all([token.name(), token.symbol()]);
+      return { name: String(name || '').trim(), symbol: String(symbol || '').trim() };
+    })();
+    communityTokenIdentityCache.set(key, promise);
+  }
+
+  try {
+    const identity = await promise;
+    return {
+      ...community,
+      name: identity.name || identity.symbol || null,
+      tokenName: identity.name || null,
+      tokenSymbol: identity.symbol || null,
+    };
+  } catch (error) {
+    communityTokenIdentityCache.delete(key);
+    console.warn(`Failed to read community token identity for ${community.cToken}:`, error);
+    return community;
   }
 }
 
@@ -776,6 +816,18 @@ export async function fetchIndexBrokerNftInsights(
   );
 }
 
+// The backend aggregates the indexed reward-injection rows in MySQL and owns
+// the short-lived cache. The browser intentionally never scans logs here.
+export async function fetchIndexBrokerNftRewardSummary(
+  pool,
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/index-rewards/24h`,
+    chainId,
+  );
+}
+
 // ──── Global stats ────
 export async function fetchWalnutStats(chainId = DEFAULT_CHAIN_ID) {
   try {
@@ -808,7 +860,10 @@ export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_
   const page = Math.floor(skip / first);
   const data = await fetchAPI(`/communities?page=${page}&size=${first}`, chainId);
   // Map API response to match frontend expected format
-  return (data.communities || []).map(raw => mapCommunity(raw, chainId));
+  const communities = (data.communities || [])
+    .filter(raw => !isDeletedCommunity(raw))
+    .map(raw => mapCommunity(raw, chainId));
+  return Promise.all(communities.map(community => enrichCommunityTokenIdentity(community, chainId)));
 }
 
 // ──── Single community by address ────
@@ -853,7 +908,9 @@ export async function fetchCommunity(
     if (!raw) throw detailError;
   }
 
-  const mapped = mapCommunity(raw, chainId);
+  if (!raw || isDeletedCommunity(raw)) return null;
+
+  const mapped = await enrichCommunityTokenIdentity(mapCommunity(raw, chainId), chainId);
   if (!includeHistory) return mapped;
 
   mapped.operationHistory = await fetchCommunityHistory(communityAddress, chainId);
@@ -953,7 +1010,8 @@ function mapCommunity(raw, chainId) {
     distributedCToken: null,
     revenue: null,
     retainedRevenue: null,
-    usersCount: 0,
+    usersCount: Number(raw.usersCount) || 0,
+    isDeleted: isDeletedCommunity(raw),
     poolsCount: raw.pools?.length || 0,
     activePoolCount: raw.pools?.filter(p => p.status === 'OPENED').length || 0,
     pools: (raw.pools || []).map(pool => mapPool(pool, chainId)),
