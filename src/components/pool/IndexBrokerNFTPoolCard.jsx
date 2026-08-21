@@ -1699,8 +1699,27 @@ export default function IndexBrokerNFTPoolCard({
           <div className="index-broker-compact-header">
             <div className="index-broker-compact-identity">
               <strong>{data.name}</strong>
-              <span>{data.symbol}</span>
-              <span className="index-broker-compact-ratio">{(Number(pool.ratio || 0) / 100).toFixed(1)}%</span>
+              <span className="index-broker-compact-symbol">{data.symbol}</span>
+              <div className="index-broker-compact-aprs">
+                <button
+                  type="button"
+                  className="index-broker-compact-apr"
+                  onClick={() => onSectionChange?.('mining')}
+                  aria-label={language === 'zh' ? '查看激活挖矿' : 'View mining activation'}
+                >
+                  <span>{data.miningMode === 'stake' ? c.stakeMiningApr : c.burnMiningApr}</span>
+                  <strong>{loading || indexedLoading ? '…' : formatApr(indexMiningPreview.aprBps)}</strong>
+                </button>
+                <button
+                  type="button"
+                  className="index-broker-compact-apr"
+                  onClick={() => onSectionChange?.('referral')}
+                  aria-label={language === 'zh' ? '查看持有分红' : 'View holder rewards'}
+                >
+                  <span>{c.holdingApr}</span>
+                  <strong>{loading ? '…' : formatApr(holdingAprBps)}</strong>
+                </button>
+              </div>
             </div>
             <div>
               <span>{c.totalSupply}</span>
