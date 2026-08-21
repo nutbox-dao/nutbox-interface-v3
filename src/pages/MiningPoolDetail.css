@@ -60,52 +60,97 @@
   gap: var(--space-4);
 }
 
+.index-broker-detail-workspace > .index-broker-organized {
+  display: contents;
+}
+
 .index-broker-detail-navigation {
+  order: 2;
   position: sticky;
   z-index: 8;
   top: 72px;
   overflow: hidden;
-  padding: var(--space-2);
-  background: rgba(10, 11, 28, 0.94);
+  padding: 10px;
+  border-color: rgba(124, 58, 237, 0.42);
+  background:
+    linear-gradient(135deg, rgba(124, 58, 237, 0.09), rgba(14, 165, 233, 0.045)),
+    rgba(10, 11, 28, 0.96);
+  box-shadow:
+    0 16px 36px rgba(2, 6, 23, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.035);
   backdrop-filter: blur(16px);
+}
+
+.index-broker-detail-workspace .index-broker-overview-card {
+  position: relative;
+  order: 1;
+  overflow: hidden;
+  padding: var(--space-4);
+}
+
+.index-broker-detail-workspace .index-broker-overview-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #f5d36f, #8a5cf6, transparent);
+}
+
+.index-broker-detail-workspace > .index-broker-organized > :not(.index-broker-overview-card),
+.index-broker-detail-workspace > section,
+.index-broker-detail-workspace > .index-broker-insights,
+.index-broker-detail-workspace > .index-broker-loading {
+  order: 3;
 }
 
 .index-broker-detail-tabs {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(116px, 1fr));
-  gap: 4px;
+  gap: 8px;
 }
 
 .index-broker-detail-tabs button {
   min-width: 0;
-  padding: 11px 8px;
-  border: 0;
+  min-height: 48px;
+  padding: 12px 10px;
+  border: 1px solid rgba(124, 58, 237, 0.18);
   border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--color-text-tertiary);
+  background: rgba(255, 255, 255, 0.026);
+  color: var(--color-text-secondary);
   cursor: pointer;
   font: inherit;
-  font-size: var(--font-size-xs);
+  font-size: var(--font-size-sm);
   font-weight: 700;
-  transition: var(--transition-fast);
+  letter-spacing: 0.01em;
+  transition:
+    transform var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast),
+    background var(--transition-fast),
+    box-shadow var(--transition-fast);
 }
 
 .index-broker-detail-tabs button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(124, 58, 237, 0.48);
   color: var(--color-text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(124, 58, 237, 0.1);
+  box-shadow: 0 6px 16px rgba(30, 27, 75, 0.18);
+}
+
+.index-broker-detail-tabs button:focus-visible {
+  outline: 2px solid rgba(56, 189, 248, 0.9);
+  outline-offset: 2px;
 }
 
 .index-broker-detail-tabs button.active {
+  transform: none;
+  border-color: rgba(255, 255, 255, 0.72);
   color: #fff;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.82), rgba(14, 165, 233, 0.7));
-  box-shadow: 0 8px 20px rgba(55, 48, 163, 0.2);
-}
-
-.index-broker-detail-navigation > p {
-  margin: 7px var(--space-2) 3px;
-  color: var(--color-text-tertiary);
-  font-size: 11px;
-  text-align: center;
+  background: linear-gradient(135deg, #7c3aed, #0e8ed8);
+  box-shadow:
+    0 10px 24px rgba(55, 48, 163, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 
 @media (max-width: 700px) {
@@ -124,6 +169,7 @@
 
   .index-broker-detail-navigation {
     top: 64px;
+    padding: 8px;
   }
 
   .index-broker-detail-tabs {
@@ -138,6 +184,7 @@
 
   .index-broker-detail-tabs button {
     flex: 0 0 auto;
+    min-height: 44px;
     padding-right: var(--space-4);
     padding-left: var(--space-4);
   }

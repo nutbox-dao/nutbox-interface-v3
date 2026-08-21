@@ -4,22 +4,22 @@ import IndexBrokerNFTPoolCard from '../pool/IndexBrokerNFTPoolCard';
 
 const SECTIONS = {
   zh: [
-    { value: 'mint-amm', label: 'Mint & AMM', hint: '铸造、买入或卖出 NFT' },
-    { value: 'holdings', label: '持仓', hint: '查看当前钱包持有的 NFT' },
-    { value: 'mining', label: '激活挖矿', hint: '指数权重与奖励' },
-    { value: 'referral', label: '持有分红', hint: '等级与社区挖矿' },
-    { value: 'rewards', label: '奖励与回购', hint: '注入奖励、收割与回购' },
-    { value: 'about', label: '数据概览', hint: '费率、库存、合约与动态' },
-    { value: 'admin', label: '管理员', hint: '矿池管理设置', ownerOnly: true },
+    { value: 'mint-amm', label: 'Mint & AMM' },
+    { value: 'holdings', label: '持仓' },
+    { value: 'mining', label: '激活挖矿' },
+    { value: 'referral', label: '持有分红' },
+    { value: 'rewards', label: '奖励与回购' },
+    { value: 'about', label: '数据概览' },
+    { value: 'admin', label: '管理员', ownerOnly: true },
   ],
   en: [
-    { value: 'mint-amm', label: 'Mint & AMM', hint: 'Mint, buy or sell NFTs' },
-    { value: 'holdings', label: 'Holdings', hint: 'View NFTs held by the connected wallet' },
-    { value: 'mining', label: 'Activate mining', hint: 'Index weight and rewards' },
-    { value: 'referral', label: 'Holder rewards', hint: 'Levels and community mining' },
-    { value: 'rewards', label: 'Rewards & buyback', hint: 'Inject, harvest and buy back' },
-    { value: 'about', label: 'Data overview', hint: 'Fees, inventory, contracts and activity' },
-    { value: 'admin', label: 'Admin', hint: 'Pool administration', ownerOnly: true },
+    { value: 'mint-amm', label: 'Mint & AMM' },
+    { value: 'holdings', label: 'Holdings' },
+    { value: 'mining', label: 'Activate mining' },
+    { value: 'referral', label: 'Holder rewards' },
+    { value: 'rewards', label: 'Rewards & buyback' },
+    { value: 'about', label: 'Data overview' },
+    { value: 'admin', label: 'Admin', ownerOnly: true },
   ],
 };
 
@@ -56,7 +56,6 @@ export default function IndexBrokerNFTDetailWorkspace({
             </button>
           ))}
         </div>
-        <p>{current?.hint}</p>
       </div>
 
       <IndexBrokerNFTPoolCard

@@ -10,6 +10,7 @@ export default defineConfig({
         target: 'https://bsc-api.tagai.fun',
         changeOrigin: true,
         secure: false,
+        ws: true,
       },
     },
   },

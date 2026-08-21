@@ -18,12 +18,14 @@ import { getChainPath } from '../../config/contracts';
 import { indexBrokerRendererRequiresSeed } from '../../config/indexBrokerNft';
 import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import {
+  fetchIndexBrokerNftAccountEvents,
   fetchIndexBrokerNftInsights,
   fetchIndexBrokerNftRewardSummary,
+  fetchIndexBrokerNftTransactions,
+  getIndexBrokerNftTransactionsWebSocketUrl,
 } from '../../config/subgraph';
 import {
   copyToClipboard,
-  formatDate,
   formatTokenAmount,
   getPoolTypeBadgeClass,
   shortenAddress,
@@ -83,7 +85,10 @@ const COPY = {
     approveTrade: 'Approve Community Token', buySelected: 'Buy selected NFT', insufficientBalance: 'Insufficient Community Token balance',
     buyNftMode: 'Buy NFT', sellNftMode: 'Sell NFT', selectOwnedNft: 'Select an NFT from your wallet', inWallet: 'in wallet',
     estimatedPayout: 'Payout', approveSell: 'Approve selected NFT', sellSelected: 'Sell selected NFT', insufficientReserve: 'AMM Community Token reserve is insufficient',
-    connectTrade: 'Connect wallet',
+    connectTrade: 'Connect wallet', noTransactions: 'No NFT mint, buy, or sell transactions yet.', loadMoreTransactions: 'Load more transactions',
+    personalTransactions: 'Transactions',
+    activityTime: 'Time', activityType: 'Type', activityAmount: 'Amount', activityHash: 'Transaction',
+    noPersonalActivity: 'No matching records for this wallet yet.', personalActivityFailed: 'Could not load wallet activity. Please try again later.',
     loading: 'Loading live contract state…', txFailed: 'Transaction failed',
   },
   zh: {
@@ -133,30 +138,148 @@ const COPY = {
     approveTrade: '授权社区代币', buySelected: '买入选中 NFT', insufficientBalance: '社区代币余额不足',
     buyNftMode: '买入 NFT', sellNftMode: '卖出 NFT', selectOwnedNft: '从钱包中选择要卖出的 NFT', inWallet: '个在钱包中',
     estimatedPayout: '卖出所得', approveSell: '授权选中 NFT', sellSelected: '卖出选中 NFT', insufficientReserve: 'AMM 社区代币储备不足',
-    connectTrade: '连接钱包',
+    connectTrade: '连接钱包', noTransactions: '暂无 NFT 铸造、买入或卖出记录。', loadMoreTransactions: '加载更多交易',
+    personalTransactions: '交易记录',
+    activityTime: '时间', activityType: '类型', activityAmount: '数量', activityHash: '交易哈希',
+    noPersonalActivity: '当前钱包暂无符合条件的记录。', personalActivityFailed: '钱包记录加载失败，请稍后重试。',
     loading: '正在读取链上实时状态…', txFailed: '操作失败',
   },
 };
 
-const EVENT_LABELS = {
-  INDEX_BROKER_NFT_MINTED: ['NFT Minted', '铸造 NFT'],
-  INDEX_BROKER_NFT_LEVEL_UP: ['NFT Level Up', 'NFT 等级提升'],
-  INDEX_BROKER_NFT_REFERRAL_RECORDED: ['Referral Recorded', '推荐已记录'],
-  INDEX_BROKER_INDEX_MINING_ACTIVATED: ['Index Mining Activated', '指数挖矿已激活'],
-  INDEX_BROKER_INDEX_MINING_WEIGHT_UPGRADED: ['Index Weight Upgraded', '指数权重已提升'],
-  INDEX_BROKER_INDEX_MINING_STAKED: ['Index Mining Staked', '指数挖矿已质押'],
-  INDEX_BROKER_INDEX_MINING_UNSTAKED: ['Index Mining Unstaked', '指数挖矿已赎回'],
-  INDEX_BROKER_INDEX_REWARDS_INJECTED: ['Index Rewards Injected', '指数奖励已注入'],
-  INDEX_BROKER_INDEX_REWARDS_CLAIMED: ['Index Rewards Claimed', '指数奖励已领取'],
-  INDEX_BROKER_NFT_REVEALED: ['NFT Revealed', 'NFT 已揭示'],
-  INDEX_BROKER_NFT_SOLD: ['NFT Sold to AMM', 'NFT 已出售给 AMM'],
-  INDEX_BROKER_NFT_BOUGHT: ['NFT Bought from AMM', '已从 AMM 买入 NFT'],
-  INDEX_BROKER_INDEX_TOKEN_PURCHASED: ['Index Buyback Executed', '指数回购已执行'],
-};
+const NFT_TRANSACTION_EVENT_TYPES = new Set([
+  'INDEX_BROKER_NFT_MINTED',
+  'INDEX_BROKER_NFT_SOLD',
+  'INDEX_BROKER_NFT_BOUGHT',
+]);
 
-function eventLabel(eventType, language) {
-  const labels = EVENT_LABELS[eventType];
-  return labels ? labels[language === 'zh' ? 1 : 0] : eventType;
+function transactionTypeMeta(eventType, language) {
+  if (eventType === 'INDEX_BROKER_NFT_BOUGHT') {
+    return { className: 'is-buy', label: language === 'zh' ? '买入' : 'Buy' };
+  }
+  if (eventType === 'INDEX_BROKER_NFT_SOLD') {
+    return { className: 'is-sell', label: language === 'zh' ? '卖出' : 'Sell' };
+  }
+  return { className: 'is-mint', label: language === 'zh' ? '铸造' : 'Mint' };
+}
+
+function personalActivityCategory(eventType = '') {
+  const normalized = String(eventType).toUpperCase();
+  if (normalized === 'INDEX_BROKER_NFT_BOUGHT' || normalized === 'INDEX_BROKER_NFT_SOLD') return 'trade';
+  if (normalized === 'INDEX_BROKER_NFT_MINTED') return 'mint';
+  if (normalized === 'INDEX_BROKER_NFT_REVEALED') return 'reveal';
+  return '';
+}
+
+function personalActivityTypeMeta(eventType, language) {
+  const category = personalActivityCategory(eventType);
+  if (category === 'trade') return transactionTypeMeta(eventType, language);
+  if (category === 'mint') return { category, className: 'is-mint', label: 'Mint' };
+  return { category, className: 'is-reveal', label: language === 'zh' ? '揭图' : 'Reveal' };
+}
+
+function mergePersonalActivityRows(current, incoming, account) {
+  const normalizedAccount = account?.toLowerCase();
+  const rows = new Map();
+  [...current, ...incoming]
+    .filter((event) => {
+      const eventType = event.eventType || event.event_type;
+      const actor = event.account?.toLowerCase();
+      return personalActivityCategory(eventType) && (!normalizedAccount || actor === normalizedAccount);
+    })
+    .forEach((event) => {
+      const key = event.id
+        || `${event.transactionHash || event.transaction_hash}:${event.logIndex || event.log_index || 0}`;
+      rows.set(key, event);
+    });
+  return [...rows.values()].sort((left, right) => {
+    const blockDelta = Number(right.blockNumber || right.block_number || 0)
+      - Number(left.blockNumber || left.block_number || 0);
+    if (blockDelta !== 0) return blockDelta;
+    return Number(right.logIndex || right.log_index || 0)
+      - Number(left.logIndex || left.log_index || 0);
+  });
+}
+
+function formatRelativeTransactionTime(timestamp, language, now = Date.now()) {
+  const seconds = Math.max(0, Math.floor((now - (Number(timestamp) * 1000)) / 1000));
+  const unit = seconds < 60
+    ? [seconds, language === 'zh' ? '秒前' : seconds === 1 ? 'second ago' : 'seconds ago']
+    : seconds < 3600
+      ? [Math.floor(seconds / 60), language === 'zh' ? '分钟前' : Math.floor(seconds / 60) === 1 ? 'minute ago' : 'minutes ago']
+      : seconds < 86400
+        ? [Math.floor(seconds / 3600), language === 'zh' ? '小时前' : Math.floor(seconds / 3600) === 1 ? 'hour ago' : 'hours ago']
+        : [Math.floor(seconds / 86400), language === 'zh' ? '天前' : Math.floor(seconds / 86400) === 1 ? 'day ago' : 'days ago'];
+  return language === 'zh' ? `${unit[0]}${unit[1]}` : `${unit[0]} ${unit[1]}`;
+}
+
+function formatExactTransactionTime(timestamp, language) {
+  const date = new Date(Number(timestamp) * 1000);
+  if (Number.isNaN(date.getTime())) return '—';
+  return new Intl.DateTimeFormat(language === 'zh' ? 'zh-CN' : 'en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+    timeZoneName: 'short',
+  }).format(date);
+}
+
+function TransactionTime({ timestamp, language }) {
+  const [now, setNow] = useState(() => Date.now());
+  const ageSeconds = Math.max(0, Math.floor((now - (Number(timestamp) * 1000)) / 1000));
+  const relative = formatRelativeTransactionTime(timestamp, language, now);
+  const exact = formatExactTransactionTime(timestamp, language);
+  const refreshInterval = ageSeconds < 60 ? 1_000 : ageSeconds < 3600 ? 30_000 : 300_000;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), refreshInterval);
+    return () => window.clearInterval(timer);
+  }, [refreshInterval]);
+
+  return (
+    <time
+      className="index-broker-transaction-time"
+      dateTime={Number(timestamp) > 0 ? new Date(Number(timestamp) * 1000).toISOString() : undefined}
+      tabIndex={0}
+    >
+      {relative}
+      <span className="index-broker-time-tooltip" role="tooltip">
+        <strong>{exact}</strong>
+        <small>{relative}</small>
+      </span>
+    </time>
+  );
+}
+
+function normalizeTransactionHash(value) {
+  if (!value) return '';
+  return value.startsWith('0x') ? value : `0x${value}`;
+}
+
+function shortenTransactionHash(value) {
+  const hash = normalizeTransactionHash(value);
+  return hash ? `${hash.slice(0, 8)}…${hash.slice(-6)}` : '—';
+}
+
+function mergeTransactionRows(current, incoming) {
+  const rows = new Map();
+  [...current, ...incoming]
+    .filter(event => NFT_TRANSACTION_EVENT_TYPES.has(event.eventType || event.event_type))
+    .forEach((event) => {
+      const key = event.id
+        || `${event.transactionHash || event.transaction_hash}:${event.logIndex || event.log_index || 0}`;
+      rows.set(key, event);
+    });
+  return [...rows.values()].sort((left, right) => {
+    const blockDelta = Number(right.blockNumber || right.block_number || 0)
+      - Number(left.blockNumber || left.block_number || 0);
+    if (blockDelta !== 0) return blockDelta;
+    return Number(right.logIndex || right.log_index || 0)
+      - Number(left.logIndex || left.log_index || 0);
+  });
 }
 
 const POOL_INTERFACE = new ethers.Interface(IndexBrokerNFTABI);
@@ -322,14 +445,14 @@ function NftArtwork({ src, alt, fallback }) {
   return <img src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />;
 }
 
-function AboutContractRow({ label, address, explorerUrl }) {
-  const available = ethers.isAddress(address) && address !== ethers.ZeroAddress;
+function AboutContractRow({ label, address, explorerUrl, symbol = '' }) {
+  const available = ethers.isAddress(address) && address.toLowerCase() !== ethers.ZeroAddress.toLowerCase();
   return (
     <div className="index-broker-about-row">
       <span>{label}</span>
       {available ? (
         <a href={`${explorerUrl}/address/${address}`} target="_blank" rel="noreferrer">
-          {shortenAddress(address, 6)} ↗
+          {symbol ? `${symbol} · ` : ''}{shortenAddress(address, 6)} ↗
         </a>
       ) : <strong>—</strong>}
     </div>
@@ -426,6 +549,7 @@ export default function IndexBrokerNFTPoolCard({
   const poolAddressesRef = useRef(null);
   const inventoryIdsRef = useRef(null);
   const indexedInsightsRef = useRef(null);
+  const transactionLoadMoreRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [actionLoading, setActionLoading] = useTimedActionLoading('');
@@ -433,6 +557,7 @@ export default function IndexBrokerNFTPoolCard({
   const [upgradeAmounts, setUpgradeAmounts] = useState({});
   const [indexRewardAmount, setIndexRewardAmount] = useState('');
   const [mintResult, setMintResult] = useState(null);
+  const [mintAttempted, setMintAttempted] = useState(false);
   const [buybackQuote, setBuybackQuote] = useState({
     loading: false,
     nativeReserve: 0n,
@@ -442,12 +567,23 @@ export default function IndexBrokerNFTPoolCard({
   });
   const [ammTradeSide, setAmmTradeSide] = useState('buy');
   const [ammTradeMode, setAmmTradeMode] = useState('swap');
+  const [tradeBalanceError, setTradeBalanceError] = useState('');
   const [selectedInventoryTokenId, setSelectedInventoryTokenId] = useState('');
   const [selectedOwnedTokenId, setSelectedOwnedTokenId] = useState('');
   const [newReceiver, setNewReceiver] = useState('');
   const [ownedNfts, setOwnedNfts] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [recentEvents, setRecentEvents] = useState([]);
+  const [transactionsLoading, setTransactionsLoading] = useState(true);
+  const [transactionsLoadingMore, setTransactionsLoadingMore] = useState(false);
+  const [transactionsHasMore, setTransactionsHasMore] = useState(false);
+  const [transactionCursor, setTransactionCursor] = useState(null);
+  const [personalActivity, setPersonalActivity] = useState([]);
+  const [personalActivityLoading, setPersonalActivityLoading] = useState(false);
+  const [personalActivityLoadingMore, setPersonalActivityLoadingMore] = useState(false);
+  const [personalActivityError, setPersonalActivityError] = useState('');
+  const [personalActivityCursor, setPersonalActivityCursor] = useState(null);
+  const [personalActivityHasMore, setPersonalActivityHasMore] = useState(false);
   const [indexedLoading, setIndexedLoading] = useState(true);
   const [data, setData] = useState({
     name: pool.name || c.type,
@@ -474,6 +610,7 @@ export default function IndexBrokerNFTPoolCard({
     totalActiveIndexWeight: 0n,
     queuedIndexRewards: 0n,
     trailingInjectedRewards: null,
+    totalBurnedMiningAmount: null,
     indexNativeQuote: 0n,
     miningNativeQuote: 0n,
     dailyCommunityRewards: null,
@@ -516,7 +653,13 @@ export default function IndexBrokerNFTPoolCard({
     setOwnedNfts([]);
     setUpgradeAmounts({});
     setMintResult(null);
+    setMintAttempted(false);
+    setTradeBalanceError('');
   }, [account, pool.id]);
+
+  useEffect(() => {
+    setTradeBalanceError('');
+  }, [ammTradeMode, ammTradeSide, selectedInventoryTokenId]);
 
   useEffect(() => {
     if (!detail) return;
@@ -537,7 +680,7 @@ export default function IndexBrokerNFTPoolCard({
       pool.id,
       {
         accountsSize: detail ? 10 : 1,
-        eventsSize: detail ? 12 : 1,
+        eventsSize: 1,
         inventorySize: detail ? 24 : 1,
       },
       network.id,
@@ -549,7 +692,6 @@ export default function IndexBrokerNFTPoolCard({
         promise: null,
         expiresAt: Date.now() + INDEXED_INSIGHTS_TTL_MS,
       };
-      setRecentEvents((insights.recentEvents || []).slice(0, 12));
       return insights;
     }).catch((error) => {
       console.error('Failed to load Index Broker indexed insights:', error);
@@ -558,7 +700,6 @@ export default function IndexBrokerNFTPoolCard({
         // Do not cache transport/indexer failures as a real empty result. The
         // regular 15-second refresh should be able to recover automatically.
         indexedInsightsRef.current = null;
-        setRecentEvents([]);
         setIndexedLoading(false);
       }
       return empty;
@@ -568,6 +709,157 @@ export default function IndexBrokerNFTPoolCard({
     indexedInsightsRef.current = { key, data: null, promise, expiresAt: 0 };
     return promise;
   }, [detail, network.id, pool.id]);
+
+  useEffect(() => {
+    if (!detail) return undefined;
+    let cancelled = false;
+    setRecentEvents([]);
+    setTransactionCursor(null);
+    setTransactionsHasMore(false);
+    setTransactionsLoading(true);
+    fetchIndexBrokerNftTransactions(pool.id, { size: 12 }, network.id)
+      .then((result) => {
+        if (cancelled) return;
+        setRecentEvents(current => mergeTransactionRows(current, result.list || []));
+        setTransactionCursor(result.nextCursor || null);
+        setTransactionsHasMore(Boolean(result.hasMore));
+      })
+      .catch(error => console.error('Failed to load NFT transactions:', error))
+      .finally(() => {
+        if (!cancelled) setTransactionsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [detail, network.id, pool.id]);
+
+  useEffect(() => {
+    if (!detail || section !== 'holdings' || !account) {
+      setPersonalActivity([]);
+      setPersonalActivityError('');
+      setPersonalActivityLoading(false);
+      setPersonalActivityCursor(null);
+      setPersonalActivityHasMore(false);
+      return undefined;
+    }
+
+    let cancelled = false;
+    const loadPersonalActivity = async () => {
+      setPersonalActivityLoading(true);
+      try {
+        const result = await fetchIndexBrokerNftAccountEvents(
+          pool.id,
+          { account, size: 20 },
+          network.id,
+        );
+        if (cancelled) return;
+        setPersonalActivity(mergePersonalActivityRows([], result.list || [], account));
+        setPersonalActivityCursor(result.nextCursor || null);
+        setPersonalActivityHasMore(Boolean(result.hasMore));
+        setPersonalActivityError('');
+      } catch (error) {
+        console.error('Failed to load wallet Index Broker activity:', error);
+        if (!cancelled) setPersonalActivityError(c.personalActivityFailed);
+      } finally {
+        if (!cancelled) setPersonalActivityLoading(false);
+      }
+    };
+
+    setPersonalActivity([]);
+    setPersonalActivityError('');
+    setPersonalActivityCursor(null);
+    setPersonalActivityHasMore(false);
+    loadPersonalActivity();
+    return () => { cancelled = true; };
+  }, [account, c.personalActivityFailed, detail, network.id, pool.id, section]);
+
+  const loadMorePersonalActivity = useCallback(async () => {
+    if (!account || !personalActivityHasMore || !personalActivityCursor || personalActivityLoadingMore) return;
+    setPersonalActivityLoadingMore(true);
+    try {
+      const result = await fetchIndexBrokerNftAccountEvents(pool.id, {
+        account,
+        beforeBlock: personalActivityCursor.blockNumber,
+        beforeLogIndex: personalActivityCursor.logIndex,
+        size: 20,
+      }, network.id);
+      setPersonalActivity(current => mergePersonalActivityRows(current, result.list || [], account));
+      setPersonalActivityCursor(result.nextCursor || null);
+      setPersonalActivityHasMore(Boolean(result.hasMore));
+      setPersonalActivityError('');
+    } catch (error) {
+      console.error('Failed to load more wallet Index Broker activity:', error);
+      setPersonalActivityError(c.personalActivityFailed);
+    } finally {
+      setPersonalActivityLoadingMore(false);
+    }
+  }, [account, c.personalActivityFailed, network.id, personalActivityCursor, personalActivityHasMore, personalActivityLoadingMore, pool.id]);
+
+  const loadMoreTransactions = useCallback(async () => {
+    if (!detail || !transactionsHasMore || !transactionCursor || transactionsLoadingMore) return;
+    setTransactionsLoadingMore(true);
+    try {
+      const result = await fetchIndexBrokerNftTransactions(pool.id, {
+        beforeBlock: transactionCursor.blockNumber,
+        beforeLogIndex: transactionCursor.logIndex,
+        size: 12,
+      }, network.id);
+      setRecentEvents(current => mergeTransactionRows(current, result.list || []));
+      setTransactionCursor(result.nextCursor || null);
+      setTransactionsHasMore(Boolean(result.hasMore));
+    } catch (error) {
+      console.error('Failed to load more NFT transactions:', error);
+    } finally {
+      setTransactionsLoadingMore(false);
+    }
+  }, [detail, network.id, pool.id, transactionCursor, transactionsHasMore, transactionsLoadingMore]);
+
+  useEffect(() => {
+    if (!detail) return undefined;
+    const socketUrl = getIndexBrokerNftTransactionsWebSocketUrl(pool.id, network.id);
+    if (!socketUrl) return undefined;
+    let socket = null;
+    let reconnectTimer = null;
+    let stopped = false;
+    let reconnectAttempts = 0;
+
+    const connectSocket = () => {
+      if (stopped) return;
+      socket = new WebSocket(socketUrl);
+      socket.onopen = () => { reconnectAttempts = 0; };
+      socket.onmessage = (message) => {
+        try {
+          const payload = JSON.parse(message.data);
+          if (!['snapshot', 'transactions'].includes(payload.type) || !Array.isArray(payload.transactions)) return;
+          setRecentEvents(current => mergeTransactionRows(current, payload.transactions));
+        } catch (error) {
+          console.warn('Ignored invalid NFT transaction socket message:', error);
+        }
+      };
+      socket.onclose = () => {
+        if (stopped) return;
+        const delay = Math.min(30_000, 1_000 * (2 ** reconnectAttempts));
+        reconnectAttempts += 1;
+        reconnectTimer = window.setTimeout(connectSocket, delay);
+      };
+      socket.onerror = () => socket?.close();
+    };
+
+    connectSocket();
+    return () => {
+      stopped = true;
+      if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);
+      socket?.close();
+    };
+  }, [detail, network.id, pool.id]);
+
+  useEffect(() => {
+    const target = transactionLoadMoreRef.current;
+    if (!target || !transactionsHasMore || transactionsLoadingMore) return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some(entry => entry.isIntersecting)) loadMoreTransactions();
+    }, { rootMargin: '160px 0px' });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [loadMoreTransactions, section, transactionsHasMore, transactionsLoadingMore]);
 
   const loadPoolData = useCallback(async () => {
     if (!readProvider || !contracts.Multicall3) return;
@@ -948,6 +1240,9 @@ export default function IndexBrokerNFTPoolCard({
       const trailingInjectedRewards = indexRewardSummary
         ? toBigInt(indexRewardSummary.injectedAmount)
         : null;
+      const totalBurnedMiningAmount = indexRewardSummary?.totalBurnedMiningAmount !== undefined
+        ? toBigInt(indexRewardSummary.totalBurnedMiningAmount)
+        : null;
       let indexNativeQuote = 0n;
       let miningNativeQuote = 0n;
       if (ethers.isAddress(secondary.nutboxRouterAddress)) {
@@ -1007,6 +1302,7 @@ export default function IndexBrokerNFTPoolCard({
         totalActiveIndexWeight: toBigInt(primary.totalActiveIndexWeight),
         queuedIndexRewards: toBigInt(primary.queuedIndexRewards),
         trailingInjectedRewards,
+        totalBurnedMiningAmount,
         indexNativeQuote: toBigInt(indexNativeQuote),
         miningNativeQuote: toBigInt(miningNativeQuote),
         dailyCommunityRewards,
@@ -1300,16 +1596,36 @@ export default function IndexBrokerNFTPoolCard({
   };
 
   const handleMint = async () => {
-    if (!(await validateMintBalances())) return;
-    const receipt = await execute(
-      'mint',
-      language === 'zh' ? '正在铸造 NFT…' : 'Minting NFT…',
-      language === 'zh' ? 'NFT 铸造成功' : 'NFT minted',
-      writeSigner => new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).mint(
+    let receipt = null;
+    setMintAttempted(true);
+    setActionLoading('mint');
+    try {
+      if (!(await validateMintBalances())) return;
+      const writeSigner = await getWriteSigner();
+      if (data.mintAllowance < data.communityTokenPrice) {
+        const approvalTx = await new ethers.Contract(data.communityAsset.address, ERC20ABI, writeSigner)
+          .approve(pool.id, ethers.MaxUint256);
+        toast.info(language === 'zh'
+          ? '正在授权铸造代币，确认后将自动继续铸造…'
+          : 'Approving the mint token; minting will continue automatically…');
+        await approvalTx.wait();
+      }
+
+      const tx = await new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).mint(
         data.whitelistRemaining > 0n ? 0n : toBigInt(referrerTokenId),
         { value: data.whitelistRemaining > 0n ? 0n : data.nativePrice },
-      ),
-    );
+      );
+      toast.info(language === 'zh' ? '正在铸造 NFT…' : 'Minting NFT…');
+      receipt = await tx.wait();
+      toast.success(language === 'zh' ? 'NFT 铸造成功' : 'NFT minted');
+      setMintAttempted(false);
+      await loadPoolData();
+      onRefresh?.();
+    } catch (error) {
+      toast.error(error.shortMessage || error.reason || error.message || c.txFailed);
+    } finally {
+      setActionLoading('');
+    }
     if (!receipt) return;
 
     let tokenId = mintedTokenIdFromReceipt(receipt, pool.id, account);
@@ -1340,11 +1656,6 @@ export default function IndexBrokerNFTPoolCard({
         ? 'NFT 已进入揭图倒计时，请在 256 个区块的窗口内及时完成揭图。'
         : 'The NFT reveal countdown has started. Reveal it within the 256-block window.');
     }
-  };
-
-  const handleApproveMint = async () => {
-    if (!(await validateMintBalances())) return;
-    await approveCommunityToken(pool.id, 'approve-mint');
   };
 
   const claimCommunityRewards = () => execute(
@@ -1487,30 +1798,67 @@ export default function IndexBrokerNFTPoolCard({
     },
   );
 
-  const buyNft = tokenId => execute(
-    `buy-${tokenId || 'next'}`,
-    language === 'zh' ? '正在从 AMM 买入 NFT…' : 'Buying NFT from AMM…',
-    language === 'zh' ? 'NFT 买入成功' : 'NFT purchased',
-    async writeSigner => {
+  const validateAmmBuyBalance = async () => {
+    let communityBalance = data.communityBalance;
+    try {
+      communityBalance = await new ethers.Contract(data.communityAsset.address, ERC20ABI, readProvider)
+        .balanceOf(account);
+      setData(current => ({ ...current, communityBalance }));
+    } catch (error) {
+      console.warn('Failed to refresh AMM trade balance:', error);
+    }
+    if (communityBalance < data.amm.tokensPerNFT) {
+      setTradeBalanceError(c.insufficientBalance);
+      return false;
+    }
+    setTradeBalanceError('');
+    return true;
+  };
+
+  const buyNft = async (tokenId) => {
+    const key = `buy-${tokenId || 'next'}`;
+    setActionLoading(key);
+    try {
+      if (!(await validateAmmBuyBalance())) return;
+      const writeSigner = await getWriteSigner();
+      if (data.ammAllowance < data.amm.tokensPerNFT) {
+        const approvalTx = await new ethers.Contract(data.communityAsset.address, ERC20ABI, writeSigner)
+          .approve(data.ammAddress, ethers.MaxUint256);
+        toast.info(language === 'zh'
+          ? '正在授权社区代币，确认后将自动继续交易…'
+          : 'Approving the Community Token; the trade will continue automatically…');
+        await approvalTx.wait();
+      }
+
       const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner);
+      let tx;
       if (tokenId) {
         const fee = await amm.quoteSpecificNativeFee();
-        return amm.buySpecificNFT(tokenId, { value: withFeeBuffer(fee) });
+        tx = await amm.buySpecificNFT(tokenId, { value: withFeeBuffer(fee) });
+      } else {
+        const fee = await amm.quoteNormalNativeFee();
+        tx = await amm.buyNextNFT({ value: withFeeBuffer(fee) });
       }
-      const fee = await amm.quoteNormalNativeFee();
-      return amm.buyNextNFT({ value: withFeeBuffer(fee) });
-    },
-  );
+      toast.info(language === 'zh' ? '正在从 AMM 买入 NFT…' : 'Buying NFT from AMM…');
+      await tx.wait();
+      toast.success(language === 'zh' ? 'NFT 买入成功' : 'NFT purchased');
+      setTradeBalanceError('');
+      await loadPoolData();
+      onRefresh?.();
+    } catch (error) {
+      toast.error(error.shortMessage || error.reason || error.message || c.txFailed);
+    } finally {
+      setActionLoading('');
+    }
+  };
 
   const busy = Boolean(actionLoading);
   const mintUsesWhitelist = data.whitelistRemaining > 0n;
   const canMint = data.totalSupply < data.maxSupply && (mintUsesWhitelist || data.remainingPaidMints > 0n);
-  const mintApprovalNeeded = data.mintAllowance < data.communityTokenPrice;
-  const mintBalanceError = isConnected
+  const mintBalanceError = isConnected && mintAttempted
     ? getMintBalanceError(data.communityBalance, data.nativeBalance)
     : '';
   const recommitApprovalNeeded = data.recommitPrice > 0n && data.mintAllowance < data.recommitPrice;
-  const ammApprovalNeeded = data.ammAllowance < data.amm.tokensPerNFT;
   const parsedIndexRewardAmount = parseUnitsSafe(indexRewardAmount, data.indexToken.decimals);
   const indexApprovalNeeded = parsedIndexRewardAmount > 0n && data.indexAllowance < parsedIndexRewardAmount;
   const rendererKnown = ethers.isAddress(data.rendererAddress)
@@ -1541,7 +1889,6 @@ export default function IndexBrokerNFTPoolCard({
     showAllDetail
     || section === 'activity'
     || (compactDetailLayout && section === 'mint-amm')
-    || (organized && section === 'about')
   );
   const showAbout = detail && section === 'about';
   const showFullHeaderDetails = !compactDetailLayout || showAbout;
@@ -1696,48 +2043,50 @@ export default function IndexBrokerNFTPoolCard({
     <>
       <div className={`pool-card index-broker-card ${detail ? 'index-broker-detail' : 'index-broker-summary'} ${compactDetailLayout ? 'index-broker-embedded' : ''} ${organized ? 'index-broker-organized' : ''} glass-card`} id={`pool-${pool.id}`}>
         {compactDetailLayout ? (
-          <div className="index-broker-compact-header">
-            <div className="index-broker-compact-identity">
-              <div className="index-broker-compact-title">
-                <strong>{data.name}</strong>
-                <span className="index-broker-compact-symbol">{data.symbol}</span>
+          <div className={organized ? 'index-broker-overview-card glass-card' : 'index-broker-compact-header-wrap'}>
+            <div className="index-broker-compact-header">
+              <div className="index-broker-compact-identity">
+                <div className="index-broker-compact-title">
+                  <strong>{data.name}</strong>
+                  <span className="index-broker-compact-symbol">{data.symbol}</span>
+                </div>
+                <div className="index-broker-compact-aprs">
+                  <button
+                    type="button"
+                    className="index-broker-compact-apr"
+                    onClick={() => onSectionChange?.('mining')}
+                    aria-label={language === 'zh' ? '查看激活挖矿' : 'View mining activation'}
+                  >
+                    <span>{data.miningMode === 'stake' ? c.stakeMiningApr : c.burnMiningApr}</span>
+                    <strong>{loading || indexedLoading ? '…' : formatApr(indexMiningPreview.aprBps)}</strong>
+                  </button>
+                  <button
+                    type="button"
+                    className="index-broker-compact-apr"
+                    onClick={() => onSectionChange?.('referral')}
+                    aria-label={language === 'zh' ? '查看持有分红' : 'View holder rewards'}
+                  >
+                    <span>{c.holdingApr}</span>
+                    <strong>{loading ? '…' : formatApr(holdingAprBps)}</strong>
+                  </button>
+                </div>
               </div>
-              <div className="index-broker-compact-aprs">
-                <button
-                  type="button"
-                  className="index-broker-compact-apr"
-                  onClick={() => onSectionChange?.('mining')}
-                  aria-label={language === 'zh' ? '查看激活挖矿' : 'View mining activation'}
-                >
-                  <span>{data.miningMode === 'stake' ? c.stakeMiningApr : c.burnMiningApr}</span>
-                  <strong>{loading || indexedLoading ? '…' : formatApr(indexMiningPreview.aprBps)}</strong>
-                </button>
-                <button
-                  type="button"
-                  className="index-broker-compact-apr"
-                  onClick={() => onSectionChange?.('referral')}
-                  aria-label={language === 'zh' ? '查看持有分红' : 'View holder rewards'}
-                >
-                  <span>{c.holdingApr}</span>
-                  <strong>{loading ? '…' : formatApr(holdingAprBps)}</strong>
-                </button>
+              <div>
+                <span>{c.totalSupply}</span>
+                <strong>{loading ? '…' : `${data.totalSupply} / ${data.maxSupply}`}</strong>
               </div>
-            </div>
-            <div>
-              <span>{c.totalSupply}</span>
-              <strong>{loading ? '…' : `${data.totalSupply} / ${data.maxSupply}`}</strong>
-            </div>
-            <div>
-              <span>{c.mintCost}</span>
-              <strong>{formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}</strong>
-            </div>
-            <div>
-              <span>{c.nativeCost}</span>
-              <strong>{formatTokenAmount(data.nativePrice, 18)} {network.nativeCurrency.symbol}</strong>
-            </div>
-            <div>
-              <span>{c.referralRate}</span>
-              <strong>{(data.referralBps / 100).toFixed(2)}%</strong>
+              <div>
+                <span>{c.mintCost}</span>
+                <strong>{formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}</strong>
+              </div>
+              <div>
+                <span>{c.nativeCost}</span>
+                <strong>{formatTokenAmount(data.nativePrice, 18)} {network.nativeCurrency.symbol}</strong>
+              </div>
+              <div>
+                <span>{c.referralRate}</span>
+                <strong>{(data.referralBps / 100).toFixed(2)}%</strong>
+              </div>
             </div>
           </div>
         ) : (
@@ -1832,8 +2181,16 @@ export default function IndexBrokerNFTPoolCard({
                     <AboutContractRow label={language === 'zh' ? 'NFT 合集' : 'Collection'} address={pool.id} explorerUrl={network.explorerUrl} />
                     <AboutContractRow label="Renderer" address={data.rendererAddress} explorerUrl={network.explorerUrl} />
                     <AboutContractRow label={language === 'zh' ? 'AMM 金库' : 'AMM vault'} address={data.ammAddress} explorerUrl={network.explorerUrl} />
-                    <AboutContractRow label={language === 'zh' ? '社区代币' : 'Community Token'} address={data.communityAsset.address} explorerUrl={network.explorerUrl} />
-                    <AboutContractRow label={language === 'zh' ? '指数代币' : 'Index token'} address={data.indexToken.address} explorerUrl={network.explorerUrl} />
+                    <AboutContractRow label={language === 'zh' ? '社区代币' : 'Community token'} address={data.communityAsset.address} symbol={data.communityAsset.symbol} explorerUrl={network.explorerUrl} />
+                    <AboutContractRow
+                      label={data.miningMode === 'stake'
+                        ? (language === 'zh' ? '质押代币' : 'Staking token')
+                        : (language === 'zh' ? '销毁代币' : 'Burn token')}
+                      address={data.miningToken.address}
+                      symbol={data.miningToken.symbol}
+                      explorerUrl={network.explorerUrl}
+                    />
+                    <AboutContractRow label={language === 'zh' ? '指数奖励代币' : 'Index reward token'} address={data.indexToken.address} symbol={data.indexToken.symbol} explorerUrl={network.explorerUrl} />
                   </article>
 
                   <article className="index-broker-about-card">
@@ -1843,6 +2200,22 @@ export default function IndexBrokerNFTPoolCard({
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '每枚 AMM 价格' : 'Tokens / NFT'}</span><strong>{formatTokenAmount(data.amm.tokensPerNFT, data.communityAsset.decimals)} {data.communityAsset.symbol}</strong></div>
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '公开 Mint 价格' : 'Public mint price'}</span><strong>{formatTokenAmount(data.nativePrice, 18)} {network.nativeCurrency.symbol}</strong></div>
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '指数挖矿模式' : 'Index mining mode'}</span><strong>{data.miningMode === 'stake' ? c.stakeMode : c.burnMode}</strong></div>
+                    <div className="index-broker-about-row">
+                      <span>{language === 'zh' ? '公开 Mint 手续费地址' : 'Public mint fee receiver'}</span>
+                      {(!data.fundsReceiver
+                        || data.fundsReceiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()) ? (
+                          data.fundsReceiver
+                            ? <strong>{language === 'zh' ? '回购池' : 'Buyback pool'}</strong>
+                            : <strong>—</strong>
+                        ) : data.ammAddress
+                          && data.fundsReceiver.toLowerCase() === data.ammAddress.toLowerCase() ? (
+                            <strong>{language === 'zh' ? '回购池' : 'Buyback pool'}</strong>
+                          ) : (
+                            <a href={`${network.explorerUrl}/address/${data.fundsReceiver}`} target="_blank" rel="noreferrer">
+                              {shortenAddress(data.fundsReceiver, 6)} ↗
+                            </a>
+                          )}
+                    </div>
                   </article>
 
                   <article className="index-broker-about-card index-broker-about-wide">
@@ -1851,6 +2224,20 @@ export default function IndexBrokerNFTPoolCard({
                       <div><span>{c.totalWeight}</span><strong>{data.totalWeight.toString()}</strong></div>
                       <div><span>{c.indexWeight}</span><strong>{formatTokenAmount(data.totalActiveIndexWeight, data.miningToken.decimals)} {data.miningToken.symbol}</strong></div>
                       <div><span>{c.queuedRewards}</span><strong>{formatTokenAmount(data.queuedIndexRewards, data.indexToken.decimals)} {data.indexToken.symbol}</strong></div>
+                      <div>
+                        <span>
+                          {data.miningMode === 'stake'
+                            ? (language === 'zh' ? '当前质押总量' : 'Total staked')
+                            : (language === 'zh' ? '累计销毁总量' : 'Total burned')}
+                        </span>
+                        <strong>
+                          {data.miningMode === 'stake'
+                            ? `${formatTokenAmount(data.totalActiveIndexWeight, data.miningToken.decimals)} ${data.miningToken.symbol}`
+                            : data.totalBurnedMiningAmount === null
+                              ? '—'
+                              : `${formatTokenAmount(data.totalBurnedMiningAmount, data.miningToken.decimals)} ${data.miningToken.symbol}`}
+                        </strong>
+                      </div>
                     </div>
                   </article>
                 </div>
@@ -1940,11 +2327,7 @@ export default function IndexBrokerNFTPoolCard({
                 {!mintUsesWhitelist && (
                   <input className="input" type="number" min="0" step="1" value={referrerTokenId} onChange={event => setReferrerTokenId(event.target.value)} placeholder={c.referrer} />
                 )}
-                {mintApprovalNeeded ? (
-                  <button className="btn btn-primary" disabled={busy} onClick={handleApproveMint}>{c.approveMint}</button>
-                ) : (
-                  <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{c.mint}</button>
-                )}
+                <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{c.mint}</button>
               </>
             )}
           </section>
@@ -2141,6 +2524,76 @@ export default function IndexBrokerNFTPoolCard({
                   </article>
                 );
               })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {showOwnedCollection && (
+        <section className="index-broker-nft-section glass-card index-broker-personal-activity">
+          <div className="index-broker-section-heading index-broker-personal-activity-heading">
+            <h2>{c.personalTransactions}</h2>
+          </div>
+
+          {!isConnected || !account ? (
+            <div className="index-broker-owned-gate index-broker-personal-activity-empty">
+              <p>{c.connect}</p>
+              <button className="btn btn-primary" disabled={connecting} onClick={connect}>{language === 'zh' ? '连接钱包' : 'Connect wallet'}</button>
+            </div>
+          ) : personalActivityLoading ? (
+            <div className="index-broker-personal-activity-status"><span className="spinner" /></div>
+          ) : personalActivityError ? (
+            <div className="index-broker-personal-activity-status is-error">{personalActivityError}</div>
+          ) : personalActivity.length === 0 ? (
+            <div className="index-broker-personal-activity-status">{c.noPersonalActivity}</div>
+          ) : (
+            <div className="index-broker-personal-activity-scroll">
+              <div className="index-broker-personal-activity-table" role="table">
+                <div className="index-broker-personal-activity-header" role="row">
+                  <span role="columnheader">{c.activityTime}</span>
+                  <span role="columnheader">{c.activityType}</span>
+                  <span role="columnheader">NFT ID</span>
+                  <span role="columnheader">{c.activityAmount}</span>
+                  <span role="columnheader">{c.activityHash}</span>
+                </div>
+                {personalActivity.map((event) => {
+                  const eventType = event.eventType || event.event_type;
+                  const typeMeta = personalActivityTypeMeta(eventType, language);
+                  const transactionHash = normalizeTransactionHash(event.transactionHash || event.transaction_hash);
+                  const tokenId = event.tokenId || event.token_id;
+                  const amount = toBigInt(event.amount);
+                  const amountText = typeMeta.category === 'reveal'
+                    ? '—'
+                    : `${formatTokenAmount(amount, data.communityAsset.decimals)} ${data.communityAsset.symbol}`;
+                  return (
+                    <div className="index-broker-personal-activity-row" role="row" key={event.id || `${transactionHash}-${event.logIndex || event.log_index || 0}`}>
+                      <div role="cell"><TransactionTime timestamp={event.blockTimestamp || event.block_timestamp} language={language} /></div>
+                      <strong className={`index-broker-transaction-type ${typeMeta.className}`} role="cell">{typeMeta.label}</strong>
+                      <strong className="index-broker-transaction-nft" role="cell">{tokenId ? `#${tokenId}` : '—'}</strong>
+                      <span role="cell">{amountText}</span>
+                      {transactionHash ? (
+                        <a
+                          className="index-broker-transaction-hash"
+                          role="cell"
+                          href={`${network.explorerUrl}/tx/${transactionHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={transactionHash}
+                        >
+                          {shortenTransactionHash(transactionHash)} ↗
+                        </a>
+                      ) : <span role="cell">—</span>}
+                    </div>
+                  );
+                })}
+              </div>
+              {personalActivityHasMore && (
+                <div className="index-broker-transaction-sentinel">
+                  <button className="btn btn-secondary btn-sm" type="button" disabled={personalActivityLoadingMore} onClick={loadMorePersonalActivity}>
+                    {personalActivityLoadingMore ? <span className="spinner" /> : c.loadMoreTransactions}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </section>
@@ -2369,12 +2822,11 @@ export default function IndexBrokerNFTPoolCard({
 
               {!isConnected ? (
                 <button className="btn btn-primary index-broker-trade-action" disabled={connecting} onClick={connect}>{c.connectTrade}</button>
-              ) : ammApprovalNeeded ? (
-                <button className="btn btn-primary index-broker-trade-action" disabled={busy || !data.amm.active || !tradeNft} onClick={() => approveCommunityToken(data.ammAddress, 'approve-amm')}>{c.approveTrade}</button>
-              ) : !hasTradeBalance ? (
-                <button className="btn btn-primary index-broker-trade-action" disabled>{c.insufficientBalance}</button>
               ) : (
-                <button className="btn btn-primary index-broker-trade-action" disabled={busy || !data.amm.active || !tradeNft} onClick={() => buyNft(ammTradeMode === 'snipe' ? tradeNft?.tokenId : null)}>{ammTradeMode === 'snipe' ? c.buySelected : c.buyNext}{tradeNft ? ` #${tradeNft.tokenId.toString()}` : ''}</button>
+                <>
+                  <button className="btn btn-primary index-broker-trade-action" disabled={busy || !data.amm.active || !tradeNft} onClick={() => buyNft(ammTradeMode === 'snipe' ? tradeNft?.tokenId : null)}>{ammTradeMode === 'snipe' ? c.buySelected : c.buyNext}{tradeNft ? ` #${tradeNft.tokenId.toString()}` : ''}</button>
+                  {tradeBalanceError && <div className="index-broker-trade-balance-warning">{tradeBalanceError}</div>}
+                </>
               )}
             </>
           ) : (
@@ -2460,9 +2912,7 @@ export default function IndexBrokerNFTPoolCard({
             </div>
           )}
           {data.amm.active && isConnected && data.amm.inventoryCount > 0n && (
-            ammApprovalNeeded
-              ? <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => approveCommunityToken(data.ammAddress, 'approve-amm')}>{c.approveAmmToken}</button>
-              : <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => buyNft(null)}>{c.buyNext} #{data.amm.oldestTokenId.toString()}</button>
+            <button className="btn btn-primary btn-sm" disabled={busy || !hasTradeBalance} onClick={() => buyNft(null)}>{c.buyNext} #{data.amm.oldestTokenId.toString()}</button>
           )}
           {inventory.length === 0 ? <div className="index-broker-empty">{c.emptyInventory}</div> : (
             <div className="index-broker-inventory-grid">
@@ -2470,7 +2920,7 @@ export default function IndexBrokerNFTPoolCard({
                 <article key={nft.tokenId.toString()}>
                   <NftArtwork src={nft.image} alt={`${data.name} #${nft.tokenId}`} fallback={`NFT #${nft.tokenId.toString()}`} />
                   <strong>#{nft.tokenId.toString()} · Lv.{Number(nft.info.level)}</strong>
-                  {isConnected && data.amm.active && !ammApprovalNeeded && <button className="btn btn-secondary btn-xs" disabled={busy} onClick={() => buyNft(nft.tokenId)}>{c.buy}</button>}
+                  {isConnected && data.amm.active && <button className="btn btn-secondary btn-xs" disabled={busy || !hasTradeBalance} onClick={() => buyNft(nft.tokenId)}>{c.buy}</button>}
                 </article>
               ))}
             </div>
@@ -2556,12 +3006,82 @@ export default function IndexBrokerNFTPoolCard({
               </div>
             </>
           )}
+
         </section>
       )}
 
       {showActivity && (
         <section className="index-broker-insights index-broker-insights-single">
-          {showActivity && <div className="glass-card"><h2>{compactDetailLayout && section === 'mint-amm' ? (language === 'zh' ? '交易记录' : 'Transactions') : c.activity}</h2>{indexedLoading ? <span className="spinner" /> : recentEvents.length === 0 ? <p>{c.noIndexedData}</p> : recentEvents.map(event => <a className="index-broker-event-row" key={event.id} href={`${network.explorerUrl}/tx/${event.transactionHash || event.transaction_hash}`} target="_blank" rel="noreferrer"><div><strong>{eventLabel(event.eventType || event.event_type, language)}</strong><span>{event.tokenId || event.token_id ? `NFT #${event.tokenId || event.token_id}` : shortenAddress(event.account)}</span></div><small>{formatDate(event.blockTimestamp || event.block_timestamp)}</small></a>)}</div>}
+          {showActivity && (
+            <div className="glass-card">
+              <h2>{language === 'zh' ? '交易记录' : 'Transactions'}</h2>
+              {transactionsLoading ? <span className="spinner" /> : recentEvents.length === 0 ? <p>{c.noTransactions}</p> : (
+                <>
+                  <div className="index-broker-transaction-scroll">
+                    <div className="index-broker-transaction-table" role="table">
+                      <div className="index-broker-transaction-header" role="row">
+                        <span role="columnheader">{language === 'zh' ? '时间' : 'Time'}</span>
+                        <span role="columnheader">{language === 'zh' ? '类型' : 'Type'}</span>
+                        <span role="columnheader">NFT ID</span>
+                        <span role="columnheader">{language === 'zh' ? '代币数量' : 'Token amount'}</span>
+                        <span role="columnheader">{language === 'zh' ? '手续费' : 'Fee'}</span>
+                        <span role="columnheader">{language === 'zh' ? '交易者' : 'Trader'}</span>
+                        <span role="columnheader">Hash</span>
+                      </div>
+                      {recentEvents.map((event) => {
+                        const transactionHash = normalizeTransactionHash(event.transactionHash || event.transaction_hash);
+                        const tokenId = event.tokenId || event.token_id;
+                        const actor = event.account || event.secondaryAccount || event.secondary_account;
+                        const eventType = event.eventType || event.event_type;
+                        const typeMeta = transactionTypeMeta(eventType, language);
+                        const communityAmount = toBigInt(event.amount);
+                        const nativeAmount = eventType === 'INDEX_BROKER_NFT_MINTED'
+                          ? toBigInt(event.secondaryAmount || event.secondary_amount)
+                          : toBigInt(event.secondaryAmount || event.secondary_amount)
+                            + toBigInt(event.tertiaryAmount || event.tertiary_amount);
+                        return (
+                          <div className="index-broker-transaction-row" role="row" key={event.id}>
+                            <div role="cell"><TransactionTime timestamp={event.blockTimestamp || event.block_timestamp} language={language} /></div>
+                            <strong className={`index-broker-transaction-type ${typeMeta.className}`} role="cell">{typeMeta.label}</strong>
+                            <strong className="index-broker-transaction-nft" role="cell">#{tokenId}</strong>
+                            <span role="cell">{formatTokenAmount(communityAmount, data.communityAsset.decimals)} {data.communityAsset.symbol}</span>
+                            <span role="cell">{formatTokenAmount(nativeAmount, network.nativeCurrency.decimals, 6)} {network.nativeCurrency.symbol}</span>
+                            <a
+                              className="index-broker-transaction-trader"
+                              role="cell"
+                              href={`${network.explorerUrl}/address/${actor}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={actor}
+                            >
+                              {shortenAddress(actor)} ↗
+                            </a>
+                            <a
+                              className="index-broker-transaction-hash"
+                              role="cell"
+                              href={`${network.explorerUrl}/tx/${transactionHash}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              title={transactionHash}
+                            >
+                              {shortenTransactionHash(transactionHash)} ↗
+                            </a>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {transactionsHasMore && (
+                      <div className="index-broker-transaction-sentinel" ref={transactionLoadMoreRef}>
+                        <button className="btn btn-secondary btn-sm" type="button" disabled={transactionsLoadingMore} onClick={loadMoreTransactions}>
+                          {transactionsLoadingMore ? <span className="spinner" /> : c.loadMoreTransactions}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </section>
       )}
 

@@ -802,7 +802,7 @@ export async function fetchBasketChildEvents(
 // Live balances, weights, allowances, rewards, inventory summary, and quotes stay on-chain.
 export async function fetchIndexBrokerNftInsights(
   pool,
-  { account, accountsSize = 10, eventsSize = 12, inventorySize = 24 } = {},
+  { account, accountsSize = 10, eventsSize = 12, eventsScope, inventorySize = 24 } = {},
   chainId = DEFAULT_CHAIN_ID,
 ) {
   return fetchAPI(
@@ -810,10 +810,53 @@ export async function fetchIndexBrokerNftInsights(
       account,
       accountsSize,
       eventsSize,
+      eventsScope,
       inventorySize,
     })}`,
     chainId,
   );
+}
+
+export async function fetchIndexBrokerNftTransactions(
+  pool,
+  { beforeBlock, beforeLogIndex, size = 12 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/transactions${buildQuery({
+      beforeBlock,
+      beforeLogIndex,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export async function fetchIndexBrokerNftAccountEvents(
+  pool,
+  { account, beforeBlock, beforeLogIndex, size = 20 } = {},
+  chainId = DEFAULT_CHAIN_ID,
+) {
+  return fetchAPI(
+    `/mining/index-broker-nft-pools/${encodeURIComponent(pool)}/account-events${buildQuery({
+      account,
+      beforeBlock,
+      beforeLogIndex,
+      size,
+    })}`,
+    chainId,
+  );
+}
+
+export function getIndexBrokerNftTransactionsWebSocketUrl(pool, chainId = DEFAULT_CHAIN_ID) {
+  const apiBase = getNetworkConfig(chainId).apiBase;
+  if (!apiBase || typeof window === 'undefined') return '';
+  const url = new URL(apiBase, window.location.origin);
+  url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+  url.pathname = `${url.pathname.replace(/\/$/, '')}/ws/index-broker-nft-transactions`;
+  url.search = '';
+  url.searchParams.set('pool', pool);
+  return url.toString();
 }
 
 // The backend aggregates the indexed reward-injection rows in MySQL and owns
