@@ -30,7 +30,7 @@ export default function IndexBrokerNFTWorkspace({
   if (!pool) return null;
 
   return (
-    <div className="index-broker-workspace">
+    <div className="index-broker-workspace" data-active-section={section}>
       <div className="index-broker-workspace-tabs" role="tablist" aria-label={language === 'zh' ? 'NFT 功能' : 'NFT features'}>
         {(SECTIONS[language] || SECTIONS.en).map(([value, label]) => (
           <button
