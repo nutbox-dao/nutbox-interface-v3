@@ -2380,7 +2380,7 @@ export default function IndexBrokerNFTPoolCard({
                 <div className="index-broker-compact-aprs">
                   <button
                     type="button"
-                    className="index-broker-compact-apr"
+                    className="index-broker-compact-apr mining"
                     onClick={() => onSectionChange?.('mining')}
                     aria-label={language === 'zh' ? '查看激活挖矿' : 'View mining activation'}
                   >
@@ -2389,7 +2389,7 @@ export default function IndexBrokerNFTPoolCard({
                   </button>
                   <button
                     type="button"
-                    className="index-broker-compact-apr"
+                    className="index-broker-compact-apr holding"
                     onClick={() => onSectionChange?.('referral')}
                     aria-label={language === 'zh' ? '查看持有分红' : 'View holder rewards'}
                   >
