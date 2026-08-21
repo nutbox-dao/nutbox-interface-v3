@@ -66,21 +66,38 @@
 
 .index-broker-compact-identity {
   display: grid;
-  grid-template-columns: minmax(0, auto) auto minmax(126px, auto);
+  grid-template-columns: minmax(92px, 1fr) minmax(126px, auto);
   align-items: center;
-  justify-content: start;
   gap: var(--space-2);
 }
 
-.index-broker-compact-identity strong {
+.index-broker-compact-title {
+  display: grid;
+  justify-items: start;
+  min-width: 0;
+  gap: 5px;
+}
+
+.index-broker-compact-title strong {
+  display: -webkit-box;
+  overflow: hidden;
   margin: 0;
+  line-height: 1.2;
   font-size: var(--font-size-lg);
+  text-overflow: ellipsis;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .index-broker-compact-symbol {
+  display: block;
+  max-width: 100%;
   padding: 3px 8px;
   border-radius: var(--radius-full);
   background: rgba(255, 255, 255, 0.055);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .index-broker-compact-aprs {

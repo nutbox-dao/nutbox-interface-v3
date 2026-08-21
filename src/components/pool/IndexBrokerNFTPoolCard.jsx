@@ -1698,8 +1698,10 @@ export default function IndexBrokerNFTPoolCard({
         {compactDetailLayout ? (
           <div className="index-broker-compact-header">
             <div className="index-broker-compact-identity">
-              <strong>{data.name}</strong>
-              <span className="index-broker-compact-symbol">{data.symbol}</span>
+              <div className="index-broker-compact-title">
+                <strong>{data.name}</strong>
+                <span className="index-broker-compact-symbol">{data.symbol}</span>
+              </div>
               <div className="index-broker-compact-aprs">
                 <button
                   type="button"
