@@ -33,6 +33,7 @@ import {
 } from '../../utils/helpers';
 import { multicallRead } from '../../utils/multicall';
 import { applySwapSlippage } from '../../utils/nutboxSwap';
+import { encodeIndexBuybackHookData } from '../../utils/indexBuyback';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './IndexBrokerNFTPoolCard.css';
 
@@ -289,6 +290,9 @@ const RENDERER_INTERFACE = new ethers.Interface(IndexBrokerNFTRendererABI);
 const COMMUNITY_INTERFACE = new ethers.Interface(CommunityABI);
 const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
 const ERC20_INTERFACE = new ethers.Interface(ERC20ABI);
+const INDEX_BASKET_INTERFACE = new ethers.Interface([
+  'function assetCount() view returns (uint256)',
+]);
 const MULTICALL_INTERFACE = new ethers.Interface(Multicall3ABI);
 const NUTBOX_ROUTER_ABI = [
   'function quoteNative(address token, uint256 tokenAmount) view returns (uint256 nativeAmount)',
@@ -688,6 +692,7 @@ export default function IndexBrokerNFTPoolCard({
       tokenReserve: 0n,
       nativeReserve: 0n,
       basketVersion: 0,
+      basketAssetCount: 0,
       basketSwapRouter: '',
     },
   });
@@ -1028,6 +1033,7 @@ export default function IndexBrokerNFTPoolCard({
         readCall('tokensPerNFT', ammAddress, AMM_INTERFACE, 'tokensPerNFT'),
         readCall('settlementTokenAddress', ammAddress, AMM_INTERFACE, 'indexSettlementToken'),
         readCall('basketVersion', ammAddress, AMM_INTERFACE, 'indexBasketVersion'),
+        readCall('basketAssetCount', indexTokenAddress, INDEX_BASKET_INTERFACE, 'assetCount', [], true),
         readCall('basketSwapRouter', ammAddress, AMM_INTERFACE, 'basketSwapRouter'),
         readCall('nutboxRouterAddress', ammAddress, AMM_INTERFACE, 'nutboxRouter'),
         readCall('tokenReserve', communityTokenAddress, ERC20_INTERFACE, 'balanceOf', [ammAddress]),
@@ -1358,6 +1364,7 @@ export default function IndexBrokerNFTPoolCard({
           tokenReserve: toBigInt(secondary.tokenReserve),
           nativeReserve,
           basketVersion: Number(secondary.basketVersion || 0),
+          basketAssetCount: Number(secondary.basketAssetCount || 0),
           basketSwapRouter: secondary.basketSwapRouter || '',
         },
       });
@@ -1438,6 +1445,7 @@ export default function IndexBrokerNFTPoolCard({
       || !data.amm.active
       || nativeReserve <= 0n
       || !ethers.isAddress(data.ammAddress)
+      || data.amm.basketAssetCount <= 0
     ) {
       setBuybackQuote({
         loading: false,
@@ -1461,11 +1469,16 @@ export default function IndexBrokerNFTPoolCard({
       ? account
       : '0x0000000000000000000000000000000000000001';
     const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, readProvider);
+    const hookData = encodeIndexBuybackHookData({
+      chainId: network.id,
+      version: data.amm.basketVersion,
+      assetCount: data.amm.basketAssetCount,
+    });
     const loadQuote = () => {
       amm.getFunction('buyIndexWithNativeReserve').staticCall(
         0n,
         0n,
-        '0x',
+        hookData,
         { from: quoteCaller },
       ).then((quote) => {
         if (cancelled) return;
@@ -1496,7 +1509,17 @@ export default function IndexBrokerNFTPoolCard({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [account, data.amm.active, data.amm.nativeReserve, data.ammAddress, language, readProvider]);
+  }, [
+    account,
+    data.amm.active,
+    data.amm.basketAssetCount,
+    data.amm.basketVersion,
+    data.amm.nativeReserve,
+    data.ammAddress,
+    language,
+    network.id,
+    readProvider,
+  ]);
 
   const execute = async (key, pending, success, transaction) => {
     setActionLoading(key);
@@ -1809,7 +1832,12 @@ export default function IndexBrokerNFTPoolCard({
       language === 'zh' ? '指数回购完成，奖励已注入矿池' : 'Index buyback completed and rewards injected',
       async writeSigner => {
         const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner);
-        const liveQuote = await amm.getFunction('buyIndexWithNativeReserve').staticCall(0n, 0n, '0x');
+        const hookData = encodeIndexBuybackHookData({
+          chainId: network.id,
+          version: data.amm.basketVersion,
+          assetCount: data.amm.basketAssetCount,
+        });
+        const liveQuote = await amm.getFunction('buyIndexWithNativeReserve').staticCall(0n, 0n, hookData);
         const settlementOut = toBigInt(liveQuote.settlementOut ?? liveQuote[1]);
         const indexOut = toBigInt(liveQuote.indexOut ?? liveQuote[2]);
         if (settlementOut <= 0n || indexOut <= 0n) {
@@ -1818,7 +1846,7 @@ export default function IndexBrokerNFTPoolCard({
         return amm.buyIndexWithNativeReserve(
           applySwapSlippage(settlementOut, BUYBACK_SLIPPAGE_BPS),
           applySwapSlippage(indexOut, BUYBACK_SLIPPAGE_BPS),
-          '0x',
+          hookData,
           { gasLimit: INDEX_BUYBACK_GAS_LIMIT },
         );
       },
