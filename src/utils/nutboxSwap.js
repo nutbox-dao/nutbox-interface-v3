@@ -74,18 +74,6 @@ export async function buildNutboxSwapSource({ dexVersion, pair, contracts, readP
   const isUniswap = Boolean(contracts.UniswapV4Manager);
 
   if (version === 2) {
-    if (isUniswap) {
-      return {
-        sourceType: NUTBOX_SWAP_SOURCE_TYPES.V2_PAIR,
-        sourceData: abiCoder.encode(
-          ['tuple(address factory,address pool)'],
-          [[
-            requireAddress(contracts.PancakeV2Factory, 'Uniswap V2 factory'),
-            requireAddress(pair, 'Uniswap V2 pair'),
-          ]],
-        ),
-      };
-    }
     return {
       sourceType: NUTBOX_SWAP_SOURCE_TYPES.V2_PAIR,
       sourceData: abiCoder.encode(
@@ -99,18 +87,6 @@ export async function buildNutboxSwapSource({ dexVersion, pair, contracts, readP
   }
 
   if (version === 3) {
-    if (isUniswap) {
-      return {
-        sourceType: NUTBOX_SWAP_SOURCE_TYPES.V3_POOL,
-        sourceData: abiCoder.encode(
-          ['tuple(address factory,address pool)'],
-          [[
-            requireAddress(contracts.PancakeV3Factory, 'Uniswap V3 factory'),
-            requireAddress(pair, 'Uniswap V3 pool'),
-          ]],
-        ),
-      };
-    }
     return {
       sourceType: NUTBOX_SWAP_SOURCE_TYPES.V3_POOL,
       sourceData: abiCoder.encode(

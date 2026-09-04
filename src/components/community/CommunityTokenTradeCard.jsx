@@ -134,11 +134,6 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
           throw new Error(zh ? '当前网络未部署 Nutbox Swap' : 'Nutbox Swap is not deployed on this network');
         }
         if (!ethers.isAddress(tokenAddress)) throw new Error(zh ? '社区代币地址无效' : 'Invalid Community Token address');
-        const wrapper = new ethers.Contract(wrapperAddress, NutboxSwapWrapperABI, readProvider);
-        const [registered] = await wrapper.getImportedMarket(tokenAddress);
-        if (!registered) {
-          throw new Error(zh ? '该社区代币尚未在 Nutbox Swap 注册' : 'This Community Token is not registered in Nutbox Swap');
-        }
         await buildSource();
         if (!cancelled) setMarket({ loading: false, supported: true, error: '' });
       } catch (error) {

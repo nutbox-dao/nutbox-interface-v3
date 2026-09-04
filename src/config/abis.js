@@ -246,7 +246,6 @@ export const PancakeV4CLPoolManagerABI = [
 ];
 
 export const NutboxSwapWrapperABI = [
-  'function getImportedMarket(address token) view returns (bool registered,address community,address deployer)',
   'function quoteBuy(address token,uint8 sourceType,bytes sourceData,uint256 nativeAmountIn) returns (uint256 tokenAmountOut)',
   'function quoteSell(address token,uint8 sourceType,bytes sourceData,uint256 tokenAmountIn) returns (uint256 nativeAmountOut)',
   'function buyToken(address token,uint8 sourceType,bytes sourceData,uint256 minimumTokenOut,address recipient,uint256 deadline,address sellsman) payable returns (uint256 tokenOut)',

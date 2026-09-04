@@ -59,7 +59,7 @@ export const RH_CONTRACTS = {
   IndexBrokerNFTStakeTemplate: '0x0971018D38523021333B94088E69fCF1726606b1',
   IndexBrokerNFTAMMTemplate: '0x70978301e27fb2Aa931035EFB5d78542a0AAB898',
   NutboxRouter: '0x200115D733106ecA3954EAA5d1fCbc6D0EfB78AE',
-  NutboxSwapWrapper: '0x91ddcaEeF99d674cddFffd1C1a204C5Be8291a92',
+  NutboxSwapWrapper: '0x53e65DE68A0eB7f3662579F44Eb9849Ae5cA44ab',
   DefaultIndexToken: '0x90d2cCA000Dc36fA8401632C67faFDa7D7860C07',
   IndexBrokerNFTRenderer: '0x3cAf852BF1F5A3781f7D809376D82e7ba0037C81',
   // Existing consumers use the Pancake-prefixed keys as generic V2/V3 slots.
@@ -67,7 +67,7 @@ export const RH_CONTRACTS = {
   PancakeV2Router: '0x89e5DB8B5aA49aA85AC63f691524311AEB649eba',
   PancakeV3Factory: '0x1f7d7550B1b028f7571E69A784071F0205FD2EfA',
   PancakeV3SmartRouter: '0xCaf681a66D020601342297493863E78C959E5cb2',
-  PancakeV3Quoter: null,
+  PancakeV3Quoter: '0x33e885eD0Ec9bF04EcfB19341582aADCb4c8A9E7',
   PancakeV4CLManager: null,
   PancakeV4Quoter: null,
   UniswapV4Manager: '0x8366a39CC670B4001A1121B8F6A443A643e40951',
