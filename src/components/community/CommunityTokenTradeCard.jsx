@@ -46,12 +46,12 @@ function normalizeSlippageInput(value) {
   return `${whole}.${fractionParts.join('').slice(0, 2)}`;
 }
 
-function readableSwapError(error, zh) {
+function readableSwapError(error, zh, nativeSymbol = 'BNB') {
   const message = String(error?.shortMessage || error?.reason || error?.message || '');
   if (/user rejected|user denied|action_rejected/i.test(message)) {
     return zh ? '你取消了钱包操作' : 'The wallet action was cancelled';
   }
-  if (/insufficient funds/i.test(message)) return zh ? 'BNB 余额不足（请预留 Gas）' : 'Insufficient BNB balance (keep some for gas)';
+  if (/insufficient funds/i.test(message)) return zh ? `${nativeSymbol} 余额不足（请预留 Gas）` : `Insufficient ${nativeSymbol} balance (keep some for gas)`;
   if (/allowance|transfer amount exceeds/i.test(message)) return zh ? '代币余额或授权额度不足' : 'Insufficient token balance or allowance';
   if (/slippage/i.test(message)) return zh ? '价格变化超过设置的滑点保护，请重新获取报价' : 'The price moved beyond the configured slippage limit';
   if (/unsupported dex|pair is unavailable|pool id is unavailable|router.*unavailable|quoter.*unavailable/i.test(message)) {
@@ -83,6 +83,7 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
   const tokenDecimals = Number(tokenInfo?.decimals ?? 18);
   const symbol = tokenInfo?.symbol || community?.tick || 'TOKEN';
   const wrapperAddress = contracts.NutboxSwapWrapper;
+  const nativeSymbol = network.nativeCurrency.symbol;
   const inputDecimals = side === 'buy' ? network.nativeCurrency.decimals : tokenDecimals;
   const outputDecimals = side === 'buy' ? tokenDecimals : network.nativeCurrency.decimals;
   const inputSymbol = side === 'buy' ? network.nativeCurrency.symbol : symbol;
@@ -141,11 +142,11 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
         await buildSource();
         if (!cancelled) setMarket({ loading: false, supported: true, error: '' });
       } catch (error) {
-        if (!cancelled) setMarket({ loading: false, supported: false, error: readableSwapError(error, zh) });
+        if (!cancelled) setMarket({ loading: false, supported: false, error: readableSwapError(error, zh, nativeSymbol) });
       }
     })();
     return () => { cancelled = true; };
-  }, [buildSource, readProvider, tokenAddress, wrapperAddress, zh]);
+  }, [buildSource, nativeSymbol, readProvider, tokenAddress, wrapperAddress, zh]);
 
   useEffect(() => { loadBalances(); }, [loadBalances]);
 
@@ -170,14 +171,14 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
         if (result <= 0n) throw new Error(zh ? '当前交易池无法给出有效报价' : 'The selected pool returned no quote');
         setQuote(result);
       } catch (error) {
-        if (requestId === quoteRequestRef.current) setQuoteError(readableSwapError(error, zh));
+        if (requestId === quoteRequestRef.current) setQuoteError(readableSwapError(error, zh, nativeSymbol));
       } finally {
         if (requestId === quoteRequestRef.current) setQuoteLoading(false);
       }
     }, QUOTE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [buildSource, market.supported, parsedAmount, readProvider, side, tokenAddress, wrapperAddress, zh]);
+  }, [buildSource, market.supported, nativeSymbol, parsedAmount, readProvider, side, tokenAddress, wrapperAddress, zh]);
 
   const selectSide = (nextSide) => {
     if (nextSide === side) return;
@@ -216,7 +217,7 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
 
       let tx;
       if (side === 'buy') {
-        if (parsedAmount >= balances.native) throw new Error(zh ? 'BNB 余额不足（请预留 Gas）' : 'Insufficient BNB balance (keep some for gas)');
+        if (parsedAmount >= balances.native) throw new Error(zh ? `${network.nativeCurrency.symbol} 余额不足（请预留 Gas）` : `Insufficient ${network.nativeCurrency.symbol} balance (keep some for gas)`);
         tx = await wrapper.buyToken(
           tokenAddress, sourceType, sourceData, minimumOut,
           trader, deadline, ethers.ZeroAddress,
@@ -246,7 +247,7 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
       await loadBalances();
     } catch (error) {
       console.error('Nutbox swap failed:', error);
-      toast.error(readableSwapError(error, zh));
+      toast.error(readableSwapError(error, zh, network.nativeCurrency.symbol));
     } finally {
       setBusy('');
     }

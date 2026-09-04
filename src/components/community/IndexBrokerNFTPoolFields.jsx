@@ -3,6 +3,7 @@ import {
   INDEX_BROKER_MINT_ACCESS_MODES,
   INDEX_BROKER_MINING_MODES,
   INDEX_BROKER_SOURCE_TYPES,
+  isIndexBrokerV4Source,
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
@@ -346,6 +347,7 @@ export default function IndexBrokerNFTPoolFields({
   onRetryPoolDiscovery,
   sourceCapabilities = {},
   sourceFactories = {},
+  nativeSymbol = 'BNB',
   poolName,
   onPoolNameChange,
   readProvider,
@@ -416,7 +418,7 @@ export default function IndexBrokerNFTPoolFields({
         || nextSourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
         ? candidate.address
         : '',
-      sourcePoolId: nextSourceType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL
+      sourcePoolId: isIndexBrokerV4Source(nextSourceType)
         ? candidate.address
         : '',
       sourcePoolManager: '',
@@ -434,6 +436,7 @@ export default function IndexBrokerNFTPoolFields({
     if (candidateType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR) return Boolean(sourceCapabilities.pancakeV2);
     if (candidateType === INDEX_BROKER_SOURCE_TYPES.V3_POOL) return Boolean(sourceCapabilities.pancakeV3);
     if (candidateType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL) return Boolean(sourceCapabilities.pancakeV4Cl);
+    if (candidateType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) return Boolean(sourceCapabilities.uniswapV4);
     return false;
   };
 
@@ -556,7 +559,7 @@ export default function IndexBrokerNFTPoolFields({
             <span className="wizard-choice-icon" aria-hidden="true">◎</span>
             <span className="wizard-choice-copy">
               <strong>{zh ? '公开 Mint（无需白名单）' : 'Open mint (no whitelist)'}</strong>
-              <span>{zh ? '所有钱包按设置的 BNB 价格铸造，用户无需填写或领取白名单额度。' : 'Any wallet can mint at the configured BNB price without a whitelist allocation.'}</span>
+              <span>{zh ? `所有钱包按设置的 ${nativeSymbol} 价格铸造，用户无需填写或领取白名单额度。` : `Any wallet can mint at the configured ${nativeSymbol} price without a whitelist allocation.`}</span>
             </span>
             <span className="wizard-choice-state">{openMint ? '✓' : '→'}</span>
           </button>
@@ -569,7 +572,7 @@ export default function IndexBrokerNFTPoolFields({
             <span className="wizard-choice-icon" aria-hidden="true">◇</span>
             <span className="wizard-choice-copy">
               <strong>{zh ? '纯白名单 Mint' : 'Whitelist-only mint'}</strong>
-              <span>{zh ? '只允许名单钱包铸造；BNB 价格固定为 0，名单额度总和必须等于最大供应量。' : 'Only listed wallets may mint. The BNB price is fixed at zero and allocations must equal maximum supply.'}</span>
+              <span>{zh ? `只允许名单钱包铸造；${nativeSymbol} 价格固定为 0，名单额度总和必须等于最大供应量。` : `Only listed wallets may mint. The ${nativeSymbol} price is fixed at zero and allocations must equal maximum supply.`}</span>
             </span>
             <span className="wizard-choice-state">{whitelistOnly ? '✓' : '→'}</span>
           </button>
@@ -582,7 +585,7 @@ export default function IndexBrokerNFTPoolFields({
             <span className="wizard-choice-icon" aria-hidden="true">◈</span>
             <span className="wizard-choice-copy">
               <strong>{zh ? '公开 + 白名单混用' : 'Public + whitelist'}</strong>
-              <span>{zh ? '名单钱包使用专属额度，其他钱包按 BNB 价格公开铸造；可选择保留名单供应。' : 'Listed wallets use allocations while other wallets mint at the BNB price; whitelist supply can be reserved.'}</span>
+              <span>{zh ? `名单钱包使用专属额度，其他钱包按 ${nativeSymbol} 价格公开铸造；可选择保留名单供应。` : `Listed wallets use allocations while other wallets mint at the ${nativeSymbol} price; whitelist supply can be reserved.`}</span>
             </span>
             <span className="wizard-choice-state">{mixedMint ? '✓' : '→'}</span>
           </button>
@@ -590,7 +593,7 @@ export default function IndexBrokerNFTPoolFields({
         <div className="nft-pool-form-grid">
           {!whitelistOnly && (
             <Field
-              label={zh ? '公开铸造 BNB 价格' : 'Public mint BNB price'}
+              label={zh ? `公开铸造 ${nativeSymbol} 价格` : `Public mint ${nativeSymbol} price`}
             >
               <input type="number" min="0" step="any" className="input" value={config.nativePrice} onChange={event => update('nativePrice', event.target.value)} placeholder="0.01" />
             </Field>
@@ -605,8 +608,8 @@ export default function IndexBrokerNFTPoolFields({
                     ? `纯白名单模式下，所有地址的额度合计必须等于最大供应量。当前合计：${whitelistAllocationTotal ?? '—'} / ${config.maxSupply || '—'}`
                     : `In whitelist-only mode, all allocations must total the maximum supply. Current total: ${whitelistAllocationTotal ?? '—'} / ${config.maxSupply || '—'}`)
                   : (zh
-                    ? '地址不能重复，额度必须为正整数；名单账户铸造时免付 BNB，仍需支付社区代币。'
-                    : 'Addresses must be unique with positive integer allowances; listed wallets mint without BNB but still pay Community Tokens.')}
+                    ? `地址不能重复，额度必须为正整数；名单账户铸造时免付 ${nativeSymbol}，仍需支付社区代币。`
+                    : `Addresses must be unique with positive integer allowances; listed wallets mint without ${nativeSymbol} but still pay Community Tokens.`)}
               >
                 <textarea className="input index-broker-whitelist" rows={6} value={config.whitelist} onChange={event => update('whitelist', event.target.value)} placeholder={'0x1234...,2\n0xabcd...,1'} />
               </Field>
@@ -632,8 +635,8 @@ export default function IndexBrokerNFTPoolFields({
         <SectionHeading
           title={zh ? '推荐返佣与社区挖矿等级' : 'Referral commission and community-mining levels'}
           description={zh
-            ? '返佣从公开铸造支付的 BNB 中分出，不会向铸造者额外收费。'
-            : 'Commission is taken from public-mint BNB and does not add an extra charge to the minter.'}
+            ? `返佣从公开铸造支付的 ${nativeSymbol} 中分出，不会向铸造者额外收费。`
+            : `Commission is taken from public-mint ${nativeSymbol} and does not add an extra charge to the minter.`}
         />
         <div className="nft-pool-form-grid">
           <Field label={zh ? '推荐返佣比例' : 'Referral commission'} hint={whitelistOnly ? (zh ? '纯白名单模式没有付费公开铸造，返佣固定为 0%。' : 'Whitelist-only access has no paid public mints, so referral commission is fixed at 0%.') : undefined}>
@@ -641,10 +644,10 @@ export default function IndexBrokerNFTPoolFields({
           </Field>
           <Field
             wide
-            label={zh ? '铸造BNB资金流向' : 'Mint BNB destination'}
+            label={zh ? `铸造${nativeSymbol}资金流向` : `Mint ${nativeSymbol} destination`}
             hint={receiverUsesBuyback
-              ? (zh ? '当前将使用专属 AMM，公开铸造净 BNB 进入指数回购储备。' : 'The dedicated AMM is selected; net public-mint BNB enters the index-buyback reserve.')
-              : (zh ? '公开铸造净 BNB 会发送到这个地址。' : 'Net public-mint BNB is sent to this address.')}
+              ? (zh ? `当前将使用专属 AMM，公开铸造净 ${nativeSymbol} 进入指数回购储备。` : `The dedicated AMM is selected; net public-mint ${nativeSymbol} enters the index-buyback reserve.`)
+              : (zh ? `公开铸造净 ${nativeSymbol} 会发送到这个地址。` : `Net public-mint ${nativeSymbol} is sent to this address.`)}
           >
             <label className="index-broker-check wizard-option-card">
               <input
@@ -654,7 +657,7 @@ export default function IndexBrokerNFTPoolFields({
               />
               <span>
                 <strong>{zh ? '进入回购池' : 'Send to buyback pool'}</strong>
-                <small>{zh ? '铸造净 BNB 将用于指数回购。' : 'Net mint BNB will be reserved for index buybacks.'}</small>
+                <small>{zh ? `铸造净 ${nativeSymbol} 将用于指数回购。` : `Net mint ${nativeSymbol} will be reserved for index buybacks.`}</small>
               </span>
             </label>
             {!receiverUsesBuyback && (
@@ -793,7 +796,7 @@ export default function IndexBrokerNFTPoolFields({
                 </p>
 
                 {poolDiscovery.loading && poolDiscovery.pools.length === 0 && (
-                  <div className="dex-pool-discovery-state"><span className="spinner" />{zh ? '正在查找 Pancake 候选池…' : 'Discovering Pancake pools…'}</div>
+                  <div className="dex-pool-discovery-state"><span className="spinner" />{zh ? '正在查找 DEX 候选池…' : 'Discovering DEX pools…'}</div>
                 )}
                 {poolDiscovery.error && (
                   <div className="dex-pool-discovery-state is-error">
@@ -803,7 +806,7 @@ export default function IndexBrokerNFTPoolFields({
                 )}
                 {!poolDiscovery.loading && !poolDiscovery.error && poolDiscovery.pools.length === 0 && (
                   <div className="dex-pool-discovery-state">
-                    {zh ? '没有找到可用的 Pancake V2、V3 或 V4 CL 池。请先为社区代币创建流动性池。' : 'No Pancake V2, V3, or V4 CL pool was found. Create liquidity for the Community Token first.'}
+                    {zh ? '没有找到可用的 V2、V3 或 V4 池。请先为社区代币创建流动性池。' : 'No supported V2, V3, or V4 pool was found. Create liquidity for the Community Token first.'}
                   </div>
                 )}
 
@@ -828,7 +831,7 @@ export default function IndexBrokerNFTPoolFields({
                           aria-pressed={selected}
                         >
                           <span className="dex-pool-candidate-main">
-                            <span className="dex-pool-version">{candidate.versionLabel.replace('Pancake ', '')}</span>
+                            <span className="dex-pool-version">{candidate.versionLabel}</span>
                             <strong>{tokenInfo.symbol || (zh ? '社区代币' : 'Community Token')} / {pairSymbol}</strong>
                             {candidate.feeTier && <span className="dex-pool-fee">{candidate.feeTier}</span>}
                           </span>

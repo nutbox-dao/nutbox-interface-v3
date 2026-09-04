@@ -32,6 +32,7 @@ import {
 } from '../../utils/indexBrokerNft';
 import { multicallRead } from '../../utils/multicall';
 import { discoverPancakePricePools } from '../../utils/dexPoolDiscovery';
+import { resolveUniswapV4Pool } from '../../utils/nutboxSwap';
 import {
   buildAddPoolDraft,
   getAddPoolDraftPoolKeys,
@@ -502,6 +503,14 @@ export default function AddPoolModal({
         return {
           ...current,
           officialToken,
+          officialSourceType: contracts.UniswapV4Manager
+            ? INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
+            : INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL,
+          sourceType: officialToken
+            ? String(contracts.UniswapV4Manager
+              ? INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
+              : INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL)
+            : current.sourceType,
           fundsReceiver: current.fundsReceiver || account || '',
           pump: officialToken ? contracts.Pump : '',
           nftTemplate: miningMode === INDEX_BROKER_MINING_MODES.STAKE
@@ -529,6 +538,7 @@ export default function AddPoolModal({
     contracts.IndexBrokerNFTStakeTemplate,
     contracts.Multicall3,
     contracts.Pump,
+    contracts.UniswapV4Manager,
     language,
     poolType,
     readProvider,
@@ -986,13 +996,13 @@ export default function AddPoolModal({
         }
         const quoteToken = token0Lower === communityToken ? token1 : token0;
         if (quoteToken !== ethers.ZeroAddress && quoteToken.toLowerCase() !== String(contracts.WBNB || '').toLowerCase()) {
-          if (!contracts.WBNB) throw new Error(language === 'zh' ? '当前网络未配置 WBNB' : 'WBNB is not configured for this network');
+          if (!contracts.WBNB) throw new Error(language === 'zh' ? '当前网络未配置包装原生币' : 'Wrapped native token is not configured for this network');
           try {
             await router.validateRoute(quoteToken, contracts.WBNB);
           } catch {
             throw new Error(language === 'zh'
-              ? `报价代币 ${shortenAddress(quoteToken)} 尚未配置到 WBNB 的 Nutbox Router 路由`
-              : `The quote token ${shortenAddress(quoteToken)} has no Nutbox Router route to WBNB`);
+              ? `报价代币 ${shortenAddress(quoteToken)} 尚未配置到包装原生币的 Nutbox Router 路由`
+              : `The quote token ${shortenAddress(quoteToken)} has no Nutbox Router route to the wrapped native token`);
           }
         }
 
@@ -1058,24 +1068,16 @@ export default function AddPoolModal({
       });
       return undefined;
     }
-    if (sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) {
+    const managerAddress = sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
+      ? contracts.UniswapV4Manager
+      : contracts.PancakeV4CLManager;
+    if (!readProvider || !managerAddress
+      || (sourceType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL && !contracts.Multicall3)) {
       setIndexBrokerSource({
         loading: false,
         resolved: false,
         poolId,
-        error: language === 'zh'
-          ? '当前 NFT 部署未启用 Uniswap V4 价格源'
-          : 'The current NFT deployment does not enable Uniswap V4 pricing',
-        details: null,
-      });
-      return undefined;
-    }
-    if (!readProvider || !contracts.Multicall3 || !contracts.PancakeV4CLManager) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId,
-        error: language === 'zh' ? '当前网络未配置 Pancake V4 CL Pool Manager' : 'Pancake V4 CL Pool Manager is not configured',
+        error: language === 'zh' ? '当前网络未配置对应的 V4 Pool Manager' : 'The required V4 Pool Manager is not configured',
         details: null,
       });
       return undefined;
@@ -1085,8 +1087,24 @@ export default function AddPoolModal({
     setIndexBrokerSource({ loading: true, resolved: false, poolId, error: '', details: null });
     const timer = setTimeout(async () => {
       try {
-        const manager = ethers.getAddress(contracts.PancakeV4CLManager);
-        const result = await multicallRead(readProvider, contracts.Multicall3, [
+        const manager = ethers.getAddress(managerAddress);
+        let details;
+        let sqrtPriceX96;
+        let liquidity;
+        if (sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) {
+          const pool = await resolveUniswapV4Pool({ poolId, poolManager: manager, readProvider });
+          details = {
+            currency0: pool.currency0,
+            currency1: pool.currency1,
+            hooks: pool.hooks,
+            poolManager: pool.poolManager,
+            fee: pool.fee,
+            tickSpacing: pool.tickSpacing,
+          };
+          sqrtPriceX96 = pool.sqrtPriceX96;
+          liquidity = pool.liquidity;
+        } else {
+          const result = await multicallRead(readProvider, contracts.Multicall3, [
           {
             key: 'poolKey', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
             functionName: 'poolIdToPoolKey', args: [poolId],
@@ -1099,25 +1117,28 @@ export default function AddPoolModal({
             key: 'liquidity', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
             functionName: 'getLiquidity', args: [poolId],
           },
-        ]);
+          ]);
+          const poolKey = result.poolKey;
+          details = {
+            currency0: ethers.getAddress(poolKey.currency0),
+            currency1: ethers.getAddress(poolKey.currency1),
+            hooks: ethers.getAddress(poolKey.hooks),
+            poolManager: ethers.getAddress(poolKey.poolManager),
+            fee: Number(poolKey.fee),
+            parameters: poolKey.parameters,
+          };
+          sqrtPriceX96 = BigInt(result.slot0.sqrtPriceX96 ?? result.slot0[0] ?? 0);
+          liquidity = BigInt(result.liquidity || 0);
+        }
         if (cancelled) return;
-
-        const poolKey = result.poolKey;
-        const details = {
-          currency0: ethers.getAddress(poolKey.currency0),
-          currency1: ethers.getAddress(poolKey.currency1),
-          hooks: ethers.getAddress(poolKey.hooks),
-          poolManager: ethers.getAddress(poolKey.poolManager),
-          fee: Number(poolKey.fee),
-          parameters: poolKey.parameters,
-        };
         const resolvedSource = {
           sourcePoolManager: details.poolManager,
           sourceCurrency0: details.currency0,
           sourceCurrency1: details.currency1,
           sourceHooks: details.hooks,
           sourceFee: String(details.fee),
-          sourceParameters: details.parameters,
+          sourceTickSpacing: details.tickSpacing == null ? '' : String(details.tickSpacing),
+          sourceParameters: details.parameters || '',
         };
         if (getIndexBrokerV4PoolId({
           sourceType,
@@ -1138,13 +1159,13 @@ export default function AddPoolModal({
             ? '该交易池必须包含当前社区代币'
             : 'The pool must contain this Community Token');
         }
-        if (BigInt(result.slot0.sqrtPriceX96 ?? result.slot0[0] ?? 0) === 0n || BigInt(result.liquidity || 0) === 0n) {
+        if (sqrtPriceX96 === 0n || liquidity === 0n) {
           throw new Error(language === 'zh' ? '该池尚未初始化或没有流动性' : 'The pool is not initialized or has no liquidity');
         }
         const quoteToken = tokenIndex === 0 ? details.currency1 : details.currency0;
         if (quoteToken !== ethers.ZeroAddress && quoteToken.toLowerCase() !== String(contracts.WBNB || '').toLowerCase()) {
           if (!contracts.NutboxRouter || !contracts.WBNB) {
-            throw new Error(language === 'zh' ? '当前网络未配置 Nutbox Router 或 WBNB' : 'Nutbox Router or WBNB is not configured for this network');
+            throw new Error(language === 'zh' ? '当前网络未配置 Nutbox Router 或包装原生币' : 'Nutbox Router or wrapped native token is not configured for this network');
           }
           const nutboxRouter = new ethers.Contract(contracts.NutboxRouter, NUTBOX_ROUTER_INTERFACE, readProvider);
           await nutboxRouter.validateRoute(quoteToken, contracts.WBNB);
@@ -1180,6 +1201,7 @@ export default function AddPoolModal({
     contracts.Multicall3,
     contracts.NutboxRouter,
     contracts.PancakeV4CLManager,
+    contracts.UniswapV4Manager,
     contracts.WBNB,
     indexBrokerConfig.officialToken,
     indexBrokerConfig.sourcePoolId,
@@ -1326,7 +1348,7 @@ export default function AddPoolModal({
     { key: 'type', label: zh ? '类型' : 'Type', title: zh ? '选择矿池类型' : 'Choose a pool type', description: zh ? '先选择想为社区创建的挖矿方式，后续只显示该类型需要配置的参数。' : 'Choose the mining model to add. The next steps only show settings required by that pool type.' },
     { key: 'template', label: zh ? '模板' : 'Template', title: zh ? '选择指数挖矿模板' : 'Choose an index mining template', description: zh ? '选择 NFT 通过烧毁还是质押代币来获得指数挖矿权重。' : 'Choose whether NFTs gain index-mining weight by burning or staking tokens.' },
     { key: 'identity', label: 'NFT', title: zh ? '设置 NFT 基础信息' : 'Configure NFT basics', description: zh ? '设置合集名称、Symbol、每枚 NFT 的社区代币价格和最大供应量。' : 'Set the collection name, symbol, Community Token price per NFT, and maximum supply.' },
-    { key: 'mint', label: zh ? '铸造' : 'Minting', title: zh ? '配置铸造准入方式' : 'Configure mint access', description: zh ? '选择公开、纯白名单或混用模式，并配置 BNB 价格与白名单额度。' : 'Choose open, whitelist-only, or mixed access, then configure the BNB price and whitelist allocations.' },
+    { key: 'mint', label: zh ? '铸造' : 'Minting', title: zh ? '配置铸造准入方式' : 'Configure mint access', description: zh ? `选择公开、纯白名单或混用模式，并配置 ${network.nativeCurrency.symbol} 价格与白名单额度。` : `Choose open, whitelist-only, or mixed access, then configure the ${network.nativeCurrency.symbol} price and whitelist allocations.` },
     { key: 'rewards', label: zh ? '推荐' : 'Referral', title: zh ? '设置推荐与挖矿等级' : 'Configure referrals and mining levels', description: zh ? '配置推荐返佣、公开铸造收款方式，以及各等级的社区挖矿权重。' : 'Configure referral commissions, the public-mint receiver, and community-mining weights.' },
     { key: 'renderer', label: 'Renderer', title: zh ? '配置 Renderer 与图片重生成' : 'Configure the Renderer and image rerolls', description: zh ? '使用平台默认或自定义 Renderer，设置是否允许付费重新生成图片，并通过模拟器预览效果。' : 'Use the default or a custom Renderer, configure paid image rerolls, and preview the result.' },
     { key: 'amm', label: 'AMM', title: zh ? '配置 AMM 与指数代币' : 'Configure the AMM and index token', description: zh ? '设置专属 AMM 手续费、指数代币，以及外部代币需要的 DEX 价格源。' : 'Set dedicated-AMM fees, the index token, and any DEX price source required for an external token.' },
@@ -1530,15 +1552,15 @@ export default function AddPoolModal({
       const openMint = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.OPEN;
       const whitelistOnly = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY;
       if (!whitelistOnly) {
-        if (indexBrokerConfig.nativePrice !== '' && Number(indexBrokerConfig.nativePrice) < 0) throw new Error(zh ? '公开铸造 BNB 价格不能为负数' : 'Public-mint BNB price cannot be negative');
+        if (indexBrokerConfig.nativePrice !== '' && Number(indexBrokerConfig.nativePrice) < 0) throw new Error(zh ? `公开铸造 ${network.nativeCurrency.symbol} 价格不能为负数` : `Public-mint ${network.nativeCurrency.symbol} price cannot be negative`);
         let nativePrice;
         try {
           nativePrice = ethers.parseEther(String(indexBrokerConfig.nativePrice || '0'));
         } catch (error) {
-          throw new Error(zh ? '公开铸造 BNB 价格格式无效或小数位超过 18 位' : 'The public-mint BNB price is invalid or has more than 18 decimals', { cause: error });
+          throw new Error(zh ? `公开铸造 ${network.nativeCurrency.symbol} 价格格式无效或小数位超过 18 位` : `The public-mint ${network.nativeCurrency.symbol} price is invalid or has more than 18 decimals`, { cause: error });
         }
         if (nativePrice === 0n) {
-          throw new Error(zh ? '公开 Mint 和混用模式的 BNB 价格必须大于 0' : 'Open and mixed mint modes require a BNB price greater than zero');
+          throw new Error(zh ? `公开 Mint 和混用模式的 ${network.nativeCurrency.symbol} 价格必须大于 0` : `Open and mixed mint modes require a ${network.nativeCurrency.symbol} price greater than zero`);
         }
       }
 
@@ -1569,7 +1591,7 @@ export default function AddPoolModal({
       if (!indexBrokerConfig.useBuybackPool) {
         const receiver = indexBrokerConfig.fundsReceiver.trim();
         if (!ethers.isAddress(receiver) || receiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
-          throw new Error(zh ? '请填写有效的铸造 BNB 收款地址' : 'Enter a valid mint BNB receiver');
+          throw new Error(zh ? `请填写有效的铸造 ${network.nativeCurrency.symbol} 收款地址` : `Enter a valid mint ${network.nativeCurrency.symbol} receiver`);
         }
       }
       validateIntegerLevels(indexBrokerConfig.levelThresholds, indexBrokerConfig.levelWeights);
@@ -1897,7 +1919,7 @@ export default function AddPoolModal({
     {
       value: 'index-broker-nft', title: 'NFT',
       description: zh ? 'NFT 同时参与社区与指数挖矿，并通过专属 AMM 管理指数回购。' : 'NFTs mine community and index rewards, with a dedicated AMM for index buybacks.',
-      enabled: Number(network.id) === 56 && Boolean(contracts.IndexBrokerNFTFactory),
+      enabled: Boolean(contracts.IndexBrokerNFTFactory),
       badge: zh ? '新版' : 'New',
     },
     {
@@ -2374,6 +2396,7 @@ export default function AddPoolModal({
                   pancakeV2: contracts.PancakeV2Factory,
                   pancakeV3: contracts.PancakeV3Factory,
                 }}
+                nativeSymbol={network.nativeCurrency.symbol}
                 poolName={poolName}
                 onPoolNameChange={setPoolName}
                 readProvider={readProvider}
@@ -2491,13 +2514,13 @@ export default function AddPoolModal({
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '指数挖矿模板' : 'Index template'}</span><span className="wizard-summary-value">{indexBrokerConfig.miningMode === INDEX_BROKER_MINING_MODES.STAKE ? 'Stake' : 'Burn'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '最大供应量' : 'Maximum supply'}</span><span className="wizard-summary-value">{indexBrokerConfig.maxSupply || '—'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '每枚 NFT 的社区代币价格' : 'Community Token price per NFT'}</span><span className="wizard-summary-value">{indexBrokerConfig.communityTokenPrice || '—'} {indexBrokerContext.symbol}</span></div>
-                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '公开铸造价格' : 'Public mint price'}</span><span className="wizard-summary-value">{indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY ? '0' : (indexBrokerConfig.nativePrice || '0')} BNB</span></div>
+                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '公开铸造价格' : 'Public mint price'}</span><span className="wizard-summary-value">{indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY ? '0' : (indexBrokerConfig.nativePrice || '0')} {network.nativeCurrency.symbol}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '铸造准入' : 'Mint access'}</span><span className="wizard-summary-value">{indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.OPEN ? (zh ? '公开 Mint（无需白名单）' : 'Open mint (no whitelist)') : indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY ? (zh ? '纯白名单 Mint' : 'Whitelist-only mint') : (zh ? '公开 + 白名单混用' : 'Public + whitelist')}</span></div>
                       {indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.MIXED && (
                         <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '白名单供应' : 'Whitelist supply'}</span><span className="wizard-summary-value">{indexBrokerConfig.lockWhitelistSlots ? (zh ? '保留额度' : 'Reserved') : (zh ? '不保留额度' : 'Not reserved')}</span></div>
                       )}
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '推荐返佣' : 'Referral commission'}</span><span className="wizard-summary-value">{indexBrokerMintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY ? '0' : (indexBrokerConfig.referralPercent || '0')}%</span></div>
-                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '铸造BNB资金流向' : 'Mint BNB destination'}</span><span className="wizard-summary-value">{indexBrokerConfig.useBuybackPool ? (zh ? '专属 AMM 回购池' : 'Dedicated AMM buyback pool') : shortenAddress(indexBrokerConfig.fundsReceiver)}</span></div>
+                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? `铸造${network.nativeCurrency.symbol}资金流向` : `Mint ${network.nativeCurrency.symbol} destination`}</span><span className="wizard-summary-value">{indexBrokerConfig.useBuybackPool ? (zh ? '专属 AMM 回购池' : 'Dedicated AMM buyback pool') : shortenAddress(indexBrokerConfig.fundsReceiver)}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '图片重生成' : 'Image rerolls'}</span><span className="wizard-summary-value">{indexBrokerConfig.rerollEnabled ? `${zh ? '启用' : 'Enabled'} · ${Number(indexBrokerConfig.recommitPrice || 0) === 0 ? indexBrokerConfig.communityTokenPrice : indexBrokerConfig.recommitPrice} ${indexBrokerContext.symbol}` : (zh ? '关闭' : 'Disabled')}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">AMM</span><span className="wizard-summary-value">{zh ? '普通' : 'Normal'} {effectiveAmmFee(indexBrokerConfig.normalFeePercent)}% · {zh ? '指定' : 'Specific'} {effectiveAmmFee(indexBrokerConfig.specificFeePercent)}%</span></div>
                       {indexBrokerConfig.officialToken === false && (
@@ -2505,10 +2528,12 @@ export default function AddPoolModal({
                           <span className="wizard-summary-label">{zh ? '价格源池' : 'Price-source pool'}</span>
                           <span className="wizard-summary-value">
                             {Number(indexBrokerConfig.sourceType) === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-                              ? 'Pancake V2'
+                              ? `${contracts.UniswapV4Manager ? 'Uniswap' : 'Pancake'} V2`
                               : Number(indexBrokerConfig.sourceType) === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-                                ? 'Pancake V3'
-                                : 'Pancake V4 CL'} · {shortenAddress(isIndexBrokerV4Source(indexBrokerConfig.sourceType) ? indexBrokerConfig.sourcePoolId : indexBrokerConfig.sourcePool)}
+                                ? `${contracts.UniswapV4Manager ? 'Uniswap' : 'Pancake'} V3`
+                                : Number(indexBrokerConfig.sourceType) === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
+                                  ? 'Uniswap V4'
+                                  : 'Pancake V4 CL'} · {shortenAddress(isIndexBrokerV4Source(indexBrokerConfig.sourceType) ? indexBrokerConfig.sourcePoolId : indexBrokerConfig.sourcePool)}
                           </span>
                         </div>
                       )}

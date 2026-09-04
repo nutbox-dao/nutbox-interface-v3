@@ -47,6 +47,7 @@ export const DEFAULT_INDEX_BROKER_CONFIG = {
   rerollEnabled: false,
   whitelist: '',
   officialToken: null,
+  officialSourceType: null,
   sourceType: String(INDEX_BROKER_SOURCE_TYPES.V2_PAIR),
   sourceFactory: '',
   sourcePool: '',
@@ -278,7 +279,7 @@ export function encodeIndexBrokerNftPoolMeta(config, communityTokenDecimals = 18
   }
 
   const sourceType = config.officialToken
-    ? INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL
+    ? Number(config.officialSourceType ?? INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL)
     : Number(config.sourceType);
   const sourceData = config.officialToken ? '0x' : encodeExternalPriceSource(config);
   const pump = config.officialToken

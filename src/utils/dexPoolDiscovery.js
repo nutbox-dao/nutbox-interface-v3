@@ -1,7 +1,8 @@
 import { INDEX_BROKER_SOURCE_TYPES } from './indexBrokerNft';
 
 const GECKO_NETWORKS = {
-  bsc: 'bsc',
+  bsc: { id: 'bsc', dexKind: 'pancake' },
+  rh: { id: 'robinhood', dexKind: 'uniswap' },
 };
 
 const CACHE_TTL_MS = 60_000;
@@ -16,33 +17,39 @@ function tokenAddressFromId(value) {
   return String(value || '').replace(/^.+_/, '');
 }
 
-function classifyPancakePool(dexId, address) {
+function classifyPool(dexId, address, dexKind) {
   const normalized = String(dexId || '').toLowerCase();
-  if (!normalized.includes('pancakeswap')) return null;
+  if (dexKind === 'pancake' && !normalized.includes('pancakeswap')) return null;
+  const dexLabel = dexKind === 'uniswap' ? 'Uniswap' : 'Pancake';
 
   if (normalized.includes('infinity-clmm') || normalized.includes('clmm') || normalized.includes('v4')) {
     return /^0x[0-9a-f]{64}$/i.test(address)
-      ? { sourceType: INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL, versionLabel: 'Pancake V4 CL' }
+      ? {
+        sourceType: dexKind === 'uniswap'
+          ? INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
+          : INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL,
+        versionLabel: `${dexLabel} V4${dexKind === 'pancake' ? ' CL' : ''}`,
+      }
       : null;
   }
   if (normalized.includes('v3')) {
     return /^0x[0-9a-f]{40}$/i.test(address)
-      ? { sourceType: INDEX_BROKER_SOURCE_TYPES.V3_POOL, versionLabel: 'Pancake V3' }
+      ? { sourceType: INDEX_BROKER_SOURCE_TYPES.V3_POOL, versionLabel: `${dexLabel} V3` }
       : null;
   }
-  if (normalized.includes('v2')) {
+  if (normalized.includes('v2') || (dexKind === 'uniswap' && normalized.includes('v1'))) {
     return /^0x[0-9a-f]{40}$/i.test(address)
-      ? { sourceType: INDEX_BROKER_SOURCE_TYPES.V2_PAIR, versionLabel: 'Pancake V2' }
+      ? { sourceType: INDEX_BROKER_SOURCE_TYPES.V2_PAIR, versionLabel: `${dexLabel} V2` }
       : null;
   }
   return null;
 }
 
-function parsePoolCandidate(pool, communityToken, includedTokens) {
+function parsePoolCandidate(pool, communityToken, includedTokens, dexKind) {
   const attributes = pool?.attributes || {};
   const address = String(attributes.address || '').trim();
   const dexId = pool?.relationships?.dex?.data?.id || '';
-  const source = classifyPancakePool(dexId, address);
+  const source = classifyPool(dexId, address, dexKind);
   if (!source) return null;
 
   const baseId = pool?.relationships?.base_token?.data?.id || '';
@@ -86,7 +93,8 @@ export async function discoverPancakePricePools({
   signal,
   force = false,
 }) {
-  const geckoNetwork = GECKO_NETWORKS[String(networkSlug || '').toLowerCase()];
+  const geckoConfig = GECKO_NETWORKS[String(networkSlug || '').toLowerCase()];
+  const geckoNetwork = geckoConfig?.id;
   if (!geckoNetwork) throw new Error('This network does not support automatic Pancake pool discovery');
   const token = String(communityToken || '').trim().toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(token)) throw new Error('Invalid Community Token address');
@@ -111,7 +119,7 @@ export async function discoverPancakePricePools({
 
   const seen = new Set();
   const pools = (payload?.data || [])
-    .map(pool => parsePoolCandidate(pool, token, includedTokens))
+    .map(pool => parsePoolCandidate(pool, token, includedTokens, geckoConfig.dexKind))
     .filter(candidate => {
       if (!candidate || seen.has(candidate.id)) return false;
       seen.add(candidate.id);
