@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
 import { copyToClipboard, shortenAddress } from '../utils/helpers';
@@ -8,30 +8,76 @@ import { useToast } from '../contexts/ToastContext';
 import { getChainPath } from '../config/contracts';
 import './Home.css';
 
+const COMMUNITY_PAGE_SIZE = 100;
+const MAX_COMMUNITY_PAGES = 100;
+
+async function fetchAllCommunities(chainId) {
+  const allCommunities = [];
+
+  for (let page = 0; page < MAX_COMMUNITY_PAGES; page += 1) {
+    const communityPage = await fetchCommunities(
+      COMMUNITY_PAGE_SIZE,
+      page * COMMUNITY_PAGE_SIZE,
+      chainId,
+    );
+    allCommunities.push(...communityPage);
+    if (communityPage.length < COMMUNITY_PAGE_SIZE) break;
+  }
+
+  return [...new Map(allCommunities.map(community => [community.id.toLowerCase(), community])).values()];
+}
+
 export default function Home() {
   const [stats, setStats] = useState(null);
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
   const { t } = useLanguage();
   const { activeChainId, network } = useWeb3();
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
+      setLoading(true);
+      setSearchQuery('');
       try {
         const [walnutStats, communityList] = await Promise.all([
           fetchWalnutStats(activeChainId),
-          fetchCommunities(50, 0, activeChainId),
+          fetchAllCommunities(activeChainId),
         ]);
-        setStats(walnutStats);
-        setCommunities(communityList);
+        if (!cancelled) {
+          setStats(walnutStats);
+          setCommunities(communityList);
+        }
       } catch (err) {
         console.error('Failed to load data:', err);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
     load();
+    return () => { cancelled = true; };
   }, [activeChainId]);
+
+  const normalizedSearch = searchQuery.trim().toLowerCase().replace(/^\$/, '');
+  const filteredCommunities = useMemo(() => {
+    if (!normalizedSearch) return communities;
+
+    return communities.filter(community => {
+      const searchableValues = [
+        community.name,
+        community.tick,
+        community.tokenName,
+        community.tokenSymbol,
+        community.id,
+        community.cToken,
+        community.owner?.id,
+        ...(Array.isArray(community.tags) ? community.tags : []),
+      ];
+      return searchableValues.some(value => String(value || '').toLowerCase().includes(normalizedSearch));
+    });
+  }, [communities, normalizedSearch]);
 
   return (
     <div className="page">
@@ -84,6 +130,37 @@ export default function Home() {
           <Link to={getChainPath(activeChainId, 'create')} className="btn btn-ghost">{t('home.createNew')}</Link>
         </div>
 
+        {!loading && communities.length > 0 && (
+          <div className="community-search-row">
+            <label className="community-search">
+              <span className="community-search-icon" aria-hidden="true">⌕</span>
+              <input
+                type="search"
+                value={searchQuery}
+                onChange={event => setSearchQuery(event.target.value)}
+                placeholder={t('home.searchPlaceholder')}
+                aria-label={t('home.searchLabel')}
+                autoComplete="off"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  className="community-search-clear"
+                  onClick={() => setSearchQuery('')}
+                  aria-label={t('home.searchClear')}
+                >
+                  ×
+                </button>
+              )}
+            </label>
+            {normalizedSearch && (
+              <span className="community-search-count">
+                {t('home.searchCount', { count: filteredCommunities.length })}
+              </span>
+            )}
+          </div>
+        )}
+
         {loading ? (
           <div className="grid-communities">
             {[1, 2, 3].map(i => (
@@ -101,9 +178,18 @@ export default function Home() {
             <div className="empty-state-desc">{t('home.noCommunitiesDesc')}</div>
             <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>
           </div>
+        ) : filteredCommunities.length === 0 ? (
+          <div className="empty-state community-search-empty">
+            <div className="empty-state-icon">⌕</div>
+            <div className="empty-state-title">{t('home.searchNoResults')}</div>
+            <div className="empty-state-desc">{t('home.searchNoResultsDesc')}</div>
+            <button type="button" className="btn btn-ghost" onClick={() => setSearchQuery('')}>
+              {t('home.searchClear')}
+            </button>
+          </div>
         ) : (
           <div className="grid-communities">
-            {communities.map(community => (
+            {filteredCommunities.map(community => (
               <CommunityCard key={community.id} community={community} />
             ))}
           </div>
