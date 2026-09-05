@@ -32,6 +32,9 @@ export const BSC_CONTRACTS = {
   PancakeV4CLManager: '0xa0FfB9c1CE1Fe56963B0321B32E7A0302114058b',
   PancakeV4Quoter: '0xd0737C9762912dD34c3271197E362Aa736Df0926',
   UniswapV4Manager: null,
+  UniswapV4PositionManager: null,
+  UniswapV4StateView: null,
+  Permit2: '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768',
   WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
   BasketRegistry: '0x5B45ad2c3A2B8b8989579162C4faE2D64598Cefe',
   Pump: '0x8fEF5b4c0f761a0cc447800e3019B089ac306F28',
@@ -71,6 +74,9 @@ export const RH_CONTRACTS = {
   PancakeV4CLManager: null,
   PancakeV4Quoter: null,
   UniswapV4Manager: '0x8366a39CC670B4001A1121B8F6A443A643e40951',
+  UniswapV4PositionManager: '0x58daec3116aae6D93017bAAea7749052E8a04fA7',
+  UniswapV4StateView: '0xf3334192d15450cdd385c8b70e03f9a6bd9e673b',
+  Permit2: '0x000000000022D473030F116dDEE9F6B43aC78BA3',
   // WBNB is the legacy generic wrapped-native key used by routing code.
   WBNB: '0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73',
   BasketRegistry: '0x1f997dEb6C8Ac7Bb4134Bc7c6bF23F623Cda25C6',
@@ -109,6 +115,7 @@ export const NETWORKS = {
     name: 'Robinhood Chain',
     shortName: 'RH',
     rpcUrls: ['https://rpc.mainnet.chain.robinhood.com/'],
+    readRpcUrl: import.meta.env.DEV ? '/rh-rpc' : 'https://rpc.mainnet.chain.robinhood.com/',
     nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
     explorerUrl: 'https://robinhoodchain.blockscout.com',
     apiBase: import.meta.env.VITE_RH_NUTBOX_API_BASE

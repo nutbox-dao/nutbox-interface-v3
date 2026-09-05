@@ -7,6 +7,8 @@ import { ERC20ABI, NutboxSwapWrapperABI } from '../../config/abis';
 import { applySwapSlippage, buildNutboxSwapSource } from '../../utils/nutboxSwap';
 import { shortenAddress } from '../../utils/helpers';
 import useTimedActionLoading from '../../hooks/useTimedActionLoading';
+import { supportsCurrentUniswapV4Pool } from '../../utils/uniswapV4Liquidity';
+import CommunityTokenLiquidityPanel from './CommunityTokenLiquidityPanel';
 
 const QUOTE_DELAY_MS = 450;
 const DEFAULT_SLIPPAGE_PERCENT = '1';
@@ -96,6 +98,10 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
   );
   const isHighSlippage = Number(slippageInput) > 5;
   const inputBalance = side === 'buy' ? balances.native : balances.token;
+  const liquiditySupported = useMemo(
+    () => supportsCurrentUniswapV4Pool({ community, contracts }),
+    [community, contracts],
+  );
 
   const buildSource = useCallback(() => buildNutboxSwapSource({
     dexVersion: community?.dexVersion,
@@ -144,6 +150,10 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
   }, [buildSource, nativeSymbol, readProvider, tokenAddress, wrapperAddress, zh]);
 
   useEffect(() => { loadBalances(); }, [loadBalances]);
+
+  useEffect(() => {
+    if (!liquiditySupported && side === 'liquidity') setSide('buy');
+  }, [liquiditySupported, side]);
 
   useEffect(() => {
     const requestId = ++quoteRequestRef.current;
@@ -266,15 +276,24 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
         </div>
       </div>
 
-      <div className="community-token-trade-tabs" role="tablist">
+      <div className={`community-token-trade-tabs ${liquiditySupported ? 'has-liquidity' : ''}`} role="tablist">
         <button type="button" role="tab" aria-selected={side === 'buy'} className={side === 'buy' ? 'active' : ''} onClick={() => selectSide('buy')}>
           {zh ? '买入' : 'Buy'}
         </button>
         <button type="button" role="tab" aria-selected={side === 'sell'} className={side === 'sell' ? 'active' : ''} onClick={() => selectSide('sell')}>
           {zh ? '卖出' : 'Sell'}
         </button>
+        {liquiditySupported && (
+          <button type="button" role="tab" aria-selected={side === 'liquidity'} className={side === 'liquidity' ? 'active' : ''} onClick={() => selectSide('liquidity')}>
+            {zh ? '流动性' : 'Liquidity'}
+          </button>
+        )}
       </div>
 
+      {side === 'liquidity' ? (
+        <CommunityTokenLiquidityPanel community={community} tokenInfo={tokenInfo} />
+      ) : (
+        <>
       <div className="community-token-swap-field">
         <div className="community-token-swap-field-head">
           <span>{zh ? '支付' : 'You pay'}</span>
@@ -373,6 +392,8 @@ export default function CommunityTokenTradeCard({ community, tokenInfo }) {
               ? (zh ? `买入 ${symbol}` : `Buy ${symbol}`)
               : (zh ? `卖出 ${symbol}` : `Sell ${symbol}`)}
         </button>
+      )}
+        </>
       )}
 
       <a className="community-token-trade-address" href={`${network.explorerUrl}/token/${tokenAddress}`} target="_blank" rel="noreferrer">

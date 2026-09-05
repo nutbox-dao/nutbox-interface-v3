@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { PancakeV4CLPoolManagerABI } from '../config/abis';
+import { PancakeV4CLPoolManagerABI } from '../config/abis.js';
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 
@@ -16,6 +16,11 @@ const UNISWAP_V4_INTERFACE = new ethers.Interface([
 ]);
 const UNISWAP_V4_POOLS_SLOT = 6n;
 const UNISWAP_V4_LIQUIDITY_OFFSET = 3n;
+
+function decodeSignedInt24(value) {
+  const masked = Number(BigInt(value) & 0xffffffn);
+  return masked >= 0x800000 ? masked - 0x1000000 : masked;
+}
 
 function requireAddress(value, label) {
   if (!ethers.isAddress(value) || value === ethers.ZeroAddress) {
@@ -62,9 +67,13 @@ export async function resolveUniswapV4Pool({ poolId, poolManager, readProvider }
     manager.extsload(poolSlot),
     manager.extsload(ethers.toBeHex(BigInt(poolSlot) + UNISWAP_V4_LIQUIDITY_OFFSET, 32)),
   ]);
+  const packedSlot0 = BigInt(slot0Word);
   return {
     ...poolKey,
-    sqrtPriceX96: BigInt(slot0Word) & ((1n << 160n) - 1n),
+    sqrtPriceX96: packedSlot0 & ((1n << 160n) - 1n),
+    tick: decodeSignedInt24(packedSlot0 >> 160n),
+    protocolFee: Number((packedSlot0 >> 184n) & 0xffffffn),
+    lpFee: Number((packedSlot0 >> 208n) & 0xffffffn),
     liquidity: BigInt(liquidityWord) & ((1n << 128n) - 1n),
   };
 }

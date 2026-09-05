@@ -12,6 +12,12 @@ export default defineConfig({
         secure: false,
         ws: true,
       },
+      '/rh-rpc': {
+        target: 'https://rpc.mainnet.chain.robinhood.com',
+        changeOrigin: true,
+        secure: false,
+        rewrite: path => path.replace(/^\/rh-rpc/, ''),
+      },
     },
   },
 })

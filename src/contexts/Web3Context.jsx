@@ -50,10 +50,13 @@ export function Web3Provider({ children }) {
   }, [walletClient]);
 
   const network = getNetworkConfig(selectedChainId);
-  const readProvider = useMemo(
-    () => new ethers.JsonRpcProvider(network.rpcUrls[0], network.id),
-    [network],
-  );
+  const readProvider = useMemo(() => {
+    const configuredUrl = network.readRpcUrl || network.rpcUrls[0];
+    const rpcUrl = configuredUrl.startsWith('/')
+      ? new URL(configuredUrl, window.location.origin).toString()
+      : configuredUrl;
+    return new ethers.JsonRpcProvider(rpcUrl, network.id);
+  }, [network]);
 
   const provider = useMemo(() => {
     if (!walletClient) return null;
