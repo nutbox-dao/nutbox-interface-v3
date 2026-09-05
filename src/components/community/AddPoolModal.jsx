@@ -1772,7 +1772,7 @@ export default function AddPoolModal({
         );
       } else if (poolType === 'index-broker-nft') {
         factoryAddress = contracts.IndexBrokerNFTFactory;
-        if (!factoryAddress || Number(network.id) !== 56) {
+        if (!factoryAddress) {
           throw new Error(language === 'zh' ? '当前网络不支持 NFT' : 'NFT is not supported on this network');
         }
         if (indexBrokerContext.loading || indexBrokerConfig.officialToken === null) {
