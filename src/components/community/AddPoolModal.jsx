@@ -2397,6 +2397,7 @@ export default function AddPoolModal({
                   pancakeV3: contracts.PancakeV3Factory,
                 }}
                 nativeSymbol={network.nativeCurrency.symbol}
+                networkName={network.name}
                 poolName={poolName}
                 onPoolNameChange={setPoolName}
                 readProvider={readProvider}

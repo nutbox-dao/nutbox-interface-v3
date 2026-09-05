@@ -169,7 +169,7 @@ function SectionHeading({ title, description }) {
   );
 }
 
-function RendererGuide({ expanded, onToggle, zh }) {
+function RendererGuide({ expanded, onToggle, zh, networkName }) {
   return (
     <div className="renderer-guide-shell nft-pool-form-wide">
       <button
@@ -193,8 +193,8 @@ function RendererGuide({ expanded, onToggle, zh }) {
             <strong>{zh ? '先部署 Renderer，再填写合约地址' : 'Deploy the Renderer first, then enter its contract address'}</strong>
             <p>
               {zh
-                ? 'Renderer 是一个只读合约，负责根据 NFT 状态生成图片和元数据。创建矿池后 Renderer 地址不能修改，因此请先在 BSC 部署并完整测试。留空则使用平台默认 Renderer。'
-                : 'A Renderer is a read-only contract that generates NFT images and metadata from NFT state. Its address cannot be changed after pool creation, so deploy and fully test it on BSC first. Leave the field blank to use the platform default.'}
+                ? `Renderer 是一个只读合约，负责根据 NFT 状态生成图片和元数据。创建矿池后 Renderer 地址不能修改，因此请先在 ${networkName} 部署并完整测试。留空则使用平台默认 Renderer。`
+                : `A Renderer is a read-only contract that generates NFT images and metadata from NFT state. Its address cannot be changed after pool creation, so deploy and fully test it on ${networkName} first. Leave the field blank to use the platform default.`}
             </p>
           </div>
 
@@ -267,7 +267,7 @@ function RendererGuide({ expanded, onToggle, zh }) {
           <section className="renderer-guide-checklist">
             <strong>{zh ? '部署前检查' : 'Pre-deployment checklist'}</strong>
             <ul>
-              <li>{zh ? '地址是 BSC 上已部署的合约，不是钱包地址。' : 'The address is a deployed BSC contract, not a wallet address.'}</li>
+              <li>{zh ? `地址是 ${networkName} 上已部署的合约，不是钱包地址。` : `The address is a deployed contract on ${networkName}, not a wallet address.`}</li>
               <li>{zh ? '分别使用 seed=0 和非零 seed 调用三个接口，确认都不会回滚。' : 'Call all three functions with seed=0 and a non-zero seed; none may revert.'}</li>
               <li>{zh ? 'SVG、JSON 和特殊字符都已正确转义，tokenURI 可被钱包和市场解析。' : 'SVG, JSON, and special characters are escaped correctly, and wallets/markets can parse tokenURI.'}</li>
               <li>{zh ? '如果 Renderer 完全不使用 seed，请联系平台把地址加入“无需揭图”列表，否则铸造后仍会提示用户揭图。' : 'If the Renderer never uses seed, ask the platform to add it to the no-reveal list; otherwise users will still be prompted to reveal after minting.'}</li>
@@ -347,7 +347,8 @@ export default function IndexBrokerNFTPoolFields({
   onRetryPoolDiscovery,
   sourceCapabilities = {},
   sourceFactories = {},
-  nativeSymbol = 'BNB',
+  nativeSymbol = '原生币',
+  networkName = '当前网络',
   poolName,
   onPoolNameChange,
   readProvider,
@@ -703,6 +704,7 @@ export default function IndexBrokerNFTPoolFields({
             expanded={rendererGuideExpanded}
             onToggle={() => setRendererGuideExpanded(current => !current)}
             zh={zh}
+            networkName={networkName}
           />
           <label className="index-broker-check wizard-option-card nft-pool-form-wide">
             <input type="checkbox" checked={config.rerollEnabled} onChange={event => update('rerollEnabled', event.target.checked)} />

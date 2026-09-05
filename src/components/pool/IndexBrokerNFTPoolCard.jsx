@@ -43,14 +43,14 @@ const COPY = {
   en: {
     type: 'NFT', totalSupply: 'NFT supply', totalWeight: 'Community mining weight',
     indexWeight: 'Active index weight', stakeMiningApr: 'Staking mining APR', burnMiningApr: 'Burn mining APR', holdingApr: 'Holding APR', mintCost: 'Mint cost',
-    nativeCost: 'Public mint price', whitelistFree: 'Whitelist BNB fee', remainingPublic: 'Public mints left',
+    nativeCost: 'Public mint price', whitelistFree: 'Whitelist {native} fee', remainingPublic: 'Public mints left',
     referralRate: 'Public-mint referral', copyReferral: 'Copy referral link', referralCopied: 'Referral link copied', referralCopyFailed: 'Could not copy referral link',
     myWeight: 'My community weight', communityRewards: 'Community rewards', claimCommunity: 'Claim community rewards',
     approveMint: 'Approve mint token', mint: 'Mint NFT', referrer: 'Referrer NFT ID (optional)',
     whitelistMint: 'Your next mint uses a whitelist slot and only requires the Community Token payment.',
-    publicMint: 'Public mint requires both the Community Token and BNB payments shown below.',
+    publicMint: 'Public mint requires both the Community Token and {native} payments shown below.',
     mintPayment: 'Mint payment',
-    whitelistPaymentOnly: 'Whitelist mint only charges Community Tokens; no BNB mint price is required (gas still applies).',
+    whitelistPaymentOnly: 'Whitelist mint only charges Community Tokens; no {native} mint price is required (gas still applies).',
     mintBalances: 'Wallet balance',
     mintTokenInsufficient: 'Insufficient {symbol}: minting requires {required}, but this wallet has {balance}.',
     mintNativeInsufficient: 'Insufficient {symbol}: public minting requires {required}, and the wallet must also keep some {symbol} for gas. Current balance: {balance}.',
@@ -65,7 +65,7 @@ const COPY = {
     approveUpgrade: 'Approve Community Token', amount: 'Community Token amount',
     amm: 'Dedicated NFT AMM', ammActive: 'AMM active', ammWaiting: 'Waiting for official token listing',
     activateAmm: 'Activate AMM', inventory: 'NFT inventory', reserve: 'Community Token reserve', tradeAmount: 'Community Token per trade',
-    normalFee: 'Normal BNB fee', specificFee: 'Specific NFT BNB fee', buyNext: 'Buy oldest NFT',
+    normalFee: 'Normal {native} fee', specificFee: 'Specific NFT {native} fee', buyNext: 'Buy oldest NFT',
     buy: 'Buy this NFT', sell: 'Sell to AMM', approveAmmToken: 'Approve AMM token', approveNft: 'Approve NFT, then sell',
     approveBeforeSell: 'Approve the AMM first; the Sell button will become available after confirmation.',
     transferWarning: 'AMM trades transfer the NFT, disable index mining, and retain only 80% of its index weight per transfer.',
@@ -78,12 +78,12 @@ const COPY = {
     rewardTools: 'Index reward tools', rewardToolsHint: 'Inject index tokens for active NFT miners, or permissionlessly harvest holder fees into the AMM buyback reserve.',
     rewardAmount: 'Index token amount', approveIndexToken: 'Approve index token', injectRewards: 'Inject index rewards', balance: 'Balance',
     harvestFees: 'Harvest holder fees', approveRecommit: 'Approve reroll cost',
-    buyback: 'Execute index buyback', buybackHint: 'Use the current BNB reserve to buy index tokens with the platform default quote and slippage protection.',
-    nativeReserve: 'BNB buyback reserve',
+    buyback: 'Execute index buyback', buybackHint: 'Use the current {native} reserve to buy index tokens with the platform default quote and slippage protection.',
+    nativeReserve: '{native} buyback reserve',
     about: 'Pool overview', aboutHint: 'Core collection, minting and mining information for this NFT pool.',
     swapNext: 'Swap', nextAvailable: 'Next available', snipe: 'Snipe', chooseNft: 'Choose NFT',
     youSend: 'You send', youReceive: 'You receive', inVault: 'in vault', selectNft: 'Select an NFT to snipe',
-    rate: 'Rate', ammFee: 'AMM fee', maxNativeFee: 'Maximum BNB fee', mode: 'Mode', totalPayment: 'Community Token payment',
+    rate: 'Rate', ammFee: 'AMM fee', maxNativeFee: 'Maximum {native} fee', mode: 'Mode', totalPayment: 'Community Token payment',
     approveTrade: 'Approve Community Token', buySelected: 'Buy selected NFT', insufficientBalance: 'Insufficient Community Token balance',
     buyNftMode: 'Buy NFT', sellNftMode: 'Sell NFT', selectOwnedNft: 'Select an NFT from your wallet', inWallet: 'in wallet',
     estimatedPayout: 'Payout', approveSell: 'Approve selected NFT', sellSelected: 'Sell selected NFT', insufficientReserve: 'AMM Community Token reserve is insufficient',
@@ -96,14 +96,14 @@ const COPY = {
   zh: {
     type: 'NFT', totalSupply: 'NFT 供应量', totalWeight: '社区挖矿总权重',
     indexWeight: '有效指数挖矿权重', stakeMiningApr: '质押挖矿 APR', burnMiningApr: '销毁挖矿 APR', holdingApr: '持仓 APR', mintCost: '每枚铸造成本',
-    nativeCost: '公开铸造价格', whitelistFree: '白名单 BNB 费用', remainingPublic: '剩余公开额度',
+    nativeCost: '公开铸造价格', whitelistFree: '白名单 {native} 费用', remainingPublic: '剩余公开额度',
     referralRate: '公开 Mint 推荐返佣', copyReferral: '复制推荐链接', referralCopied: '推荐链接已复制', referralCopyFailed: '复制推荐链接失败',
     myWeight: '我的社区挖矿权重', communityRewards: '社区奖励', claimCommunity: '领取社区奖励',
     approveMint: '授权铸造代币', mint: '铸造 NFT', referrer: '推荐 NFT ID（可选）',
     whitelistMint: '你下一次铸造使用白名单额度，只需支付社区代币。',
-    publicMint: '公开铸造需同时支付下方展示的社区代币和 BNB。',
+    publicMint: '公开铸造需同时支付下方展示的社区代币和 {native}。',
     mintPayment: '本次铸造支付',
-    whitelistPaymentOnly: '白名单铸造只收取社区代币，无需支付 BNB 铸造价格（仍需预留少量 BNB 支付 Gas）。',
+    whitelistPaymentOnly: '白名单铸造只收取社区代币，无需支付 {native} 铸造价格（仍需预留少量 {native} 支付 Gas）。',
     mintBalances: '钱包余额',
     mintTokenInsufficient: '{symbol} 余额不足：铸造需要 {required}，当前只有 {balance}。',
     mintNativeInsufficient: '{symbol} 余额不足：公开铸造需要 {required}，并且还要预留少量 {symbol} 支付 Gas；当前余额为 {balance}。',
@@ -118,7 +118,7 @@ const COPY = {
     approveUpgrade: '授权社区代币', amount: '社区代币数量',
     amm: '专属 NFT AMM', ammActive: 'AMM 已激活', ammWaiting: '等待官方代币上市',
     activateAmm: '激活 AMM', inventory: 'NFT 库存', reserve: '社区代币储备', tradeAmount: '每次交易社区代币数量',
-    normalFee: '普通交易 BNB 费用', specificFee: '指定 NFT BNB 费用', buyNext: '买入队首 NFT',
+    normalFee: '普通交易 {native} 费用', specificFee: '指定 NFT {native} 费用', buyNext: '买入队首 NFT',
     buy: '买入该 NFT', sell: '出售给 AMM', approveAmmToken: '授权 AMM 使用代币', approveNft: '授权 NFT，随后出售',
     approveBeforeSell: '需要先授权 AMM 接收该 NFT；授权确认后即可点击“出售给 AMM”。',
     transferWarning: 'AMM 交易会转移 NFT、停用指数挖矿，并在每次转移时只保留 80% 的指数权重。',
@@ -131,12 +131,12 @@ const COPY = {
     rewardTools: '指数奖励工具', rewardToolsHint: '向活跃 NFT 矿工注入指数代币，或无权限地收割 holder fee 进入 AMM 回购储备。',
     rewardAmount: '指数代币数量', approveIndexToken: '授权指数代币', injectRewards: '注入指数奖励', balance: '余额',
     harvestFees: '收割 holder fee', approveRecommit: '授权重抽费用',
-    buyback: '执行指数回购', buybackHint: '使用当前 BNB 储备，按平台默认报价与滑点保护自动回购指数代币。',
-    nativeReserve: 'BNB 回购储备',
+    buyback: '执行指数回购', buybackHint: '使用当前 {native} 储备，按平台默认报价与滑点保护自动回购指数代币。',
+    nativeReserve: '{native} 回购储备',
     about: '矿池简介', aboutHint: '展示该 NFT 矿池的合集、铸造与挖矿基础信息。',
     swapNext: '购买队首', nextAvailable: '下一个可购买', snipe: '指定购买', chooseNft: '选择 NFT',
     youSend: '你支付', youReceive: '你将收到', inVault: '个库存', selectNft: '选择要购买的 NFT',
-    rate: '兑换比例', ammFee: 'AMM 费率', maxNativeFee: '最多支付 BNB 费用', mode: '购买方式', totalPayment: '社区代币支付',
+    rate: '兑换比例', ammFee: 'AMM 费率', maxNativeFee: '最多支付 {native} 费用', mode: '购买方式', totalPayment: '社区代币支付',
     approveTrade: '授权社区代币', buySelected: '买入选中 NFT', insufficientBalance: '社区代币余额不足',
     buyNftMode: '买入 NFT', sellNftMode: '卖出 NFT', selectOwnedNft: '从钱包中选择要卖出的 NFT', inWallet: '个在钱包中',
     estimatedPayout: '卖出所得', approveSell: '授权选中 NFT', sellSelected: '卖出选中 NFT', insufficientReserve: 'AMM 社区代币储备不足',
@@ -587,7 +587,12 @@ export default function IndexBrokerNFTPoolCard({
   const { language } = useLanguage();
   const location = useLocation();
   const toast = useToast();
-  const c = COPY[language] || COPY.en;
+  const c = Object.fromEntries(
+    Object.entries(COPY[language] || COPY.en).map(([key, value]) => [
+      key,
+      value.replaceAll('{native}', network.nativeCurrency.symbol),
+    ]),
+  );
   const requestRef = useRef(0);
   const poolAddressesRef = useRef(null);
   const inventoryIdsRef = useRef(null);
@@ -2509,7 +2514,7 @@ export default function IndexBrokerNFTPoolCard({
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '购买队首' : 'Queue trade'}</span><strong>{(data.amm.normalFeeBps / 100).toFixed(2)}%</strong></div>
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '指定购买' : 'Specific NFT'}</span><strong>{(data.amm.specificFeeBps / 100).toFixed(2)}%</strong></div>
                     <div className="index-broker-about-row"><span>{language === 'zh' ? '协议费率' : 'Protocol fee'}</span><strong>{(PLATFORM_FEE_BPS / 100).toFixed(2)}%</strong></div>
-                    <div className="index-broker-about-row"><span>{language === 'zh' ? '当前队首 BNB 费用' : 'Current queue BNB fee'}</span><strong className="native">{formatTokenAmount(data.amm.normalFee, 18)} {network.nativeCurrency.symbol}</strong></div>
+                    <div className="index-broker-about-row"><span>{language === 'zh' ? `当前队首 ${network.nativeCurrency.symbol} 费用` : `Current queue ${network.nativeCurrency.symbol} fee`}</span><strong className="native">{formatTokenAmount(data.amm.normalFee, 18)} {network.nativeCurrency.symbol}</strong></div>
                   </article>
 
                   <article className="index-broker-about-card index-broker-utilization-card">
@@ -3356,8 +3361,8 @@ export default function IndexBrokerNFTPoolCard({
               <h2>{language === 'zh' ? '持有分红规则' : 'Holder reward rules'}</h2>
               <p>
                 {language === 'zh'
-                  ? `公开 Mint 使用某枚 NFT 的推荐链接后，该 NFT 的推荐人数会增加，达到门槛后自动升级并提高社区挖矿权重。当前 BNB 返佣比例为 ${(data.referralBps / 100).toFixed(2)}%。`
-                  : `When a public mint uses an NFT's referral link, that NFT's referral count increases. Reaching a threshold upgrades its level and Community Token mining weight. The current BNB commission rate is ${(data.referralBps / 100).toFixed(2)}%.`}
+                  ? `公开 Mint 使用某枚 NFT 的推荐链接后，该 NFT 的推荐人数会增加，达到门槛后自动升级并提高社区挖矿权重。当前 ${network.nativeCurrency.symbol} 返佣比例为 ${(data.referralBps / 100).toFixed(2)}%。`
+                  : `When a public mint uses an NFT's referral link, that NFT's referral count increases. Reaching a threshold upgrades its level and Community Token mining weight. The current ${network.nativeCurrency.symbol} commission rate is ${(data.referralBps / 100).toFixed(2)}%.`}
               </p>
             </div>
             <span className="index-broker-referral-rate">{(data.referralBps / 100).toFixed(2)}%</span>

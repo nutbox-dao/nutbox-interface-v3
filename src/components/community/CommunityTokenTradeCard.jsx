@@ -46,7 +46,7 @@ function normalizeSlippageInput(value) {
   return `${whole}.${fractionParts.join('').slice(0, 2)}`;
 }
 
-function readableSwapError(error, zh, nativeSymbol = 'BNB') {
+function readableSwapError(error, zh, nativeSymbol = 'native token') {
   const message = String(error?.shortMessage || error?.reason || error?.message || '');
   if (/user rejected|user denied|action_rejected/i.test(message)) {
     return zh ? '你取消了钱包操作' : 'The wallet action was cancelled';
