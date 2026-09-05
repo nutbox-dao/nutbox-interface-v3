@@ -2,6 +2,7 @@
 // Add future audited seed-independent renderers here.
 export const INDEX_BROKER_SEEDLESS_RENDERERS = Object.freeze([
   '0x10347430eD726bfcC0ae65Ae8988732A62f04Ad8',
+  '0x427b9e2ad960718969255f9fA9ec374af553894C',
 ]);
 
 const SEEDLESS_RENDERER_SET = new Set(

@@ -1375,8 +1375,6 @@ export default function IndexBrokerNFTPoolCard({
       console.error('Failed to load Index Broker NFT pool:', error);
       if (requestId === requestRef.current) {
         setLoadError(error.message || c.txFailed);
-        setOwnedNfts([]);
-        setInventory([]);
       }
     } finally {
       if (requestId === requestRef.current) setLoading(false);
@@ -1689,10 +1687,11 @@ export default function IndexBrokerNFTPoolCard({
         await approvalTx.wait();
       }
 
-      const tx = await new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner).mint(
-        data.whitelistRemaining > 0n ? 0n : toBigInt(referrerTokenId),
-        { value: data.whitelistRemaining > 0n ? 0n : data.nativePrice },
-      );
+      const nft = new ethers.Contract(pool.id, IndexBrokerNFTABI, writeSigner);
+      const mintReferrerTokenId = data.whitelistRemaining > 0n ? 0n : toBigInt(referrerTokenId);
+      const mintOverrides = { value: data.whitelistRemaining > 0n ? 0n : data.nativePrice };
+      await nft.getFunction('mint').staticCall(mintReferrerTokenId, mintOverrides);
+      const tx = await nft.mint(mintReferrerTokenId, mintOverrides);
       toast.info(language === 'zh' ? '正在铸造 NFT…' : 'Minting NFT…');
       receipt = await tx.wait();
       toast.success(language === 'zh' ? 'NFT 铸造成功' : 'NFT minted');
@@ -1881,7 +1880,9 @@ export default function IndexBrokerNFTPoolCard({
     async writeSigner => {
       const amm = new ethers.Contract(data.ammAddress, IndexBrokerNFTAMMABI, writeSigner);
       const fee = await amm.quoteNormalNativeFee();
-      return amm.sellNFT(nft.tokenId, { value: withFeeBuffer(fee) });
+      const overrides = { value: withFeeBuffer(fee) };
+      await amm.getFunction('sellNFT').staticCall(nft.tokenId, overrides);
+      return amm.sellNFT(nft.tokenId, overrides);
     },
   );
 
@@ -1921,10 +1922,14 @@ export default function IndexBrokerNFTPoolCard({
       let tx;
       if (tokenId) {
         const fee = await amm.quoteSpecificNativeFee();
-        tx = await amm.buySpecificNFT(tokenId, { value: withFeeBuffer(fee) });
+        const overrides = { value: withFeeBuffer(fee) };
+        await amm.getFunction('buySpecificNFT').staticCall(tokenId, overrides);
+        tx = await amm.buySpecificNFT(tokenId, overrides);
       } else {
         const fee = await amm.quoteNormalNativeFee();
-        tx = await amm.buyNextNFT({ value: withFeeBuffer(fee) });
+        const overrides = { value: withFeeBuffer(fee) };
+        await amm.getFunction('buyNextNFT').staticCall(overrides);
+        tx = await amm.buyNextNFT(overrides);
       }
       toast.info(language === 'zh' ? '正在从 AMM 买入 NFT…' : 'Buying NFT from AMM…');
       await tx.wait();
@@ -2378,22 +2383,6 @@ export default function IndexBrokerNFTPoolCard({
   };
 
   if (loadError === 'Unsupported legacy Index Broker NFT contract') return null;
-  if (loadError) {
-    return (
-      <div className="pool-card index-broker-card glass-card index-broker-load-error">
-        <PoolCardHeader
-          name={pool.name || c.type}
-          typeLabel={c.type}
-          typeClassName={getPoolTypeBadgeClass(pool.poolType)}
-          ratio={pool.ratio}
-          status={pool.status}
-        />
-        <p>{language === 'zh' ? '读取 NFT 合约失败。' : 'Failed to read the NFT contract.'}</p>
-        <button className="btn btn-secondary btn-sm" onClick={loadPoolData}>{language === 'zh' ? '重试' : 'Retry'}</button>
-      </div>
-    );
-  }
-
   return (
     <>
       <div className={`pool-card index-broker-card ${detail ? 'index-broker-detail' : 'index-broker-summary'} ${compactDetailLayout ? 'index-broker-embedded' : ''} ${organized ? 'index-broker-organized' : ''} glass-card`} id={`pool-${pool.id}`}>
