@@ -507,6 +507,31 @@
   border-radius: var(--radius-md);
 }
 
+.community-liquidity-load-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 16px 12px;
+  color: #ff6969;
+  text-align: center;
+}
+
+.community-liquidity-load-error button {
+  min-width: 120px;
+  padding: 10px 18px;
+  border: 1px solid rgba(144, 91, 255, 0.7);
+  border-radius: 12px;
+  color: #c7a8ff;
+  background: rgba(105, 57, 204, 0.2);
+  cursor: pointer;
+}
+
+.community-liquidity-load-error button:hover {
+  border-color: #a96fff;
+  background: rgba(105, 57, 204, 0.34);
+}
+
 .community-liquidity-summary {
   display: grid;
   grid-template-columns: minmax(0, 1.45fr) minmax(0, 0.72fr) minmax(0, 0.9fr);

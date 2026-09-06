@@ -1,6 +1,7 @@
 import { ethers } from 'ethers';
 import { ERC20ABI } from '../config/abis.js';
 import { resolveUniswapV4Pool } from './nutboxSwap.js';
+import { multicallRead } from './multicall.js';
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 const Q96 = 1n << 96n;
@@ -201,6 +202,7 @@ export async function loadCurrentUniswapV4Pool({ community, contracts, readProvi
     poolId: community.tradePair,
     poolManager: contracts.UniswapV4Manager,
     readProvider,
+    multicallAddress: contracts.Multicall3,
   });
   const normalizedToken = ethers.getAddress(tokenAddress);
   const currencies = [pool.currency0.toLowerCase(), pool.currency1.toLowerCase()];
@@ -297,7 +299,6 @@ async function queryTransferLogs(positionManager, filter, fromBlock, toBlock) {
 }
 
 async function queryOwnedPositionIds(positionManager, account, readProvider, fromBlock, forceRefresh = false) {
-  const latest = await readProvider.getBlockNumber();
   const firstBlock = Math.max(0, Number(fromBlock) || 0);
   const cacheKey = `${String(positionManager.target).toLowerCase()}:${account.toLowerCase()}:${firstBlock}`;
   const cached = positionIdCache.get(cacheKey);
@@ -309,10 +310,22 @@ async function queryOwnedPositionIds(positionManager, account, readProvider, fro
   const incomingFilter = positionManager.filters.Transfer(null, account);
   const outgoingFilter = positionManager.filters.Transfer(account, null);
   const request = (async () => {
-    const [incoming, outgoing] = await Promise.all([
-      queryTransferLogs(positionManager, incomingFilter, firstBlock, latest),
-      queryTransferLogs(positionManager, outgoingFilter, firstBlock, latest),
-    ]);
+    let incoming;
+    let outgoing;
+    try {
+      // These two log filters cannot be executed by Multicall. Starting them in
+      // the same tick lets ethers send one JSON-RPC batch over one HTTP request.
+      [incoming, outgoing] = await Promise.all([
+        positionManager.queryFilter(incomingFilter, firstBlock, 'latest'),
+        positionManager.queryFilter(outgoingFilter, firstBlock, 'latest'),
+      ]);
+    } catch {
+      const latest = await readProvider.getBlockNumber();
+      [incoming, outgoing] = await Promise.all([
+        queryTransferLogs(positionManager, incomingFilter, firstBlock, latest),
+        queryTransferLogs(positionManager, outgoingFilter, firstBlock, latest),
+      ]);
+    }
     const logs = [...incoming, ...outgoing];
     logs.sort((a, b) => a.blockNumber - b.blockNumber || (a.index ?? 0) - (b.index ?? 0));
     const owned = new Set();
@@ -343,16 +356,31 @@ export async function loadCurrentUniswapV4Positions({
 }) {
   if (!account) return [];
   const positionManager = new ethers.Contract(contracts.UniswapV4PositionManager, PositionManagerABI, readProvider);
-  const stateView = ethers.isAddress(contracts.UniswapV4StateView)
-    ? new ethers.Contract(contracts.UniswapV4StateView, StateViewABI, readProvider)
-    : null;
   const tokenIds = await queryOwnedPositionIds(positionManager, account, readProvider, deploymentBlock, forceRefresh);
-  const positions = await Promise.all(tokenIds.map(async (tokenId) => {
+  if (tokenIds.length === 0) return [];
+
+  const positionResults = await multicallRead(readProvider, contracts.Multicall3, tokenIds.flatMap(tokenId => {
+    const key = tokenId.toString();
+    return [
+      {
+        key: `pool:${key}`, target: contracts.UniswapV4PositionManager,
+        contractInterface: PositionManagerABI, functionName: 'getPoolAndPositionInfo',
+        args: [tokenId], allowFailure: true,
+      },
+      {
+        key: `liquidity:${key}`, target: contracts.UniswapV4PositionManager,
+        contractInterface: PositionManagerABI, functionName: 'getPositionLiquidity',
+        args: [tokenId], allowFailure: true,
+      },
+    ];
+  }));
+
+  const positions = tokenIds.map(tokenId => {
     try {
-      const [poolAndInfo, liquidity] = await Promise.all([
-        positionManager.getPoolAndPositionInfo(tokenId),
-        positionManager.getPositionLiquidity(tokenId),
-      ]);
+      const key = tokenId.toString();
+      const poolAndInfo = positionResults[`pool:${key}`];
+      const liquidity = positionResults[`liquidity:${key}`];
+      if (!poolAndInfo || liquidity == null) return null;
       if (liquidity <= 0n) return null;
       const keyResult = poolAndInfo.poolKey ?? poolAndInfo[0];
       const info = BigInt(poolAndInfo.info ?? poolAndInfo[1]);
@@ -367,40 +395,67 @@ export async function loadCurrentUniswapV4Positions({
       const tickLower = decodeInt24(info >> 8n);
       const tickUpper = decodeInt24(info >> 32n);
       const amounts = amountsForLiquidity(pool.sqrtPriceX96, pool.tick, tickLower, tickUpper, liquidity);
-      let fee0 = 0n;
-      let fee1 = 0n;
-      if (stateView) {
-        try {
-          const salt = ethers.zeroPadValue(ethers.toBeHex(tokenId), 32);
-          const [positionState, currentFeeGrowth] = await Promise.all([
-            stateView.getPositionInfo(pool.poolId, contracts.UniswapV4PositionManager, tickLower, tickUpper, salt),
-            stateView.getFeeGrowthInside(pool.poolId, tickLower, tickUpper),
-          ]);
-          const positionLiquidity = BigInt(positionState.liquidity ?? positionState[0]);
-          const feeGrowth0Last = BigInt(positionState.feeGrowthInside0LastX128 ?? positionState[1]);
-          const feeGrowth1Last = BigInt(positionState.feeGrowthInside1LastX128 ?? positionState[2]);
-          const feeGrowth0 = BigInt(currentFeeGrowth.feeGrowthInside0X128 ?? currentFeeGrowth[0]);
-          const feeGrowth1 = BigInt(currentFeeGrowth.feeGrowthInside1X128 ?? currentFeeGrowth[1]);
-          fee0 = subtractUint256(feeGrowth0, feeGrowth0Last) * positionLiquidity / Q128;
-          fee1 = subtractUint256(feeGrowth1, feeGrowth1Last) * positionLiquidity / Q128;
-        } catch (feeError) {
-          console.warn(`Failed to read V4 fees for position ${tokenId}:`, feeError);
-        }
-      }
       return {
         tokenId, tickLower, tickUpper, liquidity,
         amount0: amounts.amount0,
         amount1: amounts.amount1,
-        fee0,
-        fee1,
+        fee0: 0n,
+        fee1: 0n,
         inRange: pool.tick >= tickLower && pool.tick < tickUpper,
       };
     } catch (error) {
       console.warn(`Failed to read V4 position ${tokenId}:`, error);
       return null;
     }
-  }));
-  return positions.filter(Boolean);
+  }).filter(Boolean);
+
+  if (!ethers.isAddress(contracts.UniswapV4StateView) || positions.length === 0) return positions;
+
+  const feeCalls = [];
+  const requestedRanges = new Set();
+  positions.forEach(position => {
+    const key = position.tokenId.toString();
+    const rangeKey = `${position.tickLower}:${position.tickUpper}`;
+    const salt = ethers.zeroPadValue(ethers.toBeHex(position.tokenId), 32);
+    feeCalls.push({
+      key: `position-fees:${key}`, target: contracts.UniswapV4StateView,
+      contractInterface: StateViewABI, functionName: 'getPositionInfo',
+      args: [pool.poolId, contracts.UniswapV4PositionManager, position.tickLower, position.tickUpper, salt],
+      allowFailure: true,
+    });
+    if (!requestedRanges.has(rangeKey)) {
+      requestedRanges.add(rangeKey);
+      feeCalls.push({
+        key: `fee-growth:${rangeKey}`, target: contracts.UniswapV4StateView,
+        contractInterface: StateViewABI, functionName: 'getFeeGrowthInside',
+        args: [pool.poolId, position.tickLower, position.tickUpper], allowFailure: true,
+      });
+    }
+  });
+  const feeResults = await multicallRead(readProvider, contracts.Multicall3, feeCalls);
+
+  return positions.map(position => {
+    try {
+      const key = position.tokenId.toString();
+      const rangeKey = `${position.tickLower}:${position.tickUpper}`;
+      const positionState = feeResults[`position-fees:${key}`];
+      const currentFeeGrowth = feeResults[`fee-growth:${rangeKey}`];
+      if (!positionState || !currentFeeGrowth) return position;
+      const positionLiquidity = BigInt(positionState.liquidity ?? positionState[0]);
+      const feeGrowth0Last = BigInt(positionState.feeGrowthInside0LastX128 ?? positionState[1]);
+      const feeGrowth1Last = BigInt(positionState.feeGrowthInside1LastX128 ?? positionState[2]);
+      const feeGrowth0 = BigInt(currentFeeGrowth.feeGrowthInside0X128 ?? currentFeeGrowth[0]);
+      const feeGrowth1 = BigInt(currentFeeGrowth.feeGrowthInside1X128 ?? currentFeeGrowth[1]);
+      return {
+        ...position,
+        fee0: subtractUint256(feeGrowth0, feeGrowth0Last) * positionLiquidity / Q128,
+        fee1: subtractUint256(feeGrowth1, feeGrowth1Last) * positionLiquidity / Q128,
+      };
+    } catch (feeError) {
+      console.warn(`Failed to read V4 fees for position ${position.tokenId}:`, feeError);
+      return position;
+    }
+  });
 }
 
 export async function collectCurrentUniswapV4Fees({ pool, position, account, signer, contracts }) {
@@ -444,9 +499,46 @@ export async function removeCurrentUniswapV4Liquidity({
 
 export function readableLiquidityError(error, zh) {
   const message = String(error?.shortMessage || error?.reason || error?.message || '');
-  if (/user rejected|user denied|action_rejected/i.test(message)) return zh ? '你取消了钱包操作' : 'The wallet action was cancelled';
-  if (/insufficient funds/i.test(message)) return zh ? '原生币余额不足，请预留 Gas' : 'Insufficient native balance; keep some for gas';
-  if (/allowance|transfer amount exceeds/i.test(message)) return zh ? '代币余额或授权额度不足' : 'Insufficient token balance or allowance';
-  if (/deadline/i.test(message)) return zh ? '交易已过期，请重试' : 'The transaction expired; try again';
-  return message.split('\n')[0].slice(0, 180) || (zh ? '流动性操作失败' : 'Liquidity action failed');
+  const localized = (zhText, enText) => (zh ? zhText : enText);
+
+  if (/user rejected|user denied|action_rejected|rejected the request/i.test(message)) {
+    return localized('你取消了钱包操作', 'The wallet action was cancelled');
+  }
+  if (/failed to fetch|networkerror|network request failed|rpc is temporarily unavailable|server response 5\d\d|timeout|timed out|could not coalesce error/i.test(message)) {
+    return localized('网络连接暂时失败，请重新加载', 'The network request failed; please retry');
+  }
+  if (/unsupported chain|wrong network|chain mismatch|network mismatch/i.test(message)) {
+    return localized('当前钱包网络不正确，请切换网络后重试', 'The wallet is on the wrong network; switch networks and retry');
+  }
+  if (/insufficient funds/i.test(message)) {
+    return localized('原生币余额不足，请预留 Gas', 'Insufficient native balance; keep some for gas');
+  }
+  if (/allowance|transfer amount exceeds|insufficient token balance/i.test(message)) {
+    return localized('代币余额或授权额度不足', 'Insufficient token balance or allowance');
+  }
+  if (/deadline|transaction expired/i.test(message)) {
+    return localized('交易已过期，请重试', 'The transaction expired; try again');
+  }
+  if (/poolkey not found|pool key.*unavailable|pool id unavailable/i.test(message)) {
+    return localized('无法找到该交易池的配置信息', 'The pool configuration could not be found');
+  }
+  if (/pool manager.*unavailable/i.test(message)) {
+    return localized('流动性管理合约暂不可用', 'The liquidity manager is unavailable');
+  }
+  if (/pool id mismatch|not.*token.*native pair|unsupported.*pool/i.test(message)) {
+    return localized('当前交易池配置不匹配', 'The current pool configuration does not match');
+  }
+  if (/unable to read pool state|could not read pool|pool state/i.test(message)) {
+    return localized('无法读取当前交易池状态，请重试', 'The current pool state could not be loaded; please retry');
+  }
+  if (/invalid liquidity amount|invalid remove amount|amount must be greater/i.test(message)) {
+    return localized('请输入有效的流动性数量', 'Enter a valid liquidity amount');
+  }
+  if (/tick.*outside|price.*outside.*range|invalid.*range/i.test(message)) {
+    return localized('价格区间无效，请重新设置', 'The price range is invalid; please adjust it');
+  }
+  if (/execution reverted|call exception|missing revert data|transaction failed/i.test(message)) {
+    return localized('合约执行失败，请检查输入后重试', 'The contract call failed; check the values and retry');
+  }
+  return localized('流动性操作失败，请稍后重试', 'The liquidity operation failed; please try again');
 }

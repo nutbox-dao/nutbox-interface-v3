@@ -1,5 +1,5 @@
 import { ethers } from 'ethers';
-import { Multicall3ABI } from '../config/abis';
+import { Multicall3ABI } from '../config/abis.js';
 
 function toInterface(value) {
   return value instanceof ethers.Interface ? value : new ethers.Interface(value);

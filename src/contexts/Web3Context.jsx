@@ -55,7 +55,7 @@ export function Web3Provider({ children }) {
     const rpcUrl = configuredUrl.startsWith('/')
       ? new URL(configuredUrl, window.location.origin).toString()
       : configuredUrl;
-    return new ethers.JsonRpcProvider(rpcUrl, network.id);
+    return new ethers.JsonRpcProvider(rpcUrl, network.id, { staticNetwork: true });
   }, [network]);
 
   const provider = useMemo(() => {

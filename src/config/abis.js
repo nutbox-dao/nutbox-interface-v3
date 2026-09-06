@@ -304,6 +304,7 @@ export const BasketStakePoolABI = [
 export const Multicall3ABI = [
   'function aggregate3(tuple(address target, bool allowFailure, bytes callData)[] calls) payable returns (tuple(bool success, bytes returnData)[] returnData)',
   'function getBlockNumber() view returns (uint256)',
+  'function getEthBalance(address addr) view returns (uint256 balance)',
 ];
 
 export const LinearCalculatorABI = [

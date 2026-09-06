@@ -1,5 +1,6 @@
 import { ethers } from 'ethers';
 import { PancakeV4CLPoolManagerABI } from '../config/abis.js';
+import { multicallRead } from './multicall.js';
 
 const abiCoder = ethers.AbiCoder.defaultAbiCoder();
 
@@ -16,6 +17,7 @@ const UNISWAP_V4_INTERFACE = new ethers.Interface([
 ]);
 const UNISWAP_V4_POOLS_SLOT = 6n;
 const UNISWAP_V4_LIQUIDITY_OFFSET = 3n;
+const uniswapV4PoolKeyCache = new Map();
 
 function decodeSignedInt24(value) {
   const masked = Number(BigInt(value) & 0xffffffn);
@@ -33,40 +35,78 @@ function requireAddress(value, label) {
  * Build the caller-supplied DEX source expected by TagAI's chain-specific
  * ImportedTokenSwapWrapper (the Nutbox swap wrapper used by this UI).
  */
-export async function resolveUniswapV4Pool({ poolId, poolManager, readProvider }) {
+async function resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider }) {
+  const cacheKey = `${managerAddress.toLowerCase()}:${poolId.toLowerCase()}`;
+  const cached = uniswapV4PoolKeyCache.get(cacheKey);
+  if (cached) return cached;
+
+  const request = (async () => {
+    const initialize = UNISWAP_V4_INTERFACE.getEvent('Initialize');
+    const logs = await readProvider.getLogs({
+      address: managerAddress,
+      topics: [initialize.topicHash, poolId],
+      fromBlock: 0,
+      toBlock: 'latest',
+    });
+    const parsed = logs.length ? UNISWAP_V4_INTERFACE.parseLog(logs[logs.length - 1]) : null;
+    if (!parsed) throw new Error(`PoolKey not found for Pool ID ${poolId}`);
+    const poolKey = {
+      poolManager: managerAddress,
+      currency0: ethers.getAddress(parsed.args.currency0),
+      currency1: ethers.getAddress(parsed.args.currency1),
+      fee: Number(parsed.args.fee),
+      tickSpacing: Number(parsed.args.tickSpacing),
+      hooks: ethers.getAddress(parsed.args.hooks),
+    };
+    const resolvedPoolId = ethers.keccak256(abiCoder.encode(
+      ['address', 'address', 'uint24', 'int24', 'address'],
+      [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
+    ));
+    if (resolvedPoolId.toLowerCase() !== poolId.toLowerCase()) {
+      throw new Error('Uniswap V4 Pool ID does not match the resolved PoolKey');
+    }
+    return poolKey;
+  })();
+
+  uniswapV4PoolKeyCache.set(cacheKey, request);
+  try {
+    return await request;
+  } catch (error) {
+    uniswapV4PoolKeyCache.delete(cacheKey);
+    throw error;
+  }
+}
+
+export async function resolveUniswapV4Pool({ poolId, poolManager, readProvider, multicallAddress }) {
   if (!ethers.isHexString(poolId, 32)) throw new Error('Uniswap V4 Pool ID is unavailable');
   const managerAddress = requireAddress(poolManager, 'Uniswap V4 pool manager');
-  const initialize = UNISWAP_V4_INTERFACE.getEvent('Initialize');
-  const logs = await readProvider.getLogs({
-    address: managerAddress,
-    topics: [initialize.topicHash, poolId],
-    fromBlock: 0,
-    toBlock: 'latest',
-  });
-  const parsed = logs.length ? UNISWAP_V4_INTERFACE.parseLog(logs[logs.length - 1]) : null;
-  if (!parsed) throw new Error(`PoolKey not found for Pool ID ${poolId}`);
-  const poolKey = {
-    poolManager: managerAddress,
-    currency0: ethers.getAddress(parsed.args.currency0),
-    currency1: ethers.getAddress(parsed.args.currency1),
-    fee: Number(parsed.args.fee),
-    tickSpacing: Number(parsed.args.tickSpacing),
-    hooks: ethers.getAddress(parsed.args.hooks),
-  };
-  const resolvedPoolId = ethers.keccak256(abiCoder.encode(
-    ['address', 'address', 'uint24', 'int24', 'address'],
-    [poolKey.currency0, poolKey.currency1, poolKey.fee, poolKey.tickSpacing, poolKey.hooks],
-  ));
-  if (resolvedPoolId.toLowerCase() !== poolId.toLowerCase()) {
-    throw new Error('Uniswap V4 Pool ID does not match the resolved PoolKey');
-  }
+  const poolKey = await resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider });
 
   const poolSlot = ethers.keccak256(abiCoder.encode(['bytes32', 'uint256'], [poolId, UNISWAP_V4_POOLS_SLOT]));
-  const manager = new ethers.Contract(managerAddress, UNISWAP_V4_INTERFACE, readProvider);
-  const [slot0Word, liquidityWord] = await Promise.all([
-    manager.extsload(poolSlot),
-    manager.extsload(ethers.toBeHex(BigInt(poolSlot) + UNISWAP_V4_LIQUIDITY_OFFSET, 32)),
-  ]);
+  const liquiditySlot = ethers.toBeHex(BigInt(poolSlot) + UNISWAP_V4_LIQUIDITY_OFFSET, 32);
+  let slot0Word;
+  let liquidityWord;
+  if (ethers.isAddress(multicallAddress)) {
+    const storage = await multicallRead(readProvider, multicallAddress, [
+      {
+        key: 'slot0', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
+        functionName: 'extsload', args: [poolSlot],
+      },
+      {
+        key: 'liquidity', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
+        functionName: 'extsload', args: [liquiditySlot],
+      },
+    ]);
+    slot0Word = storage.slot0;
+    liquidityWord = storage.liquidity;
+  } else {
+    const manager = new ethers.Contract(managerAddress, UNISWAP_V4_INTERFACE, readProvider);
+    [slot0Word, liquidityWord] = await Promise.all([
+      manager.extsload(poolSlot),
+      manager.extsload(liquiditySlot),
+    ]);
+  }
+  if (slot0Word == null || liquidityWord == null) throw new Error('Unable to read Uniswap V4 pool state');
   const packedSlot0 = BigInt(slot0Word);
   return {
     ...poolKey,
@@ -115,6 +155,7 @@ export async function buildNutboxSwapSource({ dexVersion, pair, contracts, readP
         poolId: pair,
         poolManager: contracts.UniswapV4Manager,
         readProvider,
+        multicallAddress: contracts.Multicall3,
       });
       return {
         sourceType: NUTBOX_SWAP_SOURCE_TYPES.UNISWAP_V4,

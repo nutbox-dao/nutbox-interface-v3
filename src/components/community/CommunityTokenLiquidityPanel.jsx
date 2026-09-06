@@ -3,7 +3,8 @@ import { ethers } from 'ethers';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { useToast } from '../../contexts/ToastContext';
 import { useWeb3 } from '../../contexts/Web3Context';
-import { ERC20ABI } from '../../config/abis';
+import { ERC20ABI, Multicall3ABI } from '../../config/abis';
+import { multicallRead } from '../../utils/multicall';
 import {
   addCurrentUniswapV4Liquidity,
   collectCurrentUniswapV4Fees,
@@ -122,16 +123,21 @@ export default function CommunityTokenLiquidityPanel({ community, tokenInfo }) {
       return;
     }
     try {
-      const token = new ethers.Contract(tokenAddress, ERC20ABI, readProvider);
-      const [native, tokenBalance] = await Promise.all([
-        readProvider.getBalance(account),
-        token.balanceOf(account),
+      const result = await multicallRead(readProvider, contracts.Multicall3, [
+        {
+          key: 'native', target: contracts.Multicall3, contractInterface: Multicall3ABI,
+          functionName: 'getEthBalance', args: [account],
+        },
+        {
+          key: 'token', target: tokenAddress, contractInterface: ERC20ABI,
+          functionName: 'balanceOf', args: [account],
+        },
       ]);
-      setBalances({ native, token: tokenBalance });
+      setBalances({ native: result.native ?? 0n, token: result.token ?? 0n });
     } catch (nextError) {
       console.warn('Failed to load liquidity balances:', nextError);
     }
-  }, [account, readProvider, tokenAddress]);
+  }, [account, contracts.Multicall3, readProvider, tokenAddress]);
 
   const loadPositions = useCallback(async (forceRefresh = false) => {
     if (!pool || !account) {
@@ -345,7 +351,14 @@ export default function CommunityTokenLiquidityPanel({ community, tokenInfo }) {
   };
 
   if (loading) return <div className="community-liquidity-loading">{zh ? '正在读取当前交易池…' : 'Loading current pool…'}</div>;
-  if (error || !pool || !range) return <div className="community-token-swap-status error">{error || (zh ? '无法读取当前交易池' : 'Unable to load the current pool')}</div>;
+  if (error || !pool || !range) {
+    return (
+      <div className="community-liquidity-load-error" role="alert">
+        <span>{error || (zh ? '无法读取当前交易池' : 'Unable to load the current pool')}</span>
+        <button type="button" onClick={loadPool}>{zh ? '重新加载' : 'Retry'}</button>
+      </div>
+    );
+  }
 
   const nativeIsCurrency0 = pool.currency0 === ethers.ZeroAddress;
 
