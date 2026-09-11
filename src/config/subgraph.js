@@ -1091,7 +1091,7 @@ function mapPool(raw, chainId) {
     totalAmount: '0', // Will be read from chain
     asset: raw.asset,
     ratio: raw.ratio,
-    stakersCount: 0, // Will be read from chain
+    stakersCount: Number(raw.stakersCount) || 0,
     lockDuration: raw.lockDuration,
     poolFactory: raw.poolFactory,
     createdAt: raw.createdAtTs?.toString(),

@@ -31,7 +31,6 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
   const [lockDuration, setLockDuration] = useState(0n);
   const [claimable, setClaimable] = useState(0n);
   const [redeemRequests, setRedeemRequests] = useState([]);
-  const [stakersCount, setStakersCount] = useState(0);
   const [poolOperationFee, setPoolOperationFee] = useState(null);
 
   const isLocking = pool.poolType === 'ERC20_LOCKING';
@@ -86,34 +85,6 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
           } catch { /* ignore */ }
         }
       }
-
-      // Calculate stakers count from contract event logs
-      let sCount = 0;
-      try {
-        const filter = isLocking ? poolContract.filters.Locked() : poolContract.filters.Deposited();
-        const logs = await poolContract.queryFilter(filter).catch(() => []);
-        
-        const stakers = new Set();
-        for (const log of logs) {
-          const who = isLocking ? log.args?.[0] : log.args?.[1];
-          if (who) stakers.add(who.toLowerCase());
-        }
-        
-        if (stakers.size > 0) {
-          const balances = await Promise.all(
-            Array.from(stakers).map(staker => 
-              poolContract.getUserStakedAmount(staker).catch(() => 0n)
-            )
-          );
-          sCount = balances.filter(bal => bal > 0n).length;
-        } else {
-          sCount = tStaked > 0n ? 1 : 0;
-        }
-      } catch (err) {
-        console.error('Failed to load stakers count:', err);
-        sCount = tStaked > 0n ? 1 : 0;
-      }
-      setStakersCount(sCount);
     } catch (err) {
       console.error('Failed to load pool data:', err);
     } finally {
@@ -306,7 +277,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
         <div className="pool-stat">
           <div className="pool-stat-label">Stakers</div>
           <div className="pool-stat-value">
-            {loading ? <span className="skeleton" style={{ width: 40, height: 20, display: 'inline-block' }} /> : stakersCount}
+            {pool.stakersCount || 0}
           </div>
         </div>
         <div className="pool-stat">
