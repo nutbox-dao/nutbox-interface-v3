@@ -7,12 +7,14 @@ import { ERC20StakingABI, ERC20LockingABI, ERC20ABI, CommunityABI } from '../../
 import { formatTokenAmount, shortenAddress, formatDuration, getPoolTypeBadgeClass } from '../../utils/helpers';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import useTimedActionLoading from '../../hooks/useTimedActionLoading';
+import { readPoolApr } from '../../utils/poolApr';
 import './PoolCard.css';
 
-export default function PoolCard({ pool, communityAddress, communityToken, rewardRate, rewardRateUnit = '/block', feeRatio = 0, onRefresh }) {
+export default function PoolCard({ pool, communityAddress, communityToken, onRefresh }) {
   const { account, getWriteSigner, readProvider, isConnected, contracts, network } = useWeb3();
   const toast = useToast();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const [aprData, setAprData] = useState(null);
 
   const [stakeTokenInfo, setStakeTokenInfo] = useState(null);
   const [totalStaked, setTotalStaked] = useState(0n);
@@ -108,31 +110,39 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
     committeeContract.getPoolOperationFee().then(fee => setPoolOperationFee(fee)).catch(() => {});
   }, [readProvider, contracts]);
 
-  // Calculate APR
-  const apr = (() => {
-    if (!rewardRate || rewardRate === 0n || totalStaked === 0n || !communityToken || !stakeTokenInfo) return null;
-    try {
-      const poolRatio = BigInt(pool.ratio || 10000);
-
-      // Determine the multiplier based on the reward rate unit
-      let multiplier = BigInt(network.blocksPerYear); // default '/block'
-      if (rewardRateUnit === '/sec') {
-        multiplier = 31_536_000n; // 365 * 24 * 3600
-      } else if (rewardRateUnit === '/hour') {
-        multiplier = 8_760n; // 365 * 24
+  const rewardToken = communityToken?.address;
+  const stakeToken = stakeTokenInfo?.address;
+  useEffect(() => {
+    if (!readProvider || !rewardToken || !stakeToken) return;
+    let disposed = false;
+    let pending = false;
+    const refreshApr = async () => {
+      if (pending) return;
+      pending = true;
+      let value = null;
+      try {
+        value = await readPoolApr({ provider: readProvider, community: communityAddress,
+          pool: pool.id, stakeToken, rewardToken, contracts, network });
+      } catch (err) {
+        console.warn('Pool APR unavailable:', pool.id, err);
+      } finally {
+        pending = false;
       }
+      if (!disposed) setAprData({ value, pool: pool.id, community: communityAddress,
+        stakeToken, rewardToken, provider: readProvider });
+    };
+    refreshApr();
+    const timer = setInterval(refreshApr, 15000);
+    return () => { disposed = true; clearInterval(timer); };
+  }, [readProvider, communityAddress, pool.id, stakeToken, rewardToken, contracts, network]);
 
-      // Staker rewards are reduced by feeRatio (DAO Fund)
-      const stakerRewardRatio = 10000n - BigInt(feeRatio);
-      const yearlyRewards = rewardRate * multiplier * poolRatio / 10000n * stakerRewardRatio / 10000n;
-
-      // Simple APR: yearlyRewards / totalStaked * 100 (assuming same token for simplicity)
-      const aprBps = yearlyRewards * 10000n / totalStaked;
-      return Number(aprBps) / 100;
-    } catch {
-      return null;
-    }
-  })();
+  const apr = aprData?.pool === pool.id && aprData.community === communityAddress
+    && aprData.stakeToken === stakeToken && aprData.rewardToken === rewardToken
+    && aprData.provider === readProvider && aprData.value !== null
+    ? Number(aprData.value) / 100 : null;
+  const aprHint = language === 'zh'
+    ? '取未来 1 小时净奖励 × 8,760 与未来 24 小时净奖励 × 365 的较大值，除以质押资产价值。LP 按两侧资产估值；缺少估值时不显示 APR。'
+    : 'The greater of next 1h net rewards × 8,760 and next 24h net rewards × 365, divided by staked asset value. LP valuation includes both sides; APR is unavailable without a valuation.';
 
   const decimals = stakeTokenInfo?.decimals || 18;
 
@@ -264,8 +274,8 @@ export default function PoolCard({ pool, communityAddress, communityToken, rewar
         </div>
         <div className="pool-stat">
           <div className="pool-stat-label">APR</div>
-          <div className="pool-stat-value pool-apr">
-            {apr !== null ? (apr > 0 ? `${apr.toFixed(1)}%` : '0%') : '—'}
+          <div className="pool-stat-value pool-apr" title={aprHint}>
+            {apr !== null ? (apr > 0 ? `${apr.toLocaleString(language === 'zh' ? 'zh-CN' : 'en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : '0%') : '—'}
           </div>
         </div>
         {isLocking && (
