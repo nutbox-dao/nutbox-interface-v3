@@ -27,6 +27,7 @@ import CommunityTokenTradeCard from '../components/community/CommunityTokenTrade
 import DistributionDisplay from '../components/community/DistributionDisplay';
 import IndexBrokerNFTWorkspace from '../components/community/IndexBrokerNFTWorkspace';
 import useTimedActionLoading from '../hooks/useTimedActionLoading';
+import { enrichVersion13LpPoolNames } from '../utils/poolDisplayName';
 import './CommunityDetail.css';
 
 export default function CommunityDetail() {
@@ -65,6 +66,27 @@ export default function CommunityDetail() {
       );
       setCommunity(data);
       setLoading(false);
+
+      // Version 13 creates generic "V2 LP Staking" pools. Resolve the Pair's
+      // token identities in the background so both cards and history can show
+      // the useful "community token / constituent token" name used by TagAI.
+      enrichVersion13LpPoolNames(readProvider, data).then(enriched => {
+        if (!enriched || enriched === data) return;
+        const names = new Map(enriched.pools
+          .filter(pool => pool.displayName)
+          .map(pool => [pool.id.toLowerCase(), pool.displayName]));
+        if (names.size === 0) return;
+        setCommunity(current => {
+          if (!current || current.id.toLowerCase() !== data.id.toLowerCase()) return current;
+          return {
+            ...current,
+            pools: current.pools.map(pool => ({
+              ...pool,
+              displayName: names.get(pool.id.toLowerCase()) || pool.displayName,
+            })),
+          };
+        });
+      });
 
       fetchCommunityHistory(address, activeChainId).then(operationHistory => {
         setCommunity(current => current ? ({ ...current, operationHistory }) : current);
@@ -610,7 +632,7 @@ export default function CommunityDetail() {
             {otherPools.map(pool => (
               <div key={pool.id} className="pool-card glass-card" style={{ opacity: 0.6 }}>
                 <PoolCardHeader
-                  name={pool.name || t('poolCard.fallbackName')}
+                  name={pool.displayName || pool.name || t('poolCard.fallbackName')}
                   typeLabel={getPoolTypeLabel(pool.poolType)}
                   typeClassName={getPoolTypeBadgeClass(pool.poolType)}
                   ratio={pool.ratio}
@@ -776,6 +798,10 @@ function HistoryTab({ operations, pools = [] }) {
     <div className="history-list">
       {operations.map(op => {
         const opInfo = getOperationDisplay(op.type);
+        const poolInfo = op.pool?.id
+          ? pools.find(pool => pool.id?.toLowerCase() === op.pool.id.toLowerCase())
+          : null;
+        const poolName = poolInfo?.displayName || poolInfo?.name || op.pool?.name || '';
         return (
           <div key={op.id} className="history-item glass-card">
             <div className="history-type">
@@ -786,6 +812,11 @@ function HistoryTab({ operations, pools = [] }) {
             </div>
             <div className="history-details">
               <span className="history-account">{shortenAddress(op.account?.id)}</span>
+              {poolName && (
+                <span className="history-pool-name" title={op.pool?.id || ''}>
+                  {poolName}
+                </span>
+              )}
               
               {/* Case 1: Change Fund Ratio */}
               {opInfo.label === 'detail.historyTitleChangeRatio' && op.amount !== undefined && (
@@ -805,7 +836,6 @@ function HistoryTab({ operations, pools = [] }) {
               
               {/* Case 3: Add Pool */}
               {opInfo.label === 'detail.historyTitleAddPool' && (() => {
-                const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
                 const typeLabel = poolInfo ? getPoolTypeLabel(poolInfo.poolType) : (op.poolFactory ? getPoolTypeLabel(guessPoolType(op.poolFactory, contracts)) : '');
                 const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return (
@@ -818,7 +848,6 @@ function HistoryTab({ operations, pools = [] }) {
 
               {/* Case 4: Adjust Pool Ratios */}
               {opInfo.label === 'detail.historyTitleAdjustRatios' && (() => {
-                const poolInfo = pools.find(p => p.id?.toLowerCase() === op.pool?.id?.toLowerCase());
                 const ratioLabel = poolInfo ? `${((poolInfo.ratio || 0) / 100).toFixed(1)}%` : (op.amount && op.amount !== '0' ? `${(parseFloat(op.amount) * 1e16).toFixed(1)}%` : '');
                 return ratioLabel ? (
                   <span className="history-amount" style={{ color: 'var(--color-text-accent)' }}>

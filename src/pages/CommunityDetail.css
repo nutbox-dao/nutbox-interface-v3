@@ -1333,6 +1333,20 @@
   color: var(--color-text-secondary);
 }
 
+.history-pool-name {
+  max-width: min(260px, 30vw);
+  overflow: hidden;
+  padding: 4px 9px;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.12);
+  color: var(--color-text-accent);
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .history-amount {
   font-size: var(--font-size-sm);
   font-weight: 600;
