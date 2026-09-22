@@ -465,11 +465,6 @@ export default function CommunityDetail() {
               <span>{t('detail.adminPanelTitle')}</span>
             </div>
             <div className="admin-actions">
-              {contracts.IndexBrokerNFTFactory && (
-                <button className="btn btn-primary btn-sm" onClick={() => setAddPoolMode('nft')}>
-                  {t('detail.createNftBtn')}
-                </button>
-              )}
               <button className="btn btn-secondary btn-sm" onClick={() => setAddPoolMode('pool')}>
                 {t('detail.addPoolBtn')}
               </button>
@@ -655,8 +650,6 @@ export default function CommunityDetail() {
           communityAddress={address}
           communityTokenAddress={community.cToken}
           activePools={activePools}
-          initialPoolType={addPoolMode === 'nft' ? 'index-broker-nft' : ''}
-          draftScope={addPoolMode === 'nft' ? 'create-nft' : ''}
           onClose={() => setAddPoolMode(null)}
           onSuccess={(registration) => {
             setAddPoolMode(null);
