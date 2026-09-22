@@ -14,11 +14,15 @@ export const BSC_CONTRACTS = {
   SocialCurationFactory: '0xc4674D3fBbD201Ea401a8B7e7285F956178593D8',
   NFTMiningPoolFactory: '0x21155400f915A239ca2228243cFE3761caF60128',
   BasketTVLMiningPoolFactory: '0x6B1B18336E774164dF01EfDC0901559909f2d074',
-  IndexBrokerNFTFactory: '0xB1708D2F3A504846a47cdB2e4Dfb48b3ea1c9b5F',
-  IndexBrokerNFTBurnTemplate: '0x1D875946C87a650AF2Aa5B04427D44E647a480B9',
-  IndexBrokerNFTStakeTemplate: '0xc24Ff0009fF1AaD70eF8714ee32ebc8f6b7983a5',
-  IndexBrokerNFTAMMTemplate: '0x698680412e34db49CdBa62c46a0Faad31D05ce0A',
-  NutboxRouter: '0x04e2d43bA38e3f3F0D0dab3A30D1B58BFE9B659f',
+  IndexBrokerNFTFactory: '0x835E047D4BE6548E95F2Cbb9Ac02d62EFa2508A0',
+  IndexBrokerNFTFactories: [
+    '0x835E047D4BE6548E95F2Cbb9Ac02d62EFa2508A0',
+    '0xB1708D2F3A504846a47cdB2e4Dfb48b3ea1c9b5F',
+  ],
+  IndexBrokerNFTBurnTemplate: '0x05433A916171458621e34bC7C96EF07a8D107514',
+  IndexBrokerNFTStakeTemplate: '0x428086B7ec2FDa6bA208b37d9a4A44C5490353b3',
+  IndexBrokerNFTAMMTemplate: '0x2a1b1c08642ad98A691167Efec7b4E43d2a1133B',
+  NutboxRouter: '0x72dc4F38A7E4159e97d826a6ab594748C6b68f17',
   // TagAI deployment name: ImportedTokenSwapWrapper. It routes imported-token
   // trades through their selected Pancake pool and NutboxRouter.
   NutboxSwapWrapper: '0xdeE655Bc5b312f566248e4321F28523Cef72083C',
@@ -37,7 +41,7 @@ export const BSC_CONTRACTS = {
   Permit2: '0x31c2F6fcFf4F8759b3Bd5Bf0e1084A055615c768',
   WBNB: '0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c',
   BasketRegistry: '0x5B45ad2c3A2B8b8989579162C4faE2D64598Cefe',
-  Pump: '0x8fEF5b4c0f761a0cc447800e3019B089ac306F28',
+  Pump: '0x2c2f4e8D85c02a065f109c74d9b27186AE65Adfa',
   WETH: null,
   LinearCalculator: '0x5114966657Bd6209B47aa16eaa4EAfbbC9595ec0',
   LinearTimeCalculator: '0xc76e00e150e13EC95514E9a52Ab0314c7faE8207',
@@ -58,6 +62,7 @@ export const RH_CONTRACTS = {
   NFTMiningPoolFactory: '0xb3A547F535bDc1b20Eb6fd97b9524F893A75708C',
   BasketTVLMiningPoolFactory: '0xB3EBB2f53ECaAd85bbA502A557f7f838aeff88E0',
   IndexBrokerNFTFactory: '0x678871773b07322aA927FE5057870D1356F09676',
+  IndexBrokerNFTFactories: ['0x678871773b07322aA927FE5057870D1356F09676'],
   IndexBrokerNFTBurnTemplate: '0x1fCB38D03231cCC7D62C45A5Ee5184A2486778d0',
   IndexBrokerNFTStakeTemplate: '0x0971018D38523021333B94088E69fCF1726606b1',
   IndexBrokerNFTAMMTemplate: '0x70978301e27fb2Aa931035EFB5d78542a0AAB898',
@@ -132,6 +137,9 @@ export const NETWORKS = {
 export const SUPPORTED_CHAIN_IDS = Object.keys(NETWORKS).map(Number);
 export const getNetworkConfig = (chainId = DEFAULT_CHAIN_ID) => NETWORKS[Number(chainId)] || NETWORKS[DEFAULT_CHAIN_ID];
 export const getContracts = (chainId = DEFAULT_CHAIN_ID) => getNetworkConfig(chainId).contracts;
+export const isIndexBrokerNFTFactory = (address, contracts) => Boolean(address)
+  && (contracts.IndexBrokerNFTFactories || [contracts.IndexBrokerNFTFactory])
+    .some(factory => factory?.toLowerCase() === address.toLowerCase());
 export const getChainSlug = (chainId = DEFAULT_CHAIN_ID) => getNetworkConfig(chainId).slug;
 export const getChainIdFromSlug = (slug) => {
   const normalized = String(slug || '').toLowerCase();

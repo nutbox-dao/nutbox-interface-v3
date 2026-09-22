@@ -15,7 +15,7 @@ import {
   LinearCalculatorABI,
   Multicall3ABI,
 } from '../../config/abis';
-import { getChainPath } from '../../config/contracts';
+import { getChainPath, isIndexBrokerNFTFactory } from '../../config/contracts';
 import { indexBrokerRendererRequiresSeed } from '../../config/indexBrokerNft';
 import useTimedActionLoading from '../../hooks/useTimedActionLoading';
 import {
@@ -1099,8 +1099,8 @@ export default function IndexBrokerNFTPoolCard({
       );
       if (!primary) primary = secondary;
 
-      if (primary.factoryAddress?.toLowerCase() !== contracts.IndexBrokerNFTFactory?.toLowerCase()) {
-        throw new Error('Unsupported legacy Index Broker NFT contract');
+      if (!isIndexBrokerNFTFactory(primary.factoryAddress, contracts)) {
+        throw new Error('Unsupported Index Broker NFT factory');
       }
 
       const name = primary.name;
@@ -1388,12 +1388,7 @@ export default function IndexBrokerNFTPoolCard({
     account,
     communityAddress,
     communityToken,
-    contracts.Committee,
-    contracts.HourlyTickCalculator,
-    contracts.IndexBrokerNFTFactory,
-    contracts.LinearCalculator,
-    contracts.LinearTimeCalculator,
-    contracts.Multicall3,
+    contracts,
     detail,
     loadIndexedInsights,
     network.blockTimeSeconds,

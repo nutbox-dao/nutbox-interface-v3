@@ -1125,7 +1125,8 @@ function guessPoolType(factoryAddress, chainId) {
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
-    [contracts.IndexBrokerNFTFactory, 'INDEX_BROKER_NFT'],
+    ...(contracts.IndexBrokerNFTFactories || [contracts.IndexBrokerNFTFactory])
+      .map(factory => [factory, 'INDEX_BROKER_NFT']),
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || 'UNKNOWN';
 }

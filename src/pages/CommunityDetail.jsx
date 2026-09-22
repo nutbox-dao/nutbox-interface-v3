@@ -12,7 +12,7 @@ import {
   useHourlyTickCalculator,
 } from '../hooks/useContract';
 import { ERC20ABI } from '../config/abis';
-import { getChainPath } from '../config/contracts';
+import { getChainPath, isIndexBrokerNFTFactory } from '../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
@@ -270,14 +270,14 @@ export default function CommunityDetail() {
   );
   const indexBrokerNftPools = displayPools.filter(p =>
     p.poolType === 'INDEX_BROKER_NFT'
-      && p.poolFactory?.toLowerCase() === contracts.IndexBrokerNFTFactory?.toLowerCase()
+      && isIndexBrokerNFTFactory(p.poolFactory, contracts)
   );
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
     && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'NFT_MINING'
     && p.poolType !== 'BASKET_TVL_MINING'
     && !(p.poolType === 'INDEX_BROKER_NFT'
-      && p.poolFactory?.toLowerCase() === contracts.IndexBrokerNFTFactory?.toLowerCase())
+      && isIndexBrokerNFTFactory(p.poolFactory, contracts))
   );
   const primaryIndexBrokerNftPool = indexBrokerNftPools.reduce((selected, pool) => {
     if (!selected) return pool;
@@ -777,7 +777,8 @@ function guessPoolType(factoryAddress, contracts) {
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
-    [contracts.IndexBrokerNFTFactory, 'INDEX_BROKER_NFT'],
+    ...(contracts.IndexBrokerNFTFactories || [contracts.IndexBrokerNFTFactory])
+      .map(factory => [factory, 'INDEX_BROKER_NFT']),
   ].filter(([address]) => address).map(([address, type]) => [address.toLowerCase(), type]));
   return map[addr] || '';
 }

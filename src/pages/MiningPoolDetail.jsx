@@ -5,7 +5,7 @@ import {
   CommunityABI,
   ERC20ABI,
 } from '../config/abis';
-import { getChainPath } from '../config/contracts';
+import { getChainPath, isIndexBrokerNFTFactory } from '../config/contracts';
 import { fetchCommunity } from '../config/subgraph';
 import { useWeb3 } from '../contexts/Web3Context';
 import { useToast } from '../contexts/ToastContext';
@@ -44,9 +44,9 @@ export default function MiningPoolDetail() {
       }
       if (
         indexedPool.poolType === 'INDEX_BROKER_NFT'
-        && indexedPool.poolFactory?.toLowerCase() !== contracts.IndexBrokerNFTFactory?.toLowerCase()
+        && !isIndexBrokerNFTFactory(indexedPool.poolFactory, contracts)
       ) {
-        throw new Error('Legacy Index Broker NFT pools are no longer supported');
+        throw new Error('Unsupported Index Broker NFT factory');
       }
 
       setPool(indexedPool);
@@ -93,8 +93,7 @@ export default function MiningPoolDetail() {
   }, [
     activeChainId,
     communityAddress,
-    contracts.Multicall3,
-    contracts.IndexBrokerNFTFactory,
+    contracts,
     poolAddress,
     readProvider,
   ]);
