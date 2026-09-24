@@ -117,6 +117,7 @@ const poolHistoryInterface = new ethers.Interface([
   'event Unlocked(address indexed who, uint256 amount)',
   'event Redeemed(address indexed who, uint256 amount)',
   'event SocialClaimed(address indexed user, uint256 indexed orderId, uint256 amount, bool harvested)',
+  'event TradeClaimed(address indexed user, uint256 indexed orderId, uint256 amount, bool harvested)',
   'event NFTMinted(address indexed buyer, uint256 indexed tokenId, uint256 indexed batchId, uint256 referrerTokenId, address paymentAsset, uint256 mintPrice)',
 ]);
 
@@ -124,6 +125,7 @@ const poolFactoryEvents = [
   ['ERC20StakingFactory', 'event ERC20StakingCreated(address indexed pool, address indexed community, string name, address erc20Token)'],
   ['ERC20LockingFactory', 'event ERC20LockingCreated(address indexed pool, address indexed community, string name, address erc20Token, uint256 lockDuration)'],
   ['SocialCurationFactory', 'event SocialCurationCreated(address indexed pool, address indexed community, string name)'],
+  ['TradeCurationFactory', 'event TradeCurationCreated(address indexed pool, address indexed community, string name)'],
   ['NFTMiningPoolFactory', 'event NFTMiningPoolCreated(address indexed pool, address indexed community, address indexed admin, address renderer, string name, string symbol, address paymentAsset, uint256 mintPrice, uint256 firstBatchSupply, uint16 referralBps, uint8 paletteId)'],
   ['BasketTVLMiningPoolFactory', 'event BasketTVLMiningPoolCreated(address indexed pool, address indexed community, address indexed basketRegistry, address nftMiningPool, uint16 nftRewardBps, uint256 lockDuration, string name)'],
 ];
@@ -232,7 +234,7 @@ async function fetchOnChainOperationHistory({
       const decimals = pool?.assetDecimals ?? communityTokenDecimals;
       const typeMap = {
         Deposited: 'DEPOSIT', Withdrawn: 'WITHDRAW', Locked: 'LOCK',
-        Unlocked: 'UNLOCK', Redeemed: 'REDEEM', SocialClaimed: 'SOCIALCLAIMED', NFTMinted: 'NFTMINT',
+        Unlocked: 'UNLOCK', Redeemed: 'REDEEM', SocialClaimed: 'SOCIALCLAIMED', TradeClaimed: 'TRADECLAIMED', NFTMinted: 'NFTMINT',
       };
       const who = parsed.args.who || parsed.args.user || parsed.args.buyer;
       operations.push({
@@ -1038,6 +1040,16 @@ export async function fetchSocialClaimHistory(communityAddress, page = 0, size =
   }
 }
 
+// Confirmed, indexed trade claims; keep raw uint256 values for token-decimal formatting.
+export async function fetchTradeClaimHistory(communityAddress, poolAddress, page = 0, size = 20, chainId = DEFAULT_CHAIN_ID) {
+  if (Number(chainId) !== BSC_CHAIN_ID) throw new Error('Trade curation is only available on BSC');
+  return fetchAPIFromBase(
+    getNetworkConfig(chainId).apiBase,
+    `/communities/${encodeURIComponent(communityAddress)}/trade-claims/history?pool=${encodeURIComponent(poolAddress)}&page=${page}&size=${size}`,
+    chainId,
+  );
+}
+
 // ──── Data Mapping Helpers ────
 
 function mapCommunity(raw, chainId) {
@@ -1123,6 +1135,7 @@ function guessPoolType(factoryAddress, chainId) {
     [contracts.ERC1155StakingFactory, 'ERC1155_STAKING'],
     [contracts.SPStakingFactory, 'SP_STAKING'],
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
+    [contracts.TradeCurationFactory, 'TRADE_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
     ...(contracts.IndexBrokerNFTFactories || [contracts.IndexBrokerNFTFactory])

@@ -42,6 +42,7 @@ import {
   restoreAddPoolDraftRatios,
   saveAddPoolDraft,
 } from '../../utils/addPoolDraft';
+import { prepareTradeCurationPool } from '../../utils/tradeCuration';
 import './AddPoolModal.css';
 
 const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
@@ -1681,15 +1682,16 @@ export default function AddPoolModal({
   };
 
   const handleCreate = async () => {
+    const isTradeCuration = poolType === 'trade-curation';
     const isNFTMining = poolType === 'nft-mining';
     const isBasketTVL = poolType === 'basket-tvl';
     const isIndexBroker = poolType === 'index-broker-nft';
-    if (!poolName || (!isNFTMining && !isBasketTVL && !isIndexBroker && !stakeTokenAddress)) {
+    if (!poolName || (!isNFTMining && !isBasketTVL && !isIndexBroker && !isTradeCuration && !stakeTokenAddress)) {
       toast.error(language === 'zh' ? '请填写所有字段' : 'Please fill in all fields');
       return;
     }
 
-    if (!isNFTMining && !isBasketTVL && !isIndexBroker && !ethers.isAddress(stakeTokenAddress)) {
+    if (!isNFTMining && !isBasketTVL && !isIndexBroker && !isTradeCuration && !ethers.isAddress(stakeTokenAddress)) {
       toast.error(language === 'zh' ? '代币地址无效' : 'Invalid token address');
       return;
     }
@@ -1732,7 +1734,11 @@ export default function AddPoolModal({
       let factoryAddress;
       let meta;
 
-      if (poolType === 'staking') {
+      if (isTradeCuration) {
+        ({ factoryAddress, meta } = await prepareTradeCurationPool({
+          chainId: network.id, contracts, readProvider, communityAddress,
+        }));
+      } else if (poolType === 'staking') {
         factoryAddress = contracts.ERC20StakingFactory;
         // meta: just the stake token address (20 bytes)
         meta = stakeTokenAddress.toLowerCase();
@@ -1874,7 +1880,9 @@ export default function AddPoolModal({
       // 链上已成功。注册失败只提示等索引，不能当成创建失败。
       let registration = null;
       try {
-        registration = await registerMiningPool(tx.hash, network.id);
+        // Trade-curation pools are indexed by the Graph factory listener.
+        if (isTradeCuration) toast.info(t('addPool.toastWaitingIndex'));
+        else registration = await registerMiningPool(tx.hash, network.id);
       } catch (registrationError) {
         console.error('Register mining pool failed:', registrationError);
         toast.info(t('addPool.toastWaitingIndex'));
@@ -1906,6 +1914,12 @@ export default function AddPoolModal({
   }
   const previewCalculatedWeight = previewWeightForLevel(levelWeights, previewParams.level);
   const poolTypeOptions = [
+    {
+      value: 'trade-curation', title: t('tradePool.typeName'),
+      description: t('tradePool.description'),
+      enabled: Number(network.id) === 56 && Boolean(contracts.TradeCurationFactory)
+        && !activePools.some(pool => pool.poolType === 'TRADE_CURATION'),
+    },
     {
       value: 'staking', title: t('addPool.fieldTypeNameStaking'),
       description: zh ? '质押 ERC20 代币，并按矿池比例获得社区奖励。' : 'Stake an ERC20 token and earn community rewards according to the pool allocation.',
@@ -2043,13 +2057,14 @@ export default function AddPoolModal({
                 <div className="nft-pool-form-grid">
                   <div className="input-group nft-pool-form-wide">
                     <label>{t('addPool.fieldName')}</label>
-                    <input className="input" placeholder={zh ? '例如：质押 USDT 获得奖励' : 'e.g. Stake USDT for rewards'} value={poolName} onChange={e => setPoolName(e.target.value)} />
+                    <input className="input" placeholder={poolType === 'trade-curation' ? t('tradePool.typeName') : zh ? '例如：质押 USDT 获得奖励' : 'e.g. Stake USDT for rewards'} value={poolName} onChange={e => setPoolName(e.target.value)} />
                   </div>
-                  <div className="input-group nft-pool-form-wide">
+                  {poolType !== 'trade-curation' && <div className="input-group nft-pool-form-wide">
                     <label>{t('addPool.fieldStakeToken')}</label>
                     <input className="input" placeholder="0x..." value={stakeTokenAddress} onChange={e => setStakeTokenAddress(e.target.value)} />
                     <div className="contract-field-feedback">{zh ? '填写用户需要质押或锁定的 ERC20 合约地址。' : 'Enter the ERC20 contract users will stake or lock.'}</div>
-                  </div>
+                  </div>}
+                  {poolType === 'trade-curation' && <p className="contract-field-feedback nft-pool-form-wide">{t('tradePool.creationHint')}</p>}
                   {poolType === 'locking' && (
                     <div className="input-group">
                       <label>{t('addPool.fieldLockDuration')}</label>
@@ -2467,7 +2482,7 @@ export default function AddPoolModal({
                     ✨ {poolName || t('addPool.ratioNewPoolLabel')}
                   </span>
                   <span className="badge badge-active" style={{ fontSize: '10px', padding: '1px 6px', height: 'auto', lineHeight: 'normal', background: 'var(--color-success)', color: '#fff' }}>
-                    {poolType === 'staking'
+                    {poolType === 'trade-curation' ? t('tradePool.typeName') : poolType === 'staking'
                       ? 'Staking'
                       : poolType === 'locking'
                         ? 'Locking'

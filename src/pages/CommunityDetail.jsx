@@ -16,6 +16,7 @@ import { getChainPath, isIndexBrokerNFTFactory } from '../config/contracts';
 import { formatTokenAmount, shortenAddress, formatDate, getPoolTypeLabel, getPoolTypeBadgeClass, getBscScanUrl, copyToClipboard } from '../utils/helpers';
 import PoolCard from '../components/pool/PoolCard';
 import SocialCurationCard from '../components/pool/SocialCurationCard';
+import TradeCurationCard from '../components/pool/TradeCurationCard';
 import NFTMiningPoolCard from '../components/pool/NFTMiningPoolCard';
 import BasketTVLMiningPoolCard from '../components/pool/BasketTVLMiningPoolCard';
 import IndexBrokerNFTPoolCard from '../components/pool/IndexBrokerNFTPoolCard';
@@ -262,6 +263,7 @@ export default function CommunityDetail() {
   const socialCurationPools = displayPools.filter(p =>
     p.poolType === 'SOCIAL_CURATION'
   );
+  const tradeCurationPools = displayPools.filter(p => p.poolType === 'TRADE_CURATION');
   const nftMiningPools = displayPools.filter(p =>
     p.poolType === 'NFT_MINING'
   );
@@ -274,7 +276,7 @@ export default function CommunityDetail() {
   );
   const otherPools = displayPools.filter(p =>
     p.poolType !== 'ERC20_STAKING' && p.poolType !== 'ERC20_LOCKING'
-    && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'NFT_MINING'
+    && p.poolType !== 'SOCIAL_CURATION' && p.poolType !== 'TRADE_CURATION' && p.poolType !== 'NFT_MINING'
     && p.poolType !== 'BASKET_TVL_MINING'
     && !(p.poolType === 'INDEX_BROKER_NFT'
       && isIndexBrokerNFTFactory(p.poolFactory, contracts))
@@ -559,7 +561,7 @@ export default function CommunityDetail() {
               </div>
             </div>
           </div>
-        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && nftMiningPools.length === 0 && basketTVLMiningPools.length === 0 && indexBrokerNftPools.length === 0 && otherPools.length === 0 ? (
+        ) : erc20Pools.length === 0 && socialCurationPools.length === 0 && tradeCurationPools.length === 0 && nftMiningPools.length === 0 && basketTVLMiningPools.length === 0 && indexBrokerNftPools.length === 0 && otherPools.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">📭</div>
             <div className="empty-state-title">{t('detail.noPoolsTitle')}</div>
@@ -592,6 +594,18 @@ export default function CommunityDetail() {
                 communityAddress={address}
                 communityToken={tokenInfo}
                 rewardRate={rewardRate}
+                feeRatio={displayFeeRatio}
+              />
+            ))}
+            {tradeCurationPools.map(pool => (
+              <TradeCurationCard
+                key={`${activeChainId}-${pool.id}`}
+                pool={pool}
+                communityAddress={address}
+                communityToken={tokenInfo}
+                tick={community.tick}
+                rewardRate={rewardRate}
+                rewardRateUnit={rewardRateUnit}
                 feeRatio={displayFeeRatio}
               />
             ))}
@@ -744,6 +758,9 @@ function getOperationDisplay(type) {
   if (t === 'WITHDRAWREWARDS' || t === 'CLAIM' || t === 'HARVEST' || t === 'CLAIMREWARDS') {
     return { label: 'detail.historyTitleClaimRewards', isKey: true, isAdmin: false };
   }
+  if (t === 'TRADECLAIMED' || t === 'TRADECLAIM') {
+    return { label: 'detail.historyTitleTradeClaim', isKey: true, isAdmin: false };
+  }
   if (t === 'SOCIALCLAIMED' || t === 'CLAIMED') {
     return { label: 'detail.historyTitleSocialClaim', isKey: true, isAdmin: false };
   }
@@ -768,6 +785,7 @@ function guessPoolType(factoryAddress, contracts) {
     [contracts.ERC1155StakingFactory, 'ERC1155_STAKING'],
     [contracts.SPStakingFactory, 'SP_STAKING'],
     [contracts.SocialCurationFactory, 'SOCIAL_CURATION'],
+    [contracts.TradeCurationFactory, 'TRADE_CURATION'],
     [contracts.NFTMiningPoolFactory, 'NFT_MINING'],
     [contracts.BasketTVLMiningPoolFactory, 'BASKET_TVL_MINING'],
     ...(contracts.IndexBrokerNFTFactories || [contracts.IndexBrokerNFTFactory])

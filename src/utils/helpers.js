@@ -119,6 +119,7 @@ export function getPoolTypeLabel(poolType) {
   if (t.includes('ERC1155')) return 'ERC1155 Staking';
   if (t.includes('SP_STAKING')) return 'SP Staking';
   if (t.includes('SOCIAL')) return 'Social Curation';
+  if (t.includes('TRADE_CURATION')) return 'Trade Curation';
   if (t.includes('INDEX_BROKER')) return 'NFT';
   if (t.includes('NFT_MINING')) return 'NFT Mining';
   if (t.includes('BASKET_TVL')) return 'Basket TVL Mining';
@@ -135,6 +136,7 @@ export function getPoolTypeBadgeClass(poolType) {
   if (t.includes('NFT_MINING')) return 'badge badge-nft';
   if (t.includes('BASKET_TVL')) return 'badge badge-basket';
   if (t.includes('LOCKING')) return 'badge badge-locking';
+  if (t.includes('CURATION')) return 'badge badge-social';
   return 'badge badge-staking';
 }
 

@@ -1,0 +1,26 @@
+.trade-curation-card .pool-card-header {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.trade-curation-card .pool-card-title-row {
+  flex-wrap: wrap;
+  justify-content: space-between;
+}
+
+.trade-curation-card .pool-card-name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.trade-curation-card .pool-card-header-meta {
+  justify-content: space-between;
+}
+
+.trade-curation-card .pool-stats-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.trade-curation-card .pool-stat-value {
+  overflow-wrap: anywhere;
+}
