@@ -1,29 +1,17 @@
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useWeb3 } from '../../contexts/Web3Context';
 import { useLanguage } from '../../contexts/LanguageContext';
 import { shortenAddress } from '../../utils/helpers';
 import './Header.css';
-import { NETWORKS, getChainIdFromSlug, getChainPath, getChainSlug } from '../../config/contracts';
+import { NETWORKS, getChainPath } from '../../config/contracts';
 
 export default function Header() {
   const { account, isConnected, connecting, connect, disconnect, isCorrectChain, switchToBSC, activeChainId, network } = useWeb3();
   const { language, setLanguage, t } = useLanguage();
-  const location = useLocation();
-  const navigate = useNavigate();
-
   const handleNetworkChange = (nextChainId) => {
-    const parts = location.pathname.split('/').filter(Boolean);
-    const nextSlug = getChainSlug(nextChainId);
-    if (getChainIdFromSlug(parts[0])) {
-      parts[0] = nextSlug;
-    } else {
-      parts.unshift(nextSlug);
-    }
-    navigate({
-      pathname: `/${parts.join('/')}`,
-      search: location.search,
-      hash: location.hash,
-    });
+    if (nextChainId === activeChainId) return;
+    // Load the selected chain's home with fresh app state and no old pool URL.
+    window.location.assign(getChainPath(nextChainId));
   };
 
   return (
