@@ -17,7 +17,7 @@ function basketRouteType(chainId, version) {
 // Value active constituent reserves, excluding fee reserves, against effective
 // supply (including accrued dilution). All reads use the same block. This does
 // not depend on an NFT AMM reserve or simulate a buyback.
-export async function readBasketNativeNav({ provider, address, chainId, version, decimals, blockTag }) {
+export async function readBasketNativeNav({ provider, address, chainId, version, decimals }) {
   const routeType = basketRouteType(chainId, version);
   const basket = new Contract(address, [
     'function effectiveSupply() view returns (uint256)',
@@ -26,7 +26,9 @@ export async function readBasketNativeNav({ provider, address, chainId, version,
     'function assetAt(uint256) view returns (address asset,uint16 targetWeightBps,uint256 activeReserve)',
     `function assetRouteAt(uint256) view returns (${routeType})`,
   ], provider);
-  const at = { blockTag: blockTag ?? await provider.getBlockNumber() };
+  // Pin to the RPC block number. On RH, Solidity block.number (including
+  // Multicall3.getBlockNumber()) uses a different height and cannot be an RPC tag.
+  const at = { blockTag: await provider.getBlockNumber() };
   const [supply, executorAddress, count] = await Promise.all([
     basket.effectiveSupply(at), basket.rebalanceExecutor(at), basket.assetCount(at),
   ]);

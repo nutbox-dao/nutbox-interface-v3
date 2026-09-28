@@ -25,8 +25,11 @@ function fixture(chainId = 4663, version = 3) {
     `function assetRouteAt(uint256) view returns(${routeType})`,
     `function ${quote}(${routeType},address,uint256) view returns(uint256)`,
   ]);
-  const state = { supply: 50_000_000n, values: [parseEther('1'), parseEther('3')], reserves: [123n, 456n] };
+  const state = { supply: 50_000_000n, values: [parseEther('1'), parseEther('3')], reserves: [123n, 456n], blockReads: 0 };
   const provider = {
+    async getBlockNumber() {
+      return 123 + state.blockReads++;
+    },
     async call(tx) {
       assert.equal(tx.blockTag, 123);
       const { name, args } = abi.parseTransaction(tx);
@@ -50,7 +53,7 @@ function fixture(chainId = 4663, version = 3) {
       return abi.encodeFunctionResult(name, result);
     },
   };
-  return { state, input: { provider, address: basketAddress, chainId, version, decimals: 6, blockTag: 123 } };
+  return { state, input: { provider, address: basketAddress, chainId, version, decimals: 6 } };
 }
 
 for (const [chainId, version] of [[4663, 1], [4663, 3], [56, 2], [56, 3], [56, 4]]) {
@@ -64,6 +67,7 @@ test('never reports a partial NAV when a funded constituent fails or returns zer
   const { input, state } = fixture();
   state.values[1] = null;
   await assert.rejects(readBasketNativeNav(input), /price read failed/);
+  state.blockReads = 0;
   state.values[1] = 0n;
   await assert.rejects(readBasketNativeNav(input), /price unavailable/);
 });
@@ -73,6 +77,15 @@ test('zero reserves contribute zero, while zero effective supply is unavailable'
   state.reserves[1] = 0n;
   state.values[1] = null;
   assert.equal(await readBasketNativeNav(input), parseEther('0.02'));
+  state.blockReads = 0;
   state.supply = 0n;
   await assert.rejects(readBasketNativeNav(input), /NAV unavailable/);
+});
+
+test('pins every NAV read to one RPC height, ignoring a contract block number', async () => {
+  const { input, state } = fixture();
+  // RH contract block.number differs from eth_blockNumber. A stale caller must
+  // never direct these reads to unavailable historical state using that value.
+  assert.equal(await readBasketNativeNav({ ...input, blockTag: 42 }), parseEther('0.08'));
+  assert.equal(state.blockReads, 1);
 });

@@ -1297,7 +1297,6 @@ export default function IndexBrokerNFTPoolCard({
         chainId: network.id,
         version: Number(secondary.basketVersion),
         decimals: indexToken.decimals,
-        blockTag: toBigInt(primary.currentBlock),
       }).catch(error => {
         console.warn('Failed to value index Basket NAV:', error);
         return 0n;
