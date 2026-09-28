@@ -56,6 +56,8 @@ export const translations = {
     detail: {
       breadcrumbHome: 'Home',
       ownerBadge: 'Owner',
+      renouncedBadge: 'Renounced',
+      renouncedDescription: 'Ownership of this community contract has been renounced.',
       adminPanelTitle: '⚙️ Admin Controls',
       createNftBtn: 'Create NFT',
       addPoolBtn: '+ Add Pool',
@@ -576,6 +578,8 @@ export const translations = {
     detail: {
       breadcrumbHome: '首页',
       ownerBadge: '创建者',
+      renouncedBadge: '已弃权',
+      renouncedDescription: '该社区合约已放弃所有权。',
       adminPanelTitle: '⚙️ 管理员操作',
       createNftBtn: '创建NFT',
       addPoolBtn: '+ 新增矿池',

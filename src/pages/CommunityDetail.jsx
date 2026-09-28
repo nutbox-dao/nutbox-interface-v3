@@ -60,12 +60,16 @@ export default function CommunityDetail() {
   // Load community data from subgraph
   const loadCommunity = useCallback(async () => {
     try {
-      const data = await fetchCommunity(
-        address,
-        activeChainId,
-        { includeHistory: false },
-      );
-      setCommunity(data);
+      const [data, onChainOwner] = await Promise.all([
+        fetchCommunity(address, activeChainId, { includeHistory: false }),
+        communityContract
+          ? communityContract.owner().catch(error => {
+            console.error('Failed to read community owner:', error);
+            return null;
+          })
+          : null,
+      ]);
+      setCommunity(data ? { ...data, onChainOwner } : null);
       setLoading(false);
 
       // Version 13 creates generic "V2 LP Staking" pools. Resolve the Pair's
@@ -209,6 +213,7 @@ export default function CommunityDetail() {
   }, [loadCommunity]);
 
   const isOwner = isConnected && account && community?.owner?.id?.toLowerCase() === account.toLowerCase();
+  const isOwnershipRenounced = community?.onChainOwner === ethers.ZeroAddress;
 
   // Admin actions
   const handleWithdrawRevenue = async () => {
@@ -323,6 +328,11 @@ export default function CommunityDetail() {
               {communityDisplayName}
               {community.tick && <span className="community-detail-tick">${community.tick}</span>}
               {isOwner && <span className="badge badge-active" style={{ marginLeft: 8 }}>{t('detail.ownerBadge')}</span>}
+              {isOwnershipRenounced && (
+                <span className="badge community-renounced-badge" title={t('detail.renouncedDescription')}>
+                  {t('detail.renouncedBadge')}
+                </span>
+              )}
             </h1>
             <div className="community-header-address" onClick={() => { copyToClipboard(address); toast.info(t('common.copySuccess')); }}>
               {shortenAddress(address, 8)}
