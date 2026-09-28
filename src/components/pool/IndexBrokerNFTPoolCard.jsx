@@ -34,6 +34,7 @@ import {
 import { multicallRead } from '../../utils/multicall';
 import { applySwapSlippage } from '../../utils/nutboxSwap';
 import { encodeIndexBuybackHookData } from '../../utils/indexBuyback';
+import { readBasketNativeNav } from '../../utils/basketNav';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './IndexBrokerNFTPoolCard.css';
 
@@ -1290,18 +1291,24 @@ export default function IndexBrokerNFTPoolCard({
       const totalBurnedMiningAmount = indexRewardSummary?.totalBurnedMiningAmount !== undefined
         ? toBigInt(indexRewardSummary.totalBurnedMiningAmount)
         : null;
-      let indexNativeQuote = 0n;
+      const indexNativeQuote = await readBasketNativeNav({
+        provider: readProvider,
+        address: indexToken.address,
+        chainId: network.id,
+        version: Number(secondary.basketVersion),
+        decimals: indexToken.decimals,
+        blockTag: toBigInt(primary.currentBlock),
+      }).catch(error => {
+        console.warn('Failed to value index Basket NAV:', error);
+        return 0n;
+      });
       let miningNativeQuote = 0n;
-      if (ethers.isAddress(secondary.nutboxRouterAddress)) {
+      if (indexToken.address.toLowerCase() === miningToken.address.toLowerCase()) {
+        miningNativeQuote = indexNativeQuote;
+      } else if (ethers.isAddress(secondary.nutboxRouterAddress)) {
         const router = new ethers.Contract(secondary.nutboxRouterAddress, NUTBOX_ROUTER_ABI, readProvider);
-        const indexUnit = 10n ** BigInt(indexToken.decimals);
         const miningUnit = 10n ** BigInt(miningToken.decimals);
-        [indexNativeQuote, miningNativeQuote] = await Promise.all([
-          router.quoteNative(indexToken.address, indexUnit).catch(() => 0n),
-          indexToken.address.toLowerCase() === miningToken.address.toLowerCase()
-            ? router.quoteNative(indexToken.address, indexUnit).catch(() => 0n)
-            : router.quoteNative(miningToken.address, miningUnit).catch(() => 0n),
-        ]);
+        miningNativeQuote = await router.quoteNative(miningToken.address, miningUnit).catch(() => 0n);
       }
 
       const accountState = account ? {
@@ -2051,16 +2058,8 @@ export default function IndexBrokerNFTPoolCard({
 
     const indexUnit = 10n ** BigInt(data.indexToken.decimals);
     const miningUnit = 10n ** BigInt(data.miningToken.decimals);
-    let indexNativeNumerator = data.indexNativeQuote;
-    let indexNativeDenominator = indexUnit;
-    if (
-      indexNativeNumerator <= 0n
-      && buybackQuote.indexOut > 0n
-      && buybackQuote.nativeReserve > 0n
-    ) {
-      indexNativeNumerator = buybackQuote.nativeReserve * 9_900n / 10_000n;
-      indexNativeDenominator = buybackQuote.indexOut;
-    }
+    const indexNativeNumerator = data.indexNativeQuote;
+    const indexNativeDenominator = indexUnit;
 
     let miningNativeNumerator = data.miningNativeQuote;
     let miningNativeDenominator = miningUnit;
