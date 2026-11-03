@@ -897,18 +897,49 @@ export async function fetchWalnutStats(chainId = DEFAULT_CHAIN_ID) {
 }
 
 // ──── All communities ────
-export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_CHAIN_ID) {
+function normalizeCommunityKeyword(keyword) {
+  return String(keyword || '').trim().replace(/^\$/, '').slice(0, 80);
+}
+
+function communityMatchesKeyword(community, keyword) {
+  const searchableValues = [
+    community.name,
+    community.tick,
+    community.tokenName,
+    community.tokenSymbol,
+    community.id,
+    community.cToken,
+    community.owner?.id,
+    ...(Array.isArray(community.tags) ? community.tags : []),
+  ];
+  return searchableValues.some(value => String(value || '').toLowerCase().includes(keyword.toLowerCase()));
+}
+
+export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_CHAIN_ID, keyword = '') {
+  const q = normalizeCommunityKeyword(keyword);
   if (!getNetworkConfig(chainId).apiBase) {
     const communities = await fetchOnChainCommunities(chainId);
-    return communities.slice(skip, skip + first);
+    const matched = q ? communities.filter(community => communityMatchesKeyword(community, q)) : communities;
+    return {
+      communities: matched.slice(skip, skip + first),
+      hasMore: skip + first < matched.length,
+      total: q ? matched.length : null,
+    };
   }
   const page = Math.floor(skip / first);
-  const data = await fetchAPI(`/communities?page=${page}&size=${first}`, chainId);
-  // Map API response to match frontend expected format
-  const communities = (data.communities || [])
+  const params = new URLSearchParams({ page: String(page), size: String(first) });
+  if (q) params.set('q', q);
+  const data = await fetchAPI(`/communities?${params}`, chainId);
+  // 已删除社区会被滤掉，本页条数可能小于 size，所以是否还有下一页只看接口的 hasMore。
+  const rawCommunities = data.communities || [];
+  const communities = rawCommunities
     .filter(raw => !isDeletedCommunity(raw))
     .map(raw => mapCommunity(raw, chainId));
-  return Promise.all(communities.map(community => enrichCommunityTokenIdentity(community, chainId)));
+  return {
+    communities: await Promise.all(communities.map(community => enrichCommunityTokenIdentity(community, chainId))),
+    hasMore: typeof data.hasMore === 'boolean' ? data.hasMore : rawCommunities.length >= first,
+    total: Number.isFinite(Number(data.total)) ? Number(data.total) : null,
+  };
 }
 
 // ──── Single community by address ────

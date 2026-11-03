@@ -162,6 +162,18 @@
   margin-top: 0;
 }
 
+.community-load-more {
+  height: 1px;
+}
+
+.community-load-more.is-loading {
+  height: auto;
+  margin-top: var(--space-6);
+  text-align: center;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
 /* ── Community Cards ── */
 .community-card {
   padding: var(--space-6);

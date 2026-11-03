@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchWalnutStats, fetchCommunities } from '../config/subgraph';
 import { copyToClipboard, shortenAddress } from '../utils/helpers';
@@ -9,75 +9,185 @@ import { getChainPath } from '../config/contracts';
 import './Home.css';
 
 const COMMUNITY_PAGE_SIZE = 100;
-const MAX_COMMUNITY_PAGES = 100;
 
-async function fetchAllCommunities(chainId) {
-  const allCommunities = [];
-
-  for (let page = 0; page < MAX_COMMUNITY_PAGES; page += 1) {
-    const communityPage = await fetchCommunities(
-      COMMUNITY_PAGE_SIZE,
-      page * COMMUNITY_PAGE_SIZE,
-      chainId,
-    );
-    allCommunities.push(...communityPage);
-    if (communityPage.length < COMMUNITY_PAGE_SIZE) break;
-  }
-
-  return [...new Map(allCommunities.map(community => [community.id.toLowerCase(), community])).values()];
+function mergeCommunities(current, incoming) {
+  const byId = new Map(current.map(community => [community.id.toLowerCase(), community]));
+  incoming.forEach(community => {
+    byId.set(community.id.toLowerCase(), community);
+  });
+  return [...byId.values()];
 }
 
 export default function Home() {
   const [stats, setStats] = useState(null);
   const [communities, setCommunities] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeQuery, setActiveQuery] = useState('');
+  const [searchCommunities, setSearchCommunities] = useState([]);
+  const [searchLoading, setSearchLoading] = useState(false);
+  const [searchHasMore, setSearchHasMore] = useState(false);
+  const [searchTotal, setSearchTotal] = useState(null);
+  const sentinelRef = useRef(null);
+  // 翻页锁放在 ref 里，避免哨兵连续进入视口时把同一页请求两次。
+  const pagingRef = useRef({ page: 0, hasMore: false, loading: false, chainId: null });
+  const searchPagingRef = useRef({ page: 0, hasMore: false, loading: false, chainId: null, query: '' });
   const { t } = useLanguage();
   const { activeChainId, network } = useWeb3();
 
   useEffect(() => {
     let cancelled = false;
+    pagingRef.current = { page: 0, hasMore: false, loading: true, chainId: activeChainId };
+    setLoading(true);
+    setLoadingMore(false);
+    setHasMore(false);
+    setCommunities([]);
+    setStats(null);
+    setSearchQuery('');
 
-    async function load() {
-      setLoading(true);
-      setSearchQuery('');
-      try {
-        const [walnutStats, communityList] = await Promise.all([
-          fetchWalnutStats(activeChainId),
-          fetchAllCommunities(activeChainId),
-        ]);
-        if (!cancelled) {
-          setStats(walnutStats);
-          setCommunities(communityList);
-        }
-      } catch (err) {
+    fetchWalnutStats(activeChainId).then(nextStats => {
+      if (!cancelled) setStats(nextStats);
+    });
+
+    fetchCommunities(COMMUNITY_PAGE_SIZE, 0, activeChainId)
+      .then(result => {
+        if (cancelled) return;
+        setCommunities(result.communities);
+        setHasMore(result.hasMore);
+        pagingRef.current = {
+          page: 1,
+          hasMore: result.hasMore,
+          loading: false,
+          chainId: activeChainId,
+        };
+      })
+      .catch(err => {
         console.error('Failed to load data:', err);
-      } finally {
+        if (!cancelled) pagingRef.current.loading = false;
+      })
+      .finally(() => {
         if (!cancelled) setLoading(false);
-      }
-    }
-    load();
+      });
+
     return () => { cancelled = true; };
   }, [activeChainId]);
 
-  const normalizedSearch = searchQuery.trim().toLowerCase().replace(/^\$/, '');
-  const filteredCommunities = useMemo(() => {
-    if (!normalizedSearch) return communities;
+  useEffect(() => {
+    const query = searchQuery.trim().replace(/^\$/, '');
+    if (!query) {
+      setActiveQuery('');
+      return undefined;
+    }
+    const handle = setTimeout(() => setActiveQuery(query), 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery]);
 
-    return communities.filter(community => {
-      const searchableValues = [
-        community.name,
-        community.tick,
-        community.tokenName,
-        community.tokenSymbol,
-        community.id,
-        community.cToken,
-        community.owner?.id,
-        ...(Array.isArray(community.tags) ? community.tags : []),
-      ];
-      return searchableValues.some(value => String(value || '').toLowerCase().includes(normalizedSearch));
-    });
-  }, [communities, normalizedSearch]);
+  useEffect(() => {
+    if (!activeQuery) {
+      setSearchCommunities([]);
+      setSearchHasMore(false);
+      setSearchTotal(null);
+      setSearchLoading(false);
+      searchPagingRef.current = { page: 0, hasMore: false, loading: false, chainId: activeChainId, query: '' };
+      return undefined;
+    }
+
+    let cancelled = false;
+    setSearchLoading(true);
+    setSearchCommunities([]);
+    setSearchHasMore(false);
+    setSearchTotal(null);
+    searchPagingRef.current = { page: 0, hasMore: false, loading: true, chainId: activeChainId, query: activeQuery };
+
+    fetchCommunities(COMMUNITY_PAGE_SIZE, 0, activeChainId, activeQuery)
+      .then(result => {
+        if (cancelled) return;
+        setSearchCommunities(result.communities);
+        setSearchHasMore(result.hasMore);
+        setSearchTotal(result.total);
+        searchPagingRef.current = {
+          page: 1,
+          hasMore: result.hasMore,
+          loading: false,
+          chainId: activeChainId,
+          query: activeQuery,
+        };
+      })
+      .catch(err => {
+        console.error('Failed to search communities:', err);
+        if (!cancelled) searchPagingRef.current.loading = false;
+      })
+      .finally(() => {
+        if (!cancelled) setSearchLoading(false);
+      });
+
+    return () => { cancelled = true; };
+  }, [activeQuery, activeChainId]);
+
+  const loadMore = useCallback(async () => {
+    const searching = Boolean(activeQuery);
+    const paging = searching ? searchPagingRef.current : pagingRef.current;
+    if (paging.loading || !paging.hasMore || paging.chainId !== activeChainId) return;
+    if (searching && paging.query !== activeQuery) return;
+
+    const page = paging.page;
+    paging.loading = true;
+    setLoadingMore(true);
+    try {
+      const result = await fetchCommunities(
+        COMMUNITY_PAGE_SIZE,
+        page * COMMUNITY_PAGE_SIZE,
+        activeChainId,
+        searching ? activeQuery : '',
+      );
+      const currentPaging = searching ? searchPagingRef.current : pagingRef.current;
+      if (currentPaging.chainId !== activeChainId) return;
+      if (searching && currentPaging.query !== activeQuery) return;
+
+      const append = current => mergeCommunities(current, result.communities);
+      if (searching) {
+        setSearchCommunities(append);
+        setSearchHasMore(result.hasMore);
+        if (result.total != null) setSearchTotal(result.total);
+      } else {
+        setCommunities(append);
+        setHasMore(result.hasMore);
+      }
+      const nextPaging = {
+        page: page + 1,
+        hasMore: result.hasMore,
+        loading: false,
+        chainId: activeChainId,
+        query: searching ? activeQuery : '',
+      };
+      if (searching) searchPagingRef.current = nextPaging;
+      else pagingRef.current = nextPaging;
+    } catch (err) {
+      console.error('Failed to load more communities:', err);
+      const currentPaging = searching ? searchPagingRef.current : pagingRef.current;
+      if (currentPaging.chainId === activeChainId) currentPaging.loading = false;
+    } finally {
+      const currentPaging = searching ? searchPagingRef.current : pagingRef.current;
+      if (currentPaging.chainId === activeChainId) setLoadingMore(false);
+    }
+  }, [activeChainId, activeQuery]);
+
+  const visibleCommunities = activeQuery ? searchCommunities : communities;
+  const visibleLoading = activeQuery ? searchLoading && searchCommunities.length === 0 : loading;
+  const visibleHasMore = activeQuery ? searchHasMore : hasMore;
+
+  useEffect(() => {
+    const node = sentinelRef.current;
+    if (!node || visibleLoading || !visibleHasMore) return undefined;
+
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) loadMore();
+    }, { rootMargin: '240px' });
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visibleLoading, visibleHasMore, loadMore, communities.length, searchCommunities.length]);
 
   return (
     <div className="page">
@@ -103,19 +213,19 @@ export default function Home() {
           <div className="stats-row">
             <div className="stat-card glass-card">
               <div className="stat-value count-up">
-                {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalCommunities || 0)}
+                {stats === null ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats.totalCommunities || 0)}
               </div>
               <div className="stat-label">{t('home.statsCommunities')}</div>
             </div>
             <div className="stat-card glass-card">
               <div className="stat-value count-up">
-                {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalPools || 0)}
+                {stats === null ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats.totalPools || 0)}
               </div>
               <div className="stat-label">{t('home.statsPools')}</div>
             </div>
             <div className="stat-card glass-card">
               <div className="stat-value count-up">
-                {loading ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats?.totalUsers || 0)}
+                {stats === null ? <div className="skeleton" style={{ width: 60, height: 32 }} /> : (stats.totalUsers || 0)}
               </div>
               <div className="stat-label">{t('home.statsUsers')}</div>
             </div>
@@ -130,7 +240,7 @@ export default function Home() {
           <Link to={getChainPath(activeChainId, 'create')} className="btn btn-ghost">{t('home.createNew')}</Link>
         </div>
 
-        {!loading && communities.length > 0 && (
+        {((!loading && communities.length > 0) || searchQuery) && (
           <div className="community-search-row">
             <label className="community-search">
               <span className="community-search-icon" aria-hidden="true">⌕</span>
@@ -153,15 +263,15 @@ export default function Home() {
                 </button>
               )}
             </label>
-            {normalizedSearch && (
+            {activeQuery && !searchLoading && (
               <span className="community-search-count">
-                {t('home.searchCount', { count: filteredCommunities.length })}
+                {t('home.searchCount', { count: searchTotal ?? searchCommunities.length })}
               </span>
             )}
           </div>
         )}
 
-        {loading ? (
+        {visibleLoading ? (
           <div className="grid-communities">
             {[1, 2, 3].map(i => (
               <div key={i} className="community-card glass-card">
@@ -171,14 +281,7 @@ export default function Home() {
               </div>
             ))}
           </div>
-        ) : communities.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">🌰</div>
-            <div className="empty-state-title">{t('home.noCommunitiesTitle')}</div>
-            <div className="empty-state-desc">{t('home.noCommunitiesDesc')}</div>
-            <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>
-          </div>
-        ) : filteredCommunities.length === 0 ? (
+        ) : activeQuery && visibleCommunities.length === 0 ? (
           <div className="empty-state community-search-empty">
             <div className="empty-state-icon">⌕</div>
             <div className="empty-state-title">{t('home.searchNoResults')}</div>
@@ -187,11 +290,28 @@ export default function Home() {
               {t('home.searchClear')}
             </button>
           </div>
+        ) : communities.length === 0 ? (
+          <div className="empty-state">
+            <div className="empty-state-icon">🌰</div>
+            <div className="empty-state-title">{t('home.noCommunitiesTitle')}</div>
+            <div className="empty-state-desc">{t('home.noCommunitiesDesc')}</div>
+            <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>
+          </div>
         ) : (
           <div className="grid-communities">
-            {filteredCommunities.map(community => (
+            {visibleCommunities.map(community => (
               <CommunityCard key={community.id} community={community} />
             ))}
+          </div>
+        )}
+
+        {!visibleLoading && visibleHasMore && (
+          <div
+            ref={sentinelRef}
+            className={`community-load-more${loadingMore ? ' is-loading' : ''}`}
+            aria-live="polite"
+          >
+            {loadingMore ? t('home.loadingMore') : ''}
           </div>
         )}
       </section>
