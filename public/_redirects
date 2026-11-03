@@ -1,3 +1,0 @@
-# Cloudflare Pages 上没有对应静态文件时，把前端路由回落到入口。
-# Vite 会把 public/ 原样拷进 dist/，所以 /community/... 这类地址也能打开。
-/*    /index.html   200

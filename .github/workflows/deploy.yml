@@ -1,5 +1,4 @@
-# 仓库在 nutbox-dao，Cloudflare 登录的是另一个 GitHub 账号，Pages 的 Git 连接接不上。
-# 推送到 main 时由 Actions 构建，再用 Direct Upload 发布到 nutbox-app。
+# 推送到 main 时构建，再按 wrangler.jsonc 发布到 Cloudflare。
 name: Deploy
 
 on:
@@ -26,5 +25,5 @@ jobs:
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: 02c3e74d8f918b08e740f9cfcd4ea23d
-          command: pages deploy dist --project-name nutbox-app --branch main
+          accountId: 63d699b9fc09e50952b914ee279b7eb0
+          command: deploy

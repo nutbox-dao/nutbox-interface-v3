@@ -1,0 +1,10 @@
+{
+  // 新版 Pages 会把站点发布成 Worker 静态资源。
+  // /* -> /index.html 会被判定成无限跳转，所以用单页回退代替 _redirects。
+  "name": "nutbox-interface-v3",
+  "compatibility_date": "2026-11-03",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
