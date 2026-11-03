@@ -22,8 +22,11 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      # 这个 Action 默认安装 Wrangler 3。Wrangler 3 要求有脚本入口，
+      # 只有静态资源的配置会被拒绝，nutbox.app 上的 Worker 就停在旧版本。
       - uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: 63d699b9fc09e50952b914ee279b7eb0
+          wranglerVersion: "4"
           command: deploy
