@@ -735,6 +735,10 @@
   gap: var(--space-3);
 }
 
+.add-pool-modal .index-broker-create-config > .wizard-template-grid ~ .nft-pool-config-heading {
+  margin-top: var(--space-8);
+}
+
 .wizard-section-heading strong,
 .add-pool-modal .nft-pool-config-heading strong {
   color: var(--color-text-primary);
