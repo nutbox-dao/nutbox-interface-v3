@@ -8,6 +8,7 @@ import {
   getContracts,
 } from './contracts';
 import { ethers } from 'ethers';
+import { communityMatchesKeyword, loadOwnedCommunities } from '../utils/ownedCommunities';
 import {
   BasketStakePoolABI,
   BasketTVLMiningPoolABI,
@@ -901,18 +902,18 @@ function normalizeCommunityKeyword(keyword) {
   return String(keyword || '').trim().replace(/^\$/, '').slice(0, 80);
 }
 
-function communityMatchesKeyword(community, keyword) {
-  const searchableValues = [
-    community.name,
-    community.tick,
-    community.tokenName,
-    community.tokenSymbol,
-    community.id,
-    community.cToken,
-    community.owner?.id,
-    ...(Array.isArray(community.tags) ? community.tags : []),
-  ];
-  return searchableValues.some(value => String(value || '').toLowerCase().includes(keyword.toLowerCase()));
+export async function fetchOwnedCommunities(account, chainId = DEFAULT_CHAIN_ID, { signal } = {}) {
+  // Both supported networks expose the indexed community list. Keep this read
+  // API-only; no per-community contract calls or log scans on wallet connection.
+  return loadOwnedCommunities(async page => {
+    const size = 100;
+    const data = await fetchAPI(`/communities?page=${page}&size=${size}`, chainId, { signal });
+    const raw = data.communities || [];
+    return {
+      communities: raw.filter(item => !isDeletedCommunity(item)).map(item => mapCommunity(item, chainId)),
+      hasMore: typeof data.hasMore === 'boolean' ? data.hasMore : raw.length >= size,
+    };
+  }, account, { signal });
 }
 
 export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_CHAIN_ID, keyword = '') {
