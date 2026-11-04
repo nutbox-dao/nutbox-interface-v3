@@ -355,7 +355,6 @@ export default function IndexBrokerNFTPoolFields({
   readProvider,
   multicallAddress,
   templateOptions = [],
-  onRefreshTemplates,
   defaultPreviewExpanded = false,
   onRendererStatusChange,
   indexTokenValidation,
@@ -509,9 +508,6 @@ export default function IndexBrokerNFTPoolFields({
               : (zh ? '当前网络未部署该范围下的模板。' : 'No templates for this wallet access are deployed on this network.')}
           </div>
         )}
-        <button type="button" className="btn btn-ghost btn-sm" disabled={loadingContext} onClick={onRefreshTemplates}>
-          {zh ? '刷新模板状态' : 'Refresh template status'}
-        </button>
         <div className="nft-pool-form-grid wizard-template-fields">
           {stakeMode ? (
             <Field

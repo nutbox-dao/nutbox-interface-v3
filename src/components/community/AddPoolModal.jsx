@@ -229,7 +229,6 @@ export default function AddPoolModal({
   const draftCompletedRef = useRef(false);
   const draftStorageWarningRef = useRef(false);
   const [settingsFee, setSettingsFee] = useState(null);
-  const [templateRefresh, setTemplateRefresh] = useState(0);
   const [indexBrokerConfig, setIndexBrokerConfig] = useState(() => {
     const restoredConfig = restoredDraft?.indexBrokerConfig;
     const restoredReceiver = String(restoredConfig?.fundsReceiver || '').trim();
@@ -525,7 +524,6 @@ export default function AddPoolModal({
     language,
     poolType,
     readProvider,
-    templateRefresh,
   ]);
 
   useEffect(() => {
@@ -1786,7 +1784,7 @@ export default function AddPoolModal({
         try {
           checks = await readIndexBrokerCreationChecks(readProvider, contracts, poolName, selectedTemplate);
         } catch (error) {
-          throw new Error(language === 'zh' ? '无法确认所选模板的工厂注册状态或创建费用，请刷新模板状态后重试' : error.message, { cause: error });
+          throw new Error(language === 'zh' ? '无法确认所选模板的工厂注册状态或创建费用，请重新打开创建窗口后重试' : error.message, { cause: error });
         }
         fee = checks.fee;
         const reserved = checks.reserved;
@@ -2399,7 +2397,6 @@ export default function AddPoolModal({
                 readProvider={readProvider}
                 multicallAddress={contracts.Multicall3}
                 templateOptions={indexBrokerContext.templateOptions}
-                onRefreshTemplates={() => setTemplateRefresh(value => value + 1)}
                 defaultPreviewExpanded={currentStep.key === 'renderer'}
                 onRendererStatusChange={setIndexBrokerRendererStatus}
                 indexTokenValidation={indexTokenValidation}
