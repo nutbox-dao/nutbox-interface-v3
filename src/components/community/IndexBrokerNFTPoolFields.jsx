@@ -7,6 +7,7 @@ import {
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
+import { INDEX_BROKER_PARTICIPATION, selectIndexBrokerTemplate } from '../../utils/indexBrokerTemplates';
 
 const RENDERER_INTERFACE_EXAMPLE = `interface IIndexBrokerNFTRenderer {
     struct RenderParams {
@@ -353,7 +354,8 @@ export default function IndexBrokerNFTPoolFields({
   onPoolNameChange,
   readProvider,
   multicallAddress,
-  templateAddresses,
+  templateOptions = [],
+  onRefreshTemplates,
   defaultPreviewExpanded = false,
   onRendererStatusChange,
   indexTokenValidation,
@@ -387,17 +389,14 @@ export default function IndexBrokerNFTPoolFields({
     }
   }
   const stakeMode = config.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
+  const participationMode = config.participationMode || INDEX_BROKER_PARTICIPATION.OPEN;
+  const categoryTemplates = templateOptions.filter(option => option.participationMode === participationMode);
+  const burnSupported = categoryTemplates.some(option => option.miningMode === 'burn' && option.supported);
+  const stakeSupported = categoryTemplates.some(option => option.miningMode === 'stake' && option.supported);
+  const handleTemplatesConfigured = templateOptions.some(option => option.participationMode === INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE);
   const receiverUsesBuyback = config.useBuybackPool !== false;
-  const updateMiningMode = miningMode => onChange(current => ({
-    ...current,
-    miningMode,
-    nftTemplate: miningMode === INDEX_BROKER_MINING_MODES.STAKE
-      ? templateAddresses.stake
-      : templateAddresses.burn,
-    indexMiningActivationTokenAmount: miningMode === INDEX_BROKER_MINING_MODES.STAKE
-      ? ''
-      : current.indexMiningActivationTokenAmount,
-  }));
+  const updateMiningMode = miningMode => onChange(current => selectIndexBrokerTemplate({ ...current, miningMode }, templateOptions));
+  const updateParticipation = participationMode => onChange(current => selectIndexBrokerTemplate({ ...current, participationMode }, templateOptions));
 
   const updateMintAccessMode = mode => onChange(current => ({
     ...current,
@@ -445,6 +444,35 @@ export default function IndexBrokerNFTPoolFields({
     return (
       <div className="nft-pool-config index-broker-create-config">
         <SectionHeading
+          title={zh ? '参与钱包范围' : 'Wallet access'}
+          description={zh ? '先选择参与钱包范围，再选择该范围下的指数挖矿模板。创建后不能更换。' : 'Choose wallet access first, then an index-mining template. This cannot be changed after creation.'}
+        />
+        <div className="wizard-choice-grid wizard-template-grid" role="group" aria-label={zh ? '参与钱包范围' : 'Wallet access'}>
+          <TemplateCard
+            selected={participationMode === INDEX_BROKER_PARTICIPATION.OPEN}
+            disabled={loadingContext}
+            icon="◎"
+            title={zh ? '所有钱包' : 'All wallets'}
+            description={zh ? '不要求 Binance Handle；铸造仍遵循后续的公开或白名单设置。' : 'No Binance Handle required. Public or whitelist mint rules still apply.'}
+            status={zh ? '读取中' : 'Loading'}
+            onClick={() => updateParticipation(INDEX_BROKER_PARTICIPATION.OPEN)}
+          />
+          <TemplateCard
+            selected={participationMode === INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE}
+            disabled={loadingContext || !handleTemplatesConfigured}
+            icon="◆"
+            title={zh ? '仅 Binance Agent Wallet' : 'Binance Agent Wallet only'}
+            description={zh ? '铸造地址须已注册 Binance Handle，公开和白名单铸造均需满足。' : 'Minting requires a registered Binance Handle, including whitelist mints.'}
+            status={loadingContext ? (zh ? '读取中' : 'Loading') : (zh ? '当前网络未部署' : 'Not deployed on this network')}
+            onClick={() => updateParticipation(INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE)}
+          />
+        </div>
+        {participationMode === INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE && (
+          <div className="contract-field-feedback">
+            {zh ? '合约校验的是铸造地址的 Binance Handle 注册状态，不限制 NFT 转让或已有 NFT 的后续挖矿。' : 'The contract checks the minter’s Binance Handle registration. It does not restrict NFT transfers or subsequent mining by existing NFTs.'}
+          </div>
+        )}
+        <SectionHeading
           title={zh ? '指数挖矿模板' : 'Index mining template'}
           description={zh
             ? '模板决定 NFT 如何获得指数挖矿权重，创建后不能更换。'
@@ -453,27 +481,37 @@ export default function IndexBrokerNFTPoolFields({
         <div className="wizard-choice-grid wizard-template-grid">
           <TemplateCard
             selected={!stakeMode}
-            disabled={!tokenInfo.burnTemplateSupported}
+            disabled={loadingContext || !burnSupported}
             icon="🔥"
             title={zh ? '烧毁模板' : 'Burn template'}
             description={zh
               ? '销毁社区代币为 NFT 增加指数挖矿权重。NFT 转移后需重新激活，已销毁代币无法取回。'
               : 'Burn Community Tokens to add index-mining weight. A transferred NFT must be reactivated; burned tokens cannot be recovered.'}
-            status={zh ? '当前不可用' : 'Unavailable'}
+            status={zh ? '尚未注册或不可用' : 'Not registered or unavailable'}
             onClick={() => updateMiningMode(INDEX_BROKER_MINING_MODES.BURN)}
           />
           <TemplateCard
             selected={stakeMode}
-            disabled={!tokenInfo.stakeTemplateSupported}
+            disabled={loadingContext || !stakeSupported}
             icon="◆"
             title={zh ? '质押模板' : 'Stake template'}
             description={zh
               ? '质押指定 ERC20 获得权重；本金、权重和奖励权益会随 NFT 一起转移。'
               : 'Stake an ERC20 for weight; principal, weight, and reward rights follow the NFT on transfer.'}
-            status={zh ? '当前不可用' : 'Unavailable'}
+            status={zh ? '尚未注册或不可用' : 'Not registered or unavailable'}
             onClick={() => updateMiningMode(INDEX_BROKER_MINING_MODES.STAKE)}
           />
         </div>
+        {!loadingContext && !burnSupported && !stakeSupported && (
+          <div className="contract-field-feedback is-error" role="status">
+            {categoryTemplates.length
+              ? (zh ? '该范围下的模板尚未在工厂注册或已被停用，暂时无法创建。' : 'Templates for this wallet access are not registered or have been disabled. Creation is unavailable.')
+              : (zh ? '当前网络未部署该范围下的模板。' : 'No templates for this wallet access are deployed on this network.')}
+          </div>
+        )}
+        <button type="button" className="btn btn-ghost btn-sm" disabled={loadingContext} onClick={onRefreshTemplates}>
+          {zh ? '刷新模板状态' : 'Refresh template status'}
+        </button>
         <div className="nft-pool-form-grid wizard-template-fields">
           {stakeMode ? (
             <Field

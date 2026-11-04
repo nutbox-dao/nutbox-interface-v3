@@ -22,6 +22,9 @@ export const BSC_CONTRACTS = {
   ],
   IndexBrokerNFTBurnTemplate: '0x05433A916171458621e34bC7C96EF07a8D107514',
   IndexBrokerNFTStakeTemplate: '0x428086B7ec2FDa6bA208b37d9a4A44C5490353b3',
+  // TagAI-contract-V2/deployments/56/index-broker-handle-templates.json
+  IndexBrokerNFTHandleBurnTemplate: '0x1cceCdED84c825e413F1849FdF55423D07Dc9ab6',
+  IndexBrokerNFTHandleStakeTemplate: '0x156C2A877069b0e50dC5A74C7d1612d70144B4C6',
   IndexBrokerNFTAMMTemplate: '0x2a1b1c08642ad98A691167Efec7b4E43d2a1133B',
   NutboxRouter: '0x72dc4F38A7E4159e97d826a6ab594748C6b68f17',
   // TagAI deployment name: ImportedTokenSwapWrapper. It routes imported-token

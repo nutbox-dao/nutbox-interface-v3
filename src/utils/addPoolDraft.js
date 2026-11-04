@@ -4,7 +4,6 @@ const ADD_POOL_DRAFT_PREFIX = `nutbox:add-pool-draft:v${ADD_POOL_DRAFT_VERSION}`
 const POOL_TYPES = new Set([
   'staking',
   'locking',
-  'nft-mining',
   'basket-tvl',
   'index-broker-nft',
 ]);
@@ -40,6 +39,7 @@ const INDEX_BROKER_STRING_FIELDS = [
   'fundsReceiver',
   'renderer',
   'miningMode',
+  'participationMode',
   'stakingToken',
   'levelThresholds',
   'levelWeights',

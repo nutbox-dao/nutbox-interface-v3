@@ -31,6 +31,7 @@ import {
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
 import { multicallRead } from '../../utils/multicall';
+import { readIndexBrokerCreationChecks, readIndexBrokerCreationContext, requireSupportedIndexBrokerTemplate, selectIndexBrokerTemplate } from '../../utils/indexBrokerTemplates';
 import { discoverPancakePricePools } from '../../utils/dexPoolDiscovery';
 import { resolveUniswapV4Pool } from '../../utils/nutboxSwap';
 import {
@@ -45,7 +46,6 @@ import {
 import { prepareTradeCurationPool } from '../../utils/tradeCuration';
 import './AddPoolModal.css';
 
-const COMMITTEE_INTERFACE = new ethers.Interface(CommitteeABI);
 const ERC20_INTERFACE = new ethers.Interface(ERC20ABI);
 const INDEX_BROKER_FACTORY_INTERFACE = new ethers.Interface(IndexBrokerNFTFactoryABI);
 const BASKET_REGISTRY_INTERFACE = new ethers.Interface([
@@ -229,6 +229,7 @@ export default function AddPoolModal({
   const draftCompletedRef = useRef(false);
   const draftStorageWarningRef = useRef(false);
   const [settingsFee, setSettingsFee] = useState(null);
+  const [templateRefresh, setTemplateRefresh] = useState(0);
   const [indexBrokerConfig, setIndexBrokerConfig] = useState(() => {
     const restoredConfig = restoredDraft?.indexBrokerConfig;
     const restoredReceiver = String(restoredConfig?.fundsReceiver || '').trim();
@@ -251,8 +252,7 @@ export default function AddPoolModal({
     pumpListed: null,
     pumpPoolId: '',
     pumpPoolManager: '',
-    burnTemplateSupported: false,
-    stakeTemplateSupported: false,
+    templateOptions: [],
     pumpSupported: false,
     platformFeeBps: 0,
     error: '',
@@ -412,7 +412,7 @@ export default function AddPoolModal({
     let cancelled = false;
     setIndexBrokerContext(current => ({ ...current, loading: true, error: '' }));
 
-    multicallRead(readProvider, contracts.Multicall3, [
+    readIndexBrokerCreationContext(readProvider, contracts, [
       {
         key: 'symbol', target: communityTokenAddress, contractInterface: ERC20_INTERFACE,
         functionName: 'symbol', args: [],
@@ -453,16 +453,6 @@ export default function AddPoolModal({
         functionName: 'defaultRenderer', args: [],
       },
       {
-        key: 'burnTemplateSupported', target: contracts.IndexBrokerNFTFactory,
-        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
-        functionName: 'supportedNFTTemplate', args: [contracts.IndexBrokerNFTBurnTemplate],
-      },
-      {
-        key: 'stakeTemplateSupported', target: contracts.IndexBrokerNFTFactory,
-        contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
-        functionName: 'supportedNFTTemplate', args: [contracts.IndexBrokerNFTStakeTemplate],
-      },
-      {
         key: 'pumpSupported', target: contracts.IndexBrokerNFTFactory,
         contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
         functionName: 'supportedPump', args: [contracts.Pump],
@@ -472,7 +462,7 @@ export default function AddPoolModal({
         contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
         functionName: 'platformFeeBps', args: [],
       },
-    ]).then(({ symbol, decimals, officialToken, defaultIndexToken, basketRegistry, defaultRenderer, pumpListed, pumpPoolId, pumpPoolManager, burnTemplateSupported, stakeTemplateSupported, pumpSupported, platformFeeBps }) => {
+    ]).then(({ symbol, decimals, officialToken, defaultIndexToken, basketRegistry, defaultRenderer, pumpListed, pumpPoolId, pumpPoolManager, templateOptions, pumpSupported, platformFeeBps }) => {
       if (cancelled) return;
       setIndexBrokerContext({
         loading: false,
@@ -484,25 +474,18 @@ export default function AddPoolModal({
         pumpListed: officialToken ? Boolean(pumpListed) : null,
         pumpPoolId: officialToken && pumpListed ? String(pumpPoolId || '') : '',
         pumpPoolManager: officialToken ? String(pumpPoolManager || '') : '',
-        burnTemplateSupported: Boolean(burnTemplateSupported),
-        stakeTemplateSupported: Boolean(stakeTemplateSupported),
+        templateOptions,
         pumpSupported: Boolean(pumpSupported),
         platformFeeBps: Number(platformFeeBps),
-        error: !burnTemplateSupported && !stakeTemplateSupported
+        error: !templateOptions.some(option => option.supported)
           ? (language === 'zh' ? 'Factory 当前没有可用的 NFT 模板' : 'The Factory has no supported NFT template')
           : (officialToken && !pumpSupported
             ? (language === 'zh' ? '当前 Pump 未在 Factory 注册' : 'The current Pump is not registered in the Factory')
             : ''),
       });
       setIndexBrokerConfig(current => {
-        const stakePreferred = current.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
-        const miningMode = stakePreferred && stakeTemplateSupported
-          ? INDEX_BROKER_MINING_MODES.STAKE
-          : (!stakePreferred && burnTemplateSupported
-            ? INDEX_BROKER_MINING_MODES.BURN
-            : (burnTemplateSupported ? INDEX_BROKER_MINING_MODES.BURN : INDEX_BROKER_MINING_MODES.STAKE));
         return {
-          ...current,
+          ...selectIndexBrokerTemplate(current, templateOptions),
           officialToken,
           officialSourceType: contracts.UniswapV4Manager
             ? INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
@@ -514,10 +497,6 @@ export default function AddPoolModal({
             : current.sourceType,
           fundsReceiver: current.fundsReceiver || account || '',
           pump: officialToken ? contracts.Pump : '',
-          nftTemplate: miningMode === INDEX_BROKER_MINING_MODES.STAKE
-            ? contracts.IndexBrokerNFTStakeTemplate
-            : contracts.IndexBrokerNFTBurnTemplate,
-          miningMode,
         };
       });
     }).catch(error => {
@@ -534,15 +513,19 @@ export default function AddPoolModal({
   }, [
     account,
     communityTokenAddress,
+    contracts,
     contracts.IndexBrokerNFTFactory,
     contracts.IndexBrokerNFTBurnTemplate,
     contracts.IndexBrokerNFTStakeTemplate,
+    contracts.IndexBrokerNFTHandleBurnTemplate,
+    contracts.IndexBrokerNFTHandleStakeTemplate,
     contracts.Multicall3,
     contracts.Pump,
     contracts.UniswapV4Manager,
     language,
     poolType,
     readProvider,
+    templateRefresh,
   ]);
 
   useEffect(() => {
@@ -1347,7 +1330,7 @@ export default function AddPoolModal({
   const zh = language === 'zh';
   const indexBrokerSteps = [
     { key: 'type', label: zh ? '类型' : 'Type', title: zh ? '选择矿池类型' : 'Choose a pool type', description: zh ? '先选择想为社区创建的挖矿方式，后续只显示该类型需要配置的参数。' : 'Choose the mining model to add. The next steps only show settings required by that pool type.' },
-    { key: 'template', label: zh ? '模板' : 'Template', title: zh ? '选择指数挖矿模板' : 'Choose an index mining template', description: zh ? '选择 NFT 通过烧毁还是质押代币来获得指数挖矿权重。' : 'Choose whether NFTs gain index-mining weight by burning or staking tokens.' },
+    { key: 'template', label: zh ? '模板' : 'Template', title: zh ? '选择参与钱包与挖矿模板' : 'Choose wallet access and mining template', description: zh ? '先选择参与钱包范围，再选择通过烧毁还是质押代币获得指数挖矿权重。' : 'Choose wallet access, then choose whether to gain index-mining weight by burning or staking tokens.' },
     { key: 'identity', label: 'NFT', title: zh ? '设置 NFT 基础信息' : 'Configure NFT basics', description: zh ? '设置合集名称、Symbol、每枚 NFT 的社区代币价格和最大供应量。' : 'Set the collection name, symbol, Community Token price per NFT, and maximum supply.' },
     { key: 'mint', label: zh ? '铸造' : 'Minting', title: zh ? '配置铸造准入方式' : 'Configure mint access', description: zh ? `选择公开、纯白名单或混用模式，并配置 ${network.nativeCurrency.symbol} 价格与白名单额度。` : `Choose open, whitelist-only, or mixed access, then configure the ${network.nativeCurrency.symbol} price and whitelist allocations.` },
     { key: 'rewards', label: zh ? '推荐' : 'Referral', title: zh ? '设置推荐与挖矿等级' : 'Configure referrals and mining levels', description: zh ? '配置推荐返佣、公开铸造收款方式，以及各等级的社区挖矿权重。' : 'Configure referral commissions, the public-mint receiver, and community-mining weights.' },
@@ -1509,7 +1492,11 @@ export default function AddPoolModal({
       if (indexBrokerContext.loading) throw new Error(zh ? '正在读取 Factory 模板，请稍候' : 'Factory templates are still loading');
       if (indexBrokerContext.error) throw new Error(indexBrokerContext.error);
       const stakeMode = indexBrokerConfig.miningMode === INDEX_BROKER_MINING_MODES.STAKE;
-      if (!indexBrokerConfig.nftTemplate) throw new Error(zh ? '请选择可用的 NFT 模板' : 'Choose an available NFT template');
+      try {
+        requireSupportedIndexBrokerTemplate(indexBrokerConfig, indexBrokerContext.templateOptions);
+      } catch {
+        throw new Error(zh ? '当前参与钱包范围下没有可用的已注册模板，请选择可用模板' : 'Choose a registered template for the selected wallet access');
+      }
       if (stakeMode && (!ethers.isAddress(indexBrokerConfig.stakingToken) || indexBrokerConfig.stakingToken === ethers.ZeroAddress)) {
         throw new Error(zh ? '请填写有效的指数挖矿质押代币地址' : 'Enter a valid index-mining staking-token address');
       }
@@ -1682,6 +1669,10 @@ export default function AddPoolModal({
   };
 
   const handleCreate = async () => {
+    if (poolType === 'nft-mining') {
+      toast.error(language === 'zh' ? '已停止创建旧版 NFT 挖矿池，请使用“创建 NFT”' : 'Legacy NFT mining creation is disabled. Use Create NFT.');
+      return;
+    }
     const isTradeCuration = poolType === 'trade-curation';
     const isNFTMining = poolType === 'nft-mining';
     const isBasketTVL = poolType === 'basket-tvl';
@@ -1790,18 +1781,13 @@ export default function AddPoolModal({
         if (!contracts.Multicall3) {
           throw new Error(language === 'zh' ? '当前网络未配置 Multicall3' : 'Multicall3 is not configured');
         }
-        const checks = await multicallRead(readProvider, contracts.Multicall3, [
-          {
-            key: 'fee', target: contracts.Committee, contractInterface: COMMITTEE_INTERFACE,
-            functionName: 'getCommunitySettingsFee', args: [],
-          },
-          {
-            key: 'reserved', target: factoryAddress,
-            contractInterface: INDEX_BROKER_FACTORY_INTERFACE,
-            functionName: 'reservedCollectionNameHash',
-            args: [ethers.keccak256(ethers.toUtf8Bytes(poolName.trim()))],
-          },
-        ]);
+        const selectedTemplate = requireSupportedIndexBrokerTemplate(indexBrokerConfig, indexBrokerContext.templateOptions);
+        let checks;
+        try {
+          checks = await readIndexBrokerCreationChecks(readProvider, contracts, poolName, selectedTemplate);
+        } catch (error) {
+          throw new Error(language === 'zh' ? '无法确认所选模板的工厂注册状态或创建费用，请刷新模板状态后重试' : error.message, { cause: error });
+        }
         fee = checks.fee;
         const reserved = checks.reserved;
         if (reserved) {
@@ -1935,11 +1921,6 @@ export default function AddPoolModal({
       description: zh ? 'NFT 同时参与社区与指数挖矿，并通过专属 AMM 管理指数回购。' : 'NFTs mine community and index rewards, with a dedicated AMM for index buybacks.',
       enabled: Boolean(contracts.IndexBrokerNFTFactory),
       badge: zh ? '新版' : 'New',
-    },
-    {
-      value: 'nft-mining', title: zh ? 'NFT 挖矿' : 'NFT Mining',
-      description: zh ? '铸造 NFT，通过推荐等级和社区挖矿权重获得奖励。' : 'Mint NFTs and use referral levels and mining weight to earn community rewards.',
-      enabled: Number(network.id) === 4663 || (Number(network.id) === 56 && Boolean(contracts.NFTMiningPoolFactory)),
     },
     {
       value: 'basket-tvl', title: zh ? 'Basket TVL 挖矿' : 'Basket TVL Mining',
@@ -2417,10 +2398,8 @@ export default function AddPoolModal({
                 onPoolNameChange={setPoolName}
                 readProvider={readProvider}
                 multicallAddress={contracts.Multicall3}
-                templateAddresses={{
-                  burn: contracts.IndexBrokerNFTBurnTemplate,
-                  stake: contracts.IndexBrokerNFTStakeTemplate,
-                }}
+                templateOptions={indexBrokerContext.templateOptions}
+                onRefreshTemplates={() => setTemplateRefresh(value => value + 1)}
                 defaultPreviewExpanded={currentStep.key === 'renderer'}
                 onRendererStatusChange={setIndexBrokerRendererStatus}
                 indexTokenValidation={indexTokenValidation}
@@ -2527,6 +2506,7 @@ export default function AddPoolModal({
                   <div className="wizard-summary-row"><span className="wizard-summary-label">{poolType === 'index-broker-nft' ? (zh ? 'NFT 合集' : 'NFT collection') : (zh ? '矿池名称' : 'Pool name')}</span><span className="wizard-summary-value">{poolName || '—'}</span></div>
                   {poolType === 'index-broker-nft' && (
                     <>
+                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '参与钱包范围' : 'Wallet access'}</span><span className="wizard-summary-value">{indexBrokerConfig.participationMode === 'binance-handle' ? (zh ? '仅 Binance Agent Wallet（已注册 Handle）铸造' : 'Minting requires a registered Binance Handle') : (zh ? '所有钱包' : 'All wallets')}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '指数挖矿模板' : 'Index template'}</span><span className="wizard-summary-value">{indexBrokerConfig.miningMode === INDEX_BROKER_MINING_MODES.STAKE ? 'Stake' : 'Burn'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '最大供应量' : 'Maximum supply'}</span><span className="wizard-summary-value">{indexBrokerConfig.maxSupply || '—'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '每枚 NFT 的社区代币价格' : 'Community Token price per NFT'}</span><span className="wizard-summary-value">{indexBrokerConfig.communityTokenPrice || '—'} {indexBrokerContext.symbol}</span></div>

@@ -5,8 +5,9 @@ function toInterface(value) {
   return value instanceof ethers.Interface ? value : new ethers.Interface(value);
 }
 
-export async function multicallRead(provider, multicallAddress, calls) {
-  if (!provider || !multicallAddress || calls.length === 0) return {};
+export async function multicallRead(provider, multicallAddress, calls, { blockTag } = {}) {
+  if (calls.length === 0) return {};
+  if (!provider || !multicallAddress) throw new Error('Multicall provider or address is missing');
 
   const prepared = calls.map(call => {
     const contractInterface = toInterface(call.contractInterface);
@@ -17,15 +18,22 @@ export async function multicallRead(provider, multicallAddress, calls) {
     };
   });
   const multicall = new ethers.Contract(multicallAddress, Multicall3ABI, provider);
-  const results = await multicall.aggregate3.staticCall(prepared.map(call => ({
+  const aggregateCalls = prepared.map(call => ({
     target: call.target,
     allowFailure: call.allowFailure ?? false,
     callData: call.callData,
-  })));
+  }));
+  const results = blockTag == null
+    ? await multicall.aggregate3.staticCall(aggregateCalls)
+    : await multicall.aggregate3.staticCall(aggregateCalls, { blockTag });
+  if (results.length !== prepared.length) throw new Error('Incomplete Multicall results');
 
   return Object.fromEntries(prepared.map((call, index) => {
     const result = results[index];
-    if (!result.success) return [call.key, undefined];
+    if (!result.success) {
+      if (!call.allowFailure) throw new Error(`Required Multicall failed: ${call.key}`);
+      return [call.key, undefined];
+    }
     const decoded = call.contractInterface.decodeFunctionResult(
       call.functionName,
       result.returnData,

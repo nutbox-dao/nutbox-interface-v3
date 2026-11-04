@@ -28,6 +28,7 @@ export const DEFAULT_INDEX_BROKER_CONFIG = {
   useBuybackPool: true,
   renderer: '',
   miningMode: INDEX_BROKER_MINING_MODES.BURN,
+  participationMode: 'open',
   nftTemplate: '',
   stakingToken: '',
   pump: '',
