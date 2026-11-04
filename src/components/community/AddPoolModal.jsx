@@ -1329,11 +1329,11 @@ export default function AddPoolModal({
   const indexBrokerSteps = [
     { key: 'type', label: zh ? '类型' : 'Type', title: zh ? '选择矿池类型' : 'Choose a pool type', description: zh ? '先选择想为社区创建的挖矿方式，后续只显示该类型需要配置的参数。' : 'Choose the mining model to add. The next steps only show settings required by that pool type.' },
     { key: 'template', label: zh ? '模板' : 'Template', title: zh ? '选择参与钱包与挖矿模板' : 'Choose wallet access and mining template', description: zh ? '先选择参与钱包范围，再选择通过烧毁还是质押代币获得指数挖矿权重。' : 'Choose wallet access, then choose whether to gain index-mining weight by burning or staking tokens.' },
-    { key: 'identity', label: 'NFT', title: zh ? '设置 NFT 基础信息' : 'Configure NFT basics', description: zh ? '设置合集名称、Symbol、每枚 NFT 的社区代币价格和最大供应量。' : 'Set the collection name, symbol, Community Token price per NFT, and maximum supply.' },
-    { key: 'mint', label: zh ? '铸造' : 'Minting', title: zh ? '配置铸造准入方式' : 'Configure mint access', description: zh ? `选择公开、纯白名单或混用模式，并配置 ${network.nativeCurrency.symbol} 价格与白名单额度。` : `Choose open, whitelist-only, or mixed access, then configure the ${network.nativeCurrency.symbol} price and whitelist allocations.` },
-    { key: 'rewards', label: zh ? '推荐' : 'Referral', title: zh ? '设置推荐与挖矿等级' : 'Configure referrals and mining levels', description: zh ? '配置推荐返佣、公开铸造收款方式，以及各等级的社区挖矿权重。' : 'Configure referral commissions, the public-mint receiver, and community-mining weights.' },
+    { key: 'identity', label: 'NFT', title: zh ? '设置 NFT 基础信息' : 'Configure NFT basics', description: zh ? '设置合集名称、Symbol 和最大供应量。' : 'Set the collection name, symbol, and maximum supply.' },
+    { key: 'mint', label: zh ? '铸造' : 'Minting', title: zh ? '配置铸造准入方式' : 'Configure mint access', description: zh ? `选择公开、纯白名单或混用模式，并配置 ${network.nativeCurrency.symbol} 价格、资金流向与白名单额度。` : `Choose open, whitelist-only, or mixed access, then configure the ${network.nativeCurrency.symbol} price, funds destination, and whitelist allocations.` },
+    { key: 'rewards', label: zh ? '推荐' : 'Referral', title: zh ? '设置推荐与挖矿等级' : 'Configure referrals and mining levels', description: zh ? '配置推荐返佣，以及各等级的社区挖矿权重。' : 'Configure referral commissions and community-mining weights.' },
     { key: 'renderer', label: 'Renderer', title: zh ? '配置 Renderer 与图片重生成' : 'Configure the Renderer and image rerolls', description: zh ? '使用平台默认或自定义 Renderer，设置是否允许付费重新生成图片，并通过模拟器预览效果。' : 'Use the default or a custom Renderer, configure paid image rerolls, and preview the result.' },
-    { key: 'amm', label: 'AMM', title: zh ? '配置 AMM 与指数代币' : 'Configure the AMM and index token', description: zh ? '设置专属 AMM 手续费、指数代币，以及外部代币需要的 DEX 价格源。' : 'Set dedicated-AMM fees, the index token, and any DEX price source required for an external token.' },
+    { key: 'amm', label: 'AMM', title: zh ? '配置 AMM 与指数代币' : 'Configure the AMM and index token', description: zh ? '设置每枚 NFT 的社区代币价格、专属 AMM 手续费、指数代币，以及外部代币需要的 DEX 价格源。' : 'Set the Community Token price per NFT, dedicated-AMM fees, the index token, and any DEX price source required for an external token.' },
     { key: 'ratios', label: zh ? '部署' : 'Deploy', title: zh ? '分配矿池奖励并确认部署' : 'Allocate rewards and confirm deployment', description: zh ? '调整所有矿池的奖励比例，核对配置后发起链上部署。' : 'Allocate rewards across all pools, review the configuration, and deploy on-chain.' },
   ];
   const nftMiningSteps = [
@@ -1523,12 +1523,6 @@ export default function AddPoolModal({
       if (!symbol || ethers.toUtf8Bytes(symbol).length > 16 || hasUnsupportedNftText(symbol)) {
         throw new Error(zh ? 'NFT Symbol 必须为 1–16 个 UTF-8 字节，且不能包含特殊控制字符' : 'NFT Symbol must be 1–16 UTF-8 bytes without unsupported characters');
       }
-      if (!indexBrokerConfig.communityTokenPrice || Number(indexBrokerConfig.communityTokenPrice) <= 0) throw new Error(zh ? '每枚 NFT 的社区代币价格必须大于 0' : 'Community Token price per NFT must be greater than zero');
-      try {
-        ethers.parseUnits(indexBrokerConfig.communityTokenPrice, indexBrokerContext.decimals);
-      } catch (error) {
-        throw new Error(zh ? '每枚 NFT 的社区代币价格小数位超过代币精度' : 'The Community Token price per NFT has too many decimals', { cause: error });
-      }
       if (!/^\d+$/.test(indexBrokerConfig.maxSupply) || BigInt(indexBrokerConfig.maxSupply) <= 0n) throw new Error(zh ? '最大供应量必须是正整数' : 'Maximum supply must be a positive integer');
       return;
     }
@@ -1567,6 +1561,12 @@ export default function AddPoolModal({
             : `Whitelist-only allocations must equal the maximum supply (currently ${total} / ${maxSupply})`);
         }
       }
+      if (!indexBrokerConfig.useBuybackPool) {
+        const receiver = indexBrokerConfig.fundsReceiver.trim();
+        if (!ethers.isAddress(receiver) || receiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
+          throw new Error(zh ? `请填写有效的铸造 ${network.nativeCurrency.symbol} 收款地址` : `Enter a valid mint ${network.nativeCurrency.symbol} receiver`);
+        }
+      }
       return;
     }
 
@@ -1574,12 +1574,6 @@ export default function AddPoolModal({
       const whitelistOnly = getIndexBrokerMintAccessMode(indexBrokerConfig) === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY;
       const percentage = whitelistOnly ? 0 : Number(indexBrokerConfig.referralPercent);
       validatePercentage(percentage, zh ? '推荐返佣' : 'Referral commission');
-      if (!indexBrokerConfig.useBuybackPool) {
-        const receiver = indexBrokerConfig.fundsReceiver.trim();
-        if (!ethers.isAddress(receiver) || receiver.toLowerCase() === ethers.ZeroAddress.toLowerCase()) {
-          throw new Error(zh ? `请填写有效的铸造 ${network.nativeCurrency.symbol} 收款地址` : `Enter a valid mint ${network.nativeCurrency.symbol} receiver`);
-        }
-      }
       validateIntegerLevels(indexBrokerConfig.levelThresholds, indexBrokerConfig.levelWeights);
       return;
     }
@@ -1609,6 +1603,12 @@ export default function AddPoolModal({
     if (stepKey === 'amm') {
       if (indexBrokerContext.loading || indexBrokerConfig.officialToken === null) throw new Error(zh ? '仍在读取社区代币类型，请稍候' : 'The Community Token type is still loading');
       if (indexBrokerContext.error) throw new Error(indexBrokerContext.error);
+      if (!indexBrokerConfig.communityTokenPrice || Number(indexBrokerConfig.communityTokenPrice) <= 0) throw new Error(zh ? '每枚 NFT 的社区代币价格必须大于 0' : 'Community Token price per NFT must be greater than zero');
+      try {
+        ethers.parseUnits(indexBrokerConfig.communityTokenPrice, indexBrokerContext.decimals);
+      } catch (error) {
+        throw new Error(zh ? '每枚 NFT 的社区代币价格小数位超过代币精度' : 'The Community Token price per NFT has too many decimals', { cause: error });
+      }
       for (const [value, label] of [[indexBrokerConfig.normalFeePercent, zh ? '普通买卖手续费' : 'Normal trading fee'], [indexBrokerConfig.specificFeePercent, zh ? '指定 NFT 手续费' : 'Specific NFT fee']]) {
         validatePercentage(value, label);
       }
@@ -2503,7 +2503,7 @@ export default function AddPoolModal({
                   <div className="wizard-summary-row"><span className="wizard-summary-label">{poolType === 'index-broker-nft' ? (zh ? 'NFT 合集' : 'NFT collection') : (zh ? '矿池名称' : 'Pool name')}</span><span className="wizard-summary-value">{poolName || '—'}</span></div>
                   {poolType === 'index-broker-nft' && (
                     <>
-                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '参与钱包范围' : 'Wallet access'}</span><span className="wizard-summary-value">{indexBrokerConfig.participationMode === 'binance-handle' ? (zh ? '仅 Binance Agent Wallet（已注册 Handle）铸造' : 'Minting requires a registered Binance Handle') : (zh ? '所有钱包' : 'All wallets')}</span></div>
+                      <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '参与钱包范围' : 'Wallet access'}</span><span className="wizard-summary-value">{indexBrokerConfig.participationMode === 'binance-handle' ? (zh ? '仅 Binance Agent Wallet 铸造' : 'Binance Agent Wallet required for minting') : (zh ? '所有钱包' : 'All wallets')}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '指数挖矿模板' : 'Index template'}</span><span className="wizard-summary-value">{indexBrokerConfig.miningMode === INDEX_BROKER_MINING_MODES.STAKE ? 'Stake' : 'Burn'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '最大供应量' : 'Maximum supply'}</span><span className="wizard-summary-value">{indexBrokerConfig.maxSupply || '—'}</span></div>
                       <div className="wizard-summary-row"><span className="wizard-summary-label">{zh ? '每枚 NFT 的社区代币价格' : 'Community Token price per NFT'}</span><span className="wizard-summary-value">{indexBrokerConfig.communityTokenPrice || '—'} {indexBrokerContext.symbol}</span></div>

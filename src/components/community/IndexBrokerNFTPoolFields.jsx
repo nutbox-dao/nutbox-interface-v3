@@ -452,7 +452,7 @@ export default function IndexBrokerNFTPoolFields({
             disabled={loadingContext}
             icon="◎"
             title={zh ? '所有钱包' : 'All wallets'}
-            description={zh ? '不要求 Binance Handle；铸造仍遵循后续的公开或白名单设置。' : 'No Binance Handle required. Public or whitelist mint rules still apply.'}
+            description={zh ? '不限制钱包类型；铸造仍遵循后续的公开或白名单设置。' : 'Any wallet can mint, subject to the public or whitelist mint rules.'}
             status={zh ? '读取中' : 'Loading'}
             onClick={() => updateParticipation(INDEX_BROKER_PARTICIPATION.OPEN)}
           />
@@ -461,14 +461,14 @@ export default function IndexBrokerNFTPoolFields({
             disabled={loadingContext || !handleTemplatesConfigured}
             icon="◆"
             title={zh ? '仅 Binance Agent Wallet' : 'Binance Agent Wallet only'}
-            description={zh ? '铸造地址须已注册 Binance Handle，公开和白名单铸造均需满足。' : 'Minting requires a registered Binance Handle, including whitelist mints.'}
+            description={zh ? '铸造地址须为已注册的 Binance Agent Wallet，公开和白名单铸造均需满足。' : 'Minting requires a registered Binance Agent Wallet, including whitelist mints.'}
             status={loadingContext ? (zh ? '读取中' : 'Loading') : (zh ? '当前网络未部署' : 'Not deployed on this network')}
             onClick={() => updateParticipation(INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE)}
           />
         </div>
         {participationMode === INDEX_BROKER_PARTICIPATION.BINANCE_HANDLE && (
           <div className="contract-field-feedback">
-            {zh ? '合约校验的是铸造地址的 Binance Handle 注册状态，不限制 NFT 转让或已有 NFT 的后续挖矿。' : 'The contract checks the minter’s Binance Handle registration. It does not restrict NFT transfers or subsequent mining by existing NFTs.'}
+            {zh ? '合约校验的是铸造地址的 Binance Agent Wallet 注册状态，不限制 NFT 转让或已有 NFT 的后续挖矿。' : 'The contract checks the minter’s Binance Agent Wallet registration. It does not restrict NFT transfers or subsequent mining by existing NFTs.'}
           </div>
         )}
         <SectionHeading
@@ -542,8 +542,8 @@ export default function IndexBrokerNFTPoolFields({
         <SectionHeading
           title={zh ? 'NFT 合集基础信息' : 'NFT collection basics'}
           description={zh
-            ? '合集名称同时作为矿池名称；社区代币价格既用于铸造，也用于后续专属 AMM 的 NFT 买卖。'
-            : 'The collection name is also the pool name; the Community Token price applies to both minting and later NFT trades in the dedicated AMM.'}
+            ? '设置 NFT 合集名称、Symbol 与最大供应量；合集名称同时作为矿池名称。'
+            : 'Set the NFT collection name, symbol, and maximum supply. The collection name is also the pool name.'}
         />
         <div className="nft-pool-form-grid">
           <Field
@@ -555,14 +555,6 @@ export default function IndexBrokerNFTPoolFields({
           </Field>
           <Field label="NFT Symbol" hint={zh ? '1–16 个 UTF-8 字节。' : '1–16 UTF-8 bytes.'}>
             <input className="input" value={config.symbol} onChange={event => update('symbol', event.target.value)} placeholder="e.g. STONK" />
-          </Field>
-          <Field
-            label={zh ? '每枚 NFT 的社区代币价格' : 'Community Token price per NFT'}
-            hint={zh
-              ? `白名单和公开铸造都需支付；后续专属 AMM 买卖每枚 NFT 时，也以这个数值作为社区代币交易价格，AMM 手续费另行计算 · ${tokenInfo.symbol || '社区代币'}`
-              : `Paid by whitelist and public mints; each later NFT trade in the dedicated AMM also uses this Community Token price, with AMM fees calculated separately · ${tokenInfo.symbol || 'Community Token'}`}
-          >
-            <input type="number" min="0" step="any" className="input" value={config.communityTokenPrice} onChange={event => update('communityTokenPrice', event.target.value)} placeholder="1000" />
           </Field>
           <Field
             label={zh ? '最大供应量' : 'Maximum supply'}
@@ -633,6 +625,33 @@ export default function IndexBrokerNFTPoolFields({
               <input type="number" min="0" step="any" className="input" value={config.nativePrice} onChange={event => update('nativePrice', event.target.value)} placeholder="0.01" />
             </Field>
           )}
+          <Field
+            wide
+            label={zh ? `铸造${nativeSymbol}资金流向` : `Mint ${nativeSymbol} destination`}
+            hint={receiverUsesBuyback
+              ? (zh ? `当前将使用专属 AMM，公开铸造净 ${nativeSymbol} 进入指数回购储备。` : `The dedicated AMM is selected; net public-mint ${nativeSymbol} enters the index-buyback reserve.`)
+              : (zh ? `公开铸造净 ${nativeSymbol} 会发送到这个地址。` : `Net public-mint ${nativeSymbol} is sent to this address.`)}
+          >
+            <label className="index-broker-check wizard-option-card">
+              <input
+                type="checkbox"
+                checked={receiverUsesBuyback}
+                onChange={event => update('useBuybackPool', event.target.checked)}
+              />
+              <span>
+                <strong>{zh ? '进入回购池' : 'Send to buyback pool'}</strong>
+                <small>{zh ? `铸造净 ${nativeSymbol} 将用于指数回购。` : `Net mint ${nativeSymbol} will be reserved for index buybacks.`}</small>
+              </span>
+            </label>
+            {!receiverUsesBuyback && (
+              <input
+                className="input"
+                value={config.fundsReceiver}
+                onChange={event => update('fundsReceiver', event.target.value)}
+                placeholder="0x..."
+              />
+            )}
+          </Field>
           {usesWhitelist && (
             <>
               <Field
@@ -676,33 +695,6 @@ export default function IndexBrokerNFTPoolFields({
         <div className="nft-pool-form-grid">
           <Field label={zh ? '推荐返佣比例' : 'Referral commission'} hint={whitelistOnly ? (zh ? '纯白名单模式没有付费公开铸造，返佣固定为 0%。' : 'Whitelist-only access has no paid public mints, so referral commission is fixed at 0%.') : undefined}>
             <div className="input-with-suffix"><input type="number" min="0" max="100" step="0.01" className="input" value={whitelistOnly ? '0' : config.referralPercent} onChange={event => update('referralPercent', event.target.value)} disabled={whitelistOnly} /><span>%</span></div>
-          </Field>
-          <Field
-            wide
-            label={zh ? `铸造${nativeSymbol}资金流向` : `Mint ${nativeSymbol} destination`}
-            hint={receiverUsesBuyback
-              ? (zh ? `当前将使用专属 AMM，公开铸造净 ${nativeSymbol} 进入指数回购储备。` : `The dedicated AMM is selected; net public-mint ${nativeSymbol} enters the index-buyback reserve.`)
-              : (zh ? `公开铸造净 ${nativeSymbol} 会发送到这个地址。` : `Net public-mint ${nativeSymbol} is sent to this address.`)}
-          >
-            <label className="index-broker-check wizard-option-card">
-              <input
-                type="checkbox"
-                checked={receiverUsesBuyback}
-                onChange={event => update('useBuybackPool', event.target.checked)}
-              />
-              <span>
-                <strong>{zh ? '进入回购池' : 'Send to buyback pool'}</strong>
-                <small>{zh ? `铸造净 ${nativeSymbol} 将用于指数回购。` : `Net mint ${nativeSymbol} will be reserved for index buybacks.`}</small>
-              </span>
-            </label>
-            {!receiverUsesBuyback && (
-              <input
-                className="input"
-                value={config.fundsReceiver}
-                onChange={event => update('fundsReceiver', event.target.value)}
-                placeholder="0x..."
-              />
-            )}
           </Field>
           <Field
             label={zh ? '等级推荐门槛' : 'Referral thresholds'}
@@ -794,6 +786,14 @@ export default function IndexBrokerNFTPoolFields({
           </div>
         </div>
         <div className="nft-pool-form-grid">
+          <Field
+            label={zh ? '每枚 NFT 的社区代币价格' : 'Community Token price per NFT'}
+            hint={zh
+              ? `白名单和公开铸造都需支付；后续专属 AMM 买卖每枚 NFT 时，也以这个数值作为社区代币交易价格，AMM 手续费另行计算 · ${tokenInfo.symbol || '社区代币'}`
+              : `Paid by whitelist and public mints; each later NFT trade in the dedicated AMM also uses this Community Token price, with AMM fees calculated separately · ${tokenInfo.symbol || 'Community Token'}`}
+          >
+            <input type="number" min="0" step="any" className="input" value={config.communityTokenPrice} onChange={event => update('communityTokenPrice', event.target.value)} placeholder="1000" />
+          </Field>
           <Field label={zh ? '普通买卖配置费' : 'Normal configured fee'} hint={zh ? `实际总费率：${effectiveFee(config.normalFeePercent)}` : `Effective total: ${effectiveFee(config.normalFeePercent)}`}>
             <div className="input-with-suffix"><input type="number" min="0" max="100" step="0.01" className="input" value={config.normalFeePercent} onChange={event => update('normalFeePercent', event.target.value)} /><span>%</span></div>
           </Field>
