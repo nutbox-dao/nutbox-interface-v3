@@ -257,6 +257,7 @@ export default function PoolCard({ pool, communityAddress, communityToken, onRef
     <div className="pool-card glass-card" id={`pool-${pool.id}`}>
       <PoolCardHeader
         name={pool.displayName || pool.name || t('poolCard.fallbackName')}
+        subtitle={pool.displaySubtitle}
         typeLabel={isLocking ? t('poolCard.lockingType') : t('poolCard.stakingType')}
         typeClassName={getPoolTypeBadgeClass(pool.poolType)}
         ratio={pool.ratio}

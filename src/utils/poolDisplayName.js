@@ -1,88 +1,80 @@
-import { Contract, isAddress } from 'ethers';
+import { isAddress, ZeroAddress } from 'ethers';
+import { ERC20ABI, ERC20StakingABI } from '../config/abis.js';
+import { multicallRead } from './multicall.js';
 
 const V2_PAIR_ABI = [
   'function token0() view returns (address)',
   'function token1() view returns (address)',
 ];
+const CALLS_PER_BATCH = 150;
 
-const TOKEN_SYMBOL_ABI = ['function symbol() view returns (string)'];
-
-const symbolReadsByProvider = new WeakMap();
-
-function normalizeAddress(value) {
-  return typeof value === 'string' ? value.toLowerCase() : '';
+function isTokenAddress(value) {
+  return isAddress(value) && value !== ZeroAddress;
 }
 
-function cleanSymbol(value) {
-  return String(value || '').trim();
-}
+export async function readV2LpPoolNames(provider, multicallAddress, community) {
+  const pools = (community?.pools || []).filter(pool => (
+    (pool.poolType === 'ERC20_STAKING' || pool.poolType === 'ERC20_LOCKING') && isAddress(pool.id)
+  ));
+  const names = new Map();
+  if (pools.length === 0) return names;
 
-async function readTokenSymbol(provider, address) {
-  const key = normalizeAddress(address);
-  if (!key) return '';
+  const blockTag = await provider.getBlockNumber();
+  const read = async calls => {
+    const results = {};
+    for (let offset = 0; offset < calls.length; offset += CALLS_PER_BATCH) {
+      const batch = calls.slice(offset, offset + CALLS_PER_BATCH);
+      Object.assign(results, await multicallRead(provider, multicallAddress, batch, { blockTag }));
+    }
+    return results;
+  };
 
-  let symbolReads = symbolReadsByProvider.get(provider);
-  if (!symbolReads) {
-    symbolReads = new Map();
-    symbolReadsByProvider.set(provider, symbolReads);
+  const missingAssets = await read(pools.filter(pool => !isTokenAddress(pool.asset)).map(pool => ({
+    key: pool.id, target: pool.id, contractInterface: ERC20StakingABI,
+    functionName: 'stakeToken', allowFailure: true,
+  })));
+  const assetByPool = new Map(pools.map(pool => [
+    pool.id, isTokenAddress(pool.asset) ? pool.asset.toLowerCase() : missingAssets[pool.id]?.toLowerCase(),
+  ]));
+  const assets = [...new Set([...assetByPool.values()].filter(isTokenAddress))];
+  const pairTokens = await read(assets.flatMap(asset => ['token0', 'token1'].map(functionName => ({
+    key: `${asset}:${functionName}`, target: asset, contractInterface: V2_PAIR_ABI,
+    functionName, allowFailure: true,
+  }))));
+
+  const pairs = new Map();
+  const communityToken = community.cToken?.toLowerCase();
+  for (const asset of assets) {
+    const token0 = pairTokens[`${asset}:token0`]?.toLowerCase();
+    const token1 = pairTokens[`${asset}:token1`]?.toLowerCase();
+    if (!isTokenAddress(token0) || !isTokenAddress(token1) || token0 === token1) continue;
+    pairs.set(asset, token1 === communityToken ? [token1, token0] : [token0, token1]);
   }
 
-  let promise = symbolReads.get(key);
-  if (!promise) {
-    promise = new Contract(address, TOKEN_SYMBOL_ABI, provider)
-      .symbol()
-      .then(cleanSymbol);
-    symbolReads.set(key, promise);
+  const tokens = [...new Set([...pairs.values()].flat())];
+  const metadata = await read(tokens.flatMap(token => ['name', 'symbol'].map(functionName => ({
+    key: `${token}:${functionName}`, target: token, contractInterface: ERC20ABI,
+    functionName, allowFailure: true,
+  }))));
+
+  for (const pool of pools) {
+    const pair = pairs.get(assetByPool.get(pool.id));
+    if (!pair) {
+      if (pool.name === 'V2 LP Staking') console.warn(`Could not resolve V2 LP tokens for pool ${pool.id}`);
+      continue;
+    }
+    const tokenNames = pair.map(token => metadata[`${token}:name`]?.trim());
+    const labels = pair.map((token, index) => metadata[`${token}:symbol`]?.trim() || tokenNames[index]);
+    if (!labels.every(Boolean)) {
+      console.warn(`Could not resolve both V2 LP token names for pool ${pool.id}`);
+      continue;
+    }
+    const displayName = labels.join(' / ');
+    const fullName = tokenNames.every(Boolean) ? tokenNames.join(' / ') : null;
+    names.set(pool.id.toLowerCase(), {
+      displayName,
+      displaySubtitle: fullName !== displayName ? fullName : null,
+    });
   }
-
-  try {
-    return await promise;
-  } catch (error) {
-    symbolReads.delete(key);
-    throw error;
-  }
-}
-
-export function isVersion13LpPool(community, pool) {
-  return Number(community?.tokenVersion) === 13
-    && pool?.poolType === 'ERC20_STAKING'
-    && isAddress(pool?.asset)
-    && isAddress(community?.cToken);
-}
-
-export async function resolveVersion13LpPoolName(provider, community, pool) {
-  if (!provider || !isVersion13LpPool(community, pool)) return null;
-
-  try {
-    const pair = new Contract(pool.asset, V2_PAIR_ABI, provider);
-    const [token0, token1] = await Promise.all([pair.token0(), pair.token1()]);
-    const communityAddress = normalizeAddress(community.cToken);
-    const token0Address = normalizeAddress(token0);
-    const token1Address = normalizeAddress(token1);
-
-    if (token0Address !== communityAddress && token1Address !== communityAddress) return null;
-
-    const assetAddress = token0Address === communityAddress ? token1 : token0;
-    const [communitySymbol, assetSymbol] = await Promise.all([
-      readTokenSymbol(provider, community.cToken),
-      readTokenSymbol(provider, assetAddress),
-    ]);
-
-    if (!communitySymbol || !assetSymbol) return null;
-    return `${communitySymbol} / ${assetSymbol}`;
-  } catch (error) {
-    console.warn(`Failed to resolve LP token pair for ${pool.asset}:`, error);
-    return null;
-  }
-}
-
-export async function enrichVersion13LpPoolNames(provider, community) {
-  if (!community || Number(community.tokenVersion) !== 13) return community;
-
-  const pools = await Promise.all((community.pools || []).map(async pool => {
-    const displayName = await resolveVersion13LpPoolName(provider, community, pool);
-    return displayName ? { ...pool, displayName } : pool;
-  }));
-
-  return { ...community, pools };
+  return names;
 }

@@ -28,7 +28,7 @@ import CommunityTokenTradeCard from '../components/community/CommunityTokenTrade
 import DistributionDisplay from '../components/community/DistributionDisplay';
 import IndexBrokerNFTWorkspace from '../components/community/IndexBrokerNFTWorkspace';
 import useTimedActionLoading from '../hooks/useTimedActionLoading';
-import { enrichVersion13LpPoolNames } from '../utils/poolDisplayName';
+import { readV2LpPoolNames } from '../utils/poolDisplayName';
 import './CommunityDetail.css';
 
 export default function CommunityDetail() {
@@ -72,25 +72,21 @@ export default function CommunityDetail() {
       setCommunity(data ? { ...data, onChainOwner } : null);
       setLoading(false);
 
-      // Version 13 creates generic "V2 LP Staking" pools. Resolve the Pair's
-      // token identities in the background so both cards and history can show
-      // the useful "community token / constituent token" name used by TagAI.
-      enrichVersion13LpPoolNames(readProvider, data).then(enriched => {
-        if (!enriched || enriched === data) return;
-        const names = new Map(enriched.pools
-          .filter(pool => pool.displayName)
-          .map(pool => [pool.id.toLowerCase(), pool.displayName]));
+      // Resolve LP pair labels independently of the pool status refresh.
+      readV2LpPoolNames(readProvider, contracts.Multicall3, data).then(names => {
         if (names.size === 0) return;
         setCommunity(current => {
           if (!current || current.id.toLowerCase() !== data.id.toLowerCase()) return current;
           return {
             ...current,
-            pools: current.pools.map(pool => ({
-              ...pool,
-              displayName: names.get(pool.id.toLowerCase()) || pool.displayName,
-            })),
+            pools: current.pools.map(pool => {
+              const pairName = names.get(pool.id.toLowerCase());
+              return pairName ? { ...pool, ...pairName } : pool;
+            }),
           };
         });
+      }).catch(error => {
+        console.warn('Failed to load V2 LP pool names:', error);
       });
 
       fetchCommunityHistory(address, activeChainId).then(operationHistory => {
@@ -117,12 +113,22 @@ export default function CommunityDetail() {
             }
             
             return {
-              ...p,
+              id: poolAddr,
               ratio,
               status: isActive ? 'OPENED' : 'CLOSED'
             };
           }));
-          setCommunity(current => current ? ({ ...current, pools: updatedPools }) : current);
+          const statuses = new Map(updatedPools.map(({ id, ratio, status }) => [id, { ratio, status }]));
+          setCommunity(current => {
+            if (!current || current.id.toLowerCase() !== data.id.toLowerCase()) return current;
+            return {
+              ...current,
+              pools: current.pools.map(pool => {
+                const state = statuses.get(pool.id);
+                return state ? { ...pool, ...state } : pool;
+              }),
+            };
+          });
         } catch (err) {
           console.error('Failed to load on-chain ratios via slot 10:', err);
         }

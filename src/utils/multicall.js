@@ -34,10 +34,12 @@ export async function multicallRead(provider, multicallAddress, calls, { blockTa
       if (!call.allowFailure) throw new Error(`Required Multicall failed: ${call.key}`);
       return [call.key, undefined];
     }
-    const decoded = call.contractInterface.decodeFunctionResult(
-      call.functionName,
-      result.returnData,
-    );
-    return [call.key, decoded.length === 1 ? decoded[0] : decoded];
+    try {
+      const decoded = call.contractInterface.decodeFunctionResult(call.functionName, result.returnData);
+      return [call.key, decoded.length === 1 ? decoded[0] : decoded];
+    } catch (error) {
+      if (!call.allowFailure) throw error;
+      return [call.key, undefined];
+    }
   }));
 }
