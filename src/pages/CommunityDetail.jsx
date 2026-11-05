@@ -57,7 +57,7 @@ export default function CommunityDetail() {
   const linearTimeCalc = useLinearTimeCalculator();
   const hourlyCalc = useHourlyTickCalculator();
 
-  // Load community data from subgraph
+  // Load indexed community data and the current contract owner.
   const loadCommunity = useCallback(async () => {
     try {
       const [data, onChainOwner] = await Promise.all([
@@ -212,8 +212,12 @@ export default function CommunityDetail() {
     loadCommunity();
   }, [loadCommunity]);
 
-  const isOwner = isConnected && account && community?.owner?.id?.toLowerCase() === account.toLowerCase();
-  const isOwnershipRenounced = community?.onChainOwner === ethers.ZeroAddress;
+  const onChainOwner = community?.id?.toLowerCase() === address.toLowerCase()
+    ? community.onChainOwner
+    : null;
+  const isOwnershipRenounced = onChainOwner === ethers.ZeroAddress;
+  const ownerAddress = isOwnershipRenounced ? null : onChainOwner;
+  const isOwner = isConnected && account && ownerAddress?.toLowerCase() === account.toLowerCase();
 
   // Admin actions
   const handleWithdrawRevenue = async () => {
@@ -379,25 +383,29 @@ export default function CommunityDetail() {
           <div className="info-item">
             <span className="info-label">{t('detail.ownerAddress')}</span>
             <span className="info-value ctoken-address">
-              <a
-                href={getBscScanUrl(community.owner?.id, 'address', network.explorerUrl)}
-                target="_blank"
-                rel="noopener noreferrer"
-                style={{ fontFamily: 'monospace', fontSize: 'var(--font-size-xs)' }}
-              >
-                {shortenAddress(community.owner?.id, 6)}
-              </a>
-              <button
-                className="copy-btn"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  copyToClipboard(community.owner?.id);
-                  toast.info(t('common.copySuccess'));
-                }}
-                title={language === 'zh' ? '复制创建者地址' : 'Copy creator address'}
-              >
-                📋
-              </button>
+              {ownerAddress ? (
+                <>
+                  <a
+                    href={getBscScanUrl(ownerAddress, 'address', network.explorerUrl)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{ fontFamily: 'monospace', fontSize: 'var(--font-size-xs)' }}
+                  >
+                    {shortenAddress(ownerAddress, 6)}
+                  </a>
+                  <button
+                    className="copy-btn"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      copyToClipboard(ownerAddress);
+                      toast.info(t('common.copySuccess'));
+                    }}
+                    title={t('detail.copyOwnerAddress')}
+                  >
+                    📋
+                  </button>
+                </>
+              ) : t(isOwnershipRenounced ? 'detail.renouncedBadge' : 'detail.ownerUnavailable')}
             </span>
           </div>
           <div className="info-item" style={{ position: 'relative' }}>
