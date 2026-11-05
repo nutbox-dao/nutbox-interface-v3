@@ -6,6 +6,7 @@ import {
   isIndexBrokerV4Source,
   parseIndexBrokerWhitelist,
 } from '../../utils/indexBrokerNft';
+import { getIndexBrokerPriceSourceValue } from '../../utils/indexBrokerPriceSource';
 import IndexBrokerRendererPreview from './IndexBrokerRendererPreview';
 import { INDEX_BROKER_PARTICIPATION, selectIndexBrokerTemplate } from '../../utils/indexBrokerTemplates';
 
@@ -347,7 +348,6 @@ export default function IndexBrokerNFTPoolFields({
   poolDiscovery = { loading: false, pools: [], error: '' },
   onRetryPoolDiscovery,
   sourceCapabilities = {},
-  sourceFactories = {},
   nativeSymbol = '原生币',
   networkName = '当前网络',
   poolName,
@@ -364,15 +364,17 @@ export default function IndexBrokerNFTPoolFields({
   const [rendererGuideExpanded, setRendererGuideExpanded] = useState(false);
   const update = (key, value) => onChange(current => ({ ...current, [key]: value }));
   const sourceType = Number(config.sourceType);
-  const currentSourceInput = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-    || sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-    ? config.sourcePool.trim()
-    : config.sourcePoolId.trim();
+  const currentSourceInput = getIndexBrokerPriceSourceValue(config);
+  const sourceUsesPoolId = isIndexBrokerV4Source(sourceType);
   const sourceResolutionMatches = Boolean(
     currentSourceInput
-    && sourceResolution.poolId
-    && sourceResolution.poolId.toLowerCase() === currentSourceInput.toLowerCase()
+    && sourceResolution.sourceType === sourceType
+    && sourceResolution.poolId === currentSourceInput
   );
+  const sourceError = sourceResolutionMatches ? sourceResolution.error : '';
+  const sourceVerified = sourceResolutionMatches && sourceResolution.resolved;
+  const sourceChecking = zh ? '正在进行链上支持检查…' : 'Checking on-chain support…';
+  const sourceVerifiedLabel = zh ? '✓ 已通过链上支持检查' : '✓ On-chain support verified';
   const mintAccessMode = config.mintAccessMode || INDEX_BROKER_MINT_ACCESS_MODES.OPEN;
   const openMint = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.OPEN;
   const whitelistOnly = mintAccessMode === INDEX_BROKER_MINT_ACCESS_MODES.WHITELIST_ONLY;
@@ -402,24 +404,15 @@ export default function IndexBrokerNFTPoolFields({
     mintAccessMode: mode,
   }));
 
-  const selectPricePool = candidate => {
-    const nextSourceType = Number(candidate.sourceType);
-    const sourceFactory = nextSourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-      ? sourceFactories.pancakeV2
-      : nextSourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-        ? sourceFactories.pancakeV3
-        : '';
-    onChange(current => ({
+  const selectPricePool = (nextSourceType, value) => {
+    const address = value.trim();
+    const usesPoolId = isIndexBrokerV4Source(nextSourceType);
+    onChange(current => Number(current.sourceType) === nextSourceType && getIndexBrokerPriceSourceValue(current) === address ? current : ({
       ...current,
       sourceType: String(nextSourceType),
-      sourceFactory: sourceFactory || '',
-      sourcePool: nextSourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-        || nextSourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-        ? candidate.address
-        : '',
-      sourcePoolId: isIndexBrokerV4Source(nextSourceType)
-        ? candidate.address
-        : '',
+      sourceFactory: '',
+      sourcePool: usesPoolId ? '' : address,
+      sourcePoolId: usesPoolId ? address : '',
       sourcePoolManager: '',
       sourceCurrency0: '',
       sourceCurrency1: '',
@@ -430,14 +423,14 @@ export default function IndexBrokerNFTPoolFields({
     }));
   };
 
-  const sourceIsSupported = candidate => {
-    const candidateType = Number(candidate.sourceType);
-    if (candidateType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR) return Boolean(sourceCapabilities.pancakeV2);
-    if (candidateType === INDEX_BROKER_SOURCE_TYPES.V3_POOL) return Boolean(sourceCapabilities.pancakeV3);
-    if (candidateType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL) return Boolean(sourceCapabilities.pancakeV4Cl);
-    if (candidateType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) return Boolean(sourceCapabilities.uniswapV4);
-    return false;
-  };
+  const legacyDex = sourceCapabilities.uniswapV4 ? 'Uniswap' : 'PancakeSwap';
+  const sourceOptions = [
+    { type: INDEX_BROKER_SOURCE_TYPES.V2_PAIR, enabled: sourceCapabilities.pancakeV2, label: `${legacyDex} V2` },
+    { type: INDEX_BROKER_SOURCE_TYPES.V3_POOL, enabled: sourceCapabilities.pancakeV3, label: `${legacyDex} V3` },
+    { type: INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4, enabled: sourceCapabilities.uniswapV4, label: 'Uniswap V4' },
+    { type: INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL, enabled: sourceCapabilities.pancakeV4Cl, label: 'PancakeSwap V4 CL' },
+  ].filter(option => option.enabled);
+  const sourceIsSupported = type => sourceOptions.some(option => option.type === Number(type));
 
   if (section === 'template') {
     return (
@@ -831,6 +824,39 @@ export default function IndexBrokerNFTPoolFields({
                     : 'NFT AMM trading fees are priced using the selected DEX.'}
                 </p>
 
+                {sourceOptions.length > 0 && (
+                  <div className="nft-pool-form-grid">
+                    <Field label={zh ? '手动输入价格源池' : 'Enter a price-source pool'}>
+                      <select
+                        className="input"
+                        aria-label={zh ? '价格源类型' : 'Price-source type'}
+                        value={sourceIsSupported(sourceType) ? sourceType : ''}
+                        onChange={event => selectPricePool(Number(event.target.value), '')}
+                      >
+                        <option value="" disabled>{zh ? '选择池类型' : 'Select a pool type'}</option>
+                        {sourceOptions.map(option => <option key={option.type} value={option.type}>{option.label}</option>)}
+                      </select>
+                    </Field>
+                    <Field label={sourceUsesPoolId ? 'V4 Pool ID' : (zh ? 'V2 Pair / V3 Pool 地址' : 'V2 Pair / V3 Pool address')}>
+                      <input
+                        className="input"
+                        aria-label={sourceUsesPoolId ? 'V4 Pool ID' : (zh ? '交易池地址' : 'Pool address')}
+                        value={currentSourceInput}
+                        onChange={event => selectPricePool(sourceType, event.target.value)}
+                        placeholder={sourceUsesPoolId ? '0x… (bytes32)' : '0x…'}
+                        spellCheck={false}
+                        autoComplete="off"
+                        disabled={!sourceIsSupported(sourceType)}
+                      />
+                    </Field>
+                    {currentSourceInput && (
+                      <div className={`nft-pool-form-wide contract-field-feedback ${sourceError ? 'is-error' : sourceVerified ? 'is-success' : ''}`} role="status">
+                        {sourceError || (sourceVerified ? sourceVerifiedLabel : sourceChecking)}
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {poolDiscovery.loading && poolDiscovery.pools.length === 0 && (
                   <div className="dex-pool-discovery-state"><span className="spinner" />{zh ? '正在查找 DEX 候选池…' : 'Discovering DEX pools…'}</div>
                 )}
@@ -842,7 +868,7 @@ export default function IndexBrokerNFTPoolFields({
                 )}
                 {!poolDiscovery.loading && !poolDiscovery.error && poolDiscovery.pools.length === 0 && (
                   <div className="dex-pool-discovery-state">
-                    {zh ? '没有找到可用的 V2、V3 或 V4 池。请先为社区代币创建流动性池。' : 'No supported V2, V3, or V4 pool was found. Create liquidity for the Community Token first.'}
+                    {zh ? '未自动找到候选池。已有交易池时，可以在上方手动填写。' : 'No candidate pools were found. Enter an existing pool above.'}
                   </div>
                 )}
 
@@ -852,7 +878,7 @@ export default function IndexBrokerNFTPoolFields({
                       const candidateValue = candidate.address.toLowerCase();
                       const selected = currentSourceInput.toLowerCase() === candidateValue
                         && sourceType === Number(candidate.sourceType);
-                      const supported = sourceIsSupported(candidate);
+                      const supported = sourceIsSupported(candidate.sourceType);
                       const validating = selected && sourceResolutionMatches && sourceResolution.loading;
                       const validationError = selected && sourceResolutionMatches ? sourceResolution.error : '';
                       const verified = selected && sourceResolutionMatches && sourceResolution.resolved;
@@ -862,7 +888,7 @@ export default function IndexBrokerNFTPoolFields({
                           key={candidate.id}
                           type="button"
                           className={`dex-pool-candidate ${selected ? 'is-selected' : ''} ${!supported ? 'is-disabled' : ''}`}
-                          onClick={() => selectPricePool(candidate)}
+                          onClick={() => selectPricePool(Number(candidate.sourceType), candidate.address)}
                           disabled={!supported}
                           aria-pressed={selected}
                         >
@@ -881,11 +907,11 @@ export default function IndexBrokerNFTPoolFields({
                             {!supported
                               ? (zh ? '当前部署未支持该版本' : 'This version is not supported')
                               : validating
-                                ? (zh ? '正在进行链上支持检查…' : 'Checking on-chain support…')
+                                ? sourceChecking
                                 : validationError
                                   ? validationError
                                   : verified
-                                    ? (zh ? '✓ 已通过链上支持检查' : '✓ On-chain support verified')
+                                    ? sourceVerifiedLabel
                                     : selected
                                       ? (zh ? '等待链上检查' : 'Waiting for on-chain check')
                                       : (zh ? '点击选择并检查' : 'Select and check')}

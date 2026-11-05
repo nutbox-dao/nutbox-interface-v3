@@ -35,7 +35,7 @@ function requireAddress(value, label) {
  * Build the caller-supplied DEX source expected by TagAI's chain-specific
  * ImportedTokenSwapWrapper (the Nutbox swap wrapper used by this UI).
  */
-async function resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider }) {
+async function resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider, blockTag }) {
   const cacheKey = `${managerAddress.toLowerCase()}:${poolId.toLowerCase()}`;
   const cached = uniswapV4PoolKeyCache.get(cacheKey);
   if (cached) return cached;
@@ -46,7 +46,7 @@ async function resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider })
       address: managerAddress,
       topics: [initialize.topicHash, poolId],
       fromBlock: 0,
-      toBlock: 'latest',
+      toBlock: blockTag,
     });
     const parsed = logs.length ? UNISWAP_V4_INTERFACE.parseLog(logs[logs.length - 1]) : null;
     if (!parsed) throw new Error(`PoolKey not found for Pool ID ${poolId}`);
@@ -77,36 +77,25 @@ async function resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider })
   }
 }
 
-export async function resolveUniswapV4Pool({ poolId, poolManager, readProvider, multicallAddress }) {
+export async function resolveUniswapV4Pool({ poolId, poolManager, readProvider, multicallAddress, blockTag }) {
   if (!ethers.isHexString(poolId, 32)) throw new Error('Uniswap V4 Pool ID is unavailable');
   const managerAddress = requireAddress(poolManager, 'Uniswap V4 pool manager');
-  const poolKey = await resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider });
+  requireAddress(multicallAddress, 'Multicall3');
+  const snapshotBlock = blockTag ?? await readProvider.getBlockNumber();
+  const poolKey = await resolveUniswapV4PoolKey({ poolId, managerAddress, readProvider, blockTag: snapshotBlock });
 
   const poolSlot = ethers.keccak256(abiCoder.encode(['bytes32', 'uint256'], [poolId, UNISWAP_V4_POOLS_SLOT]));
   const liquiditySlot = ethers.toBeHex(BigInt(poolSlot) + UNISWAP_V4_LIQUIDITY_OFFSET, 32);
-  let slot0Word;
-  let liquidityWord;
-  if (ethers.isAddress(multicallAddress)) {
-    const storage = await multicallRead(readProvider, multicallAddress, [
-      {
-        key: 'slot0', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
-        functionName: 'extsload', args: [poolSlot],
-      },
-      {
-        key: 'liquidity', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
-        functionName: 'extsload', args: [liquiditySlot],
-      },
-    ]);
-    slot0Word = storage.slot0;
-    liquidityWord = storage.liquidity;
-  } else {
-    const manager = new ethers.Contract(managerAddress, UNISWAP_V4_INTERFACE, readProvider);
-    [slot0Word, liquidityWord] = await Promise.all([
-      manager.extsload(poolSlot),
-      manager.extsload(liquiditySlot),
-    ]);
-  }
-  if (slot0Word == null || liquidityWord == null) throw new Error('Unable to read Uniswap V4 pool state');
+  const { slot0: slot0Word, liquidity: liquidityWord } = await multicallRead(readProvider, multicallAddress, [
+    {
+      key: 'slot0', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
+      functionName: 'extsload', args: [poolSlot],
+    },
+    {
+      key: 'liquidity', target: managerAddress, contractInterface: UNISWAP_V4_INTERFACE,
+      functionName: 'extsload', args: [liquiditySlot],
+    },
+  ], { blockTag: snapshotBlock });
   const packedSlot0 = BigInt(slot0Word);
   return {
     ...poolKey,

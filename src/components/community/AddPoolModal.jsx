@@ -9,7 +9,6 @@ import {
   IndexBrokerNFTFactoryABI,
   NFTMiningPoolFactoryABI,
   NFTMiningRendererABI,
-  PancakeV4CLPoolManagerABI,
   PumpABI,
   PumpTokenABI,
 } from '../../config/abis';
@@ -22,7 +21,6 @@ import {
   DEFAULT_INDEX_BROKER_CONFIG,
   encodeIndexBrokerNftPoolMeta,
   getIndexBrokerMintAccessMode,
-  getIndexBrokerV4PoolId,
   INDEX_BROKER_MINT_ACCESS_MODES,
   INDEX_BROKER_MINING_MODES,
   INDEX_BROKER_SOURCE_TYPES,
@@ -33,7 +31,7 @@ import {
 import { multicallRead } from '../../utils/multicall';
 import { readIndexBrokerCreationChecks, readIndexBrokerCreationContext, requireSupportedIndexBrokerTemplate, selectIndexBrokerTemplate } from '../../utils/indexBrokerTemplates';
 import { discoverPancakePricePools } from '../../utils/dexPoolDiscovery';
-import { resolveUniswapV4Pool } from '../../utils/nutboxSwap';
+import { getIndexBrokerPriceSourceValue, readIndexBrokerPriceSource } from '../../utils/indexBrokerPriceSource';
 import {
   buildAddPoolDraft,
   getAddPoolDraftPoolKeys,
@@ -70,32 +68,6 @@ const PANCAKE_V3_ROUTER_INTERFACE = new ethers.Interface([
 const PANCAKE_V3_FACTORY_INTERFACE = new ethers.Interface([
   'function getPool(address tokenA, address tokenB, uint24 fee) view returns (address)',
 ]);
-const NUTBOX_ROUTER_INTERFACE = new ethers.Interface([
-  'function validateRoute(address tokenIn, address tokenOut) view',
-  'function allowedV2Factory(address factory) view returns (bool)',
-  'function allowedV3Factory(address factory) view returns (bool)',
-]);
-const PANCAKE_V2_PAIR_ABI = [
-  'function factory() view returns (address)',
-  'function token0() view returns (address)',
-  'function token1() view returns (address)',
-  'function getReserves() view returns (uint112 reserve0,uint112 reserve1,uint32 blockTimestampLast)',
-];
-const PANCAKE_V2_FACTORY_ABI = [
-  'function getPair(address tokenA,address tokenB) view returns (address)',
-];
-const PANCAKE_V3_POOL_ABI = [
-  'function factory() view returns (address)',
-  'function token0() view returns (address)',
-  'function token1() view returns (address)',
-  'function fee() view returns (uint24)',
-  'function liquidity() view returns (uint128)',
-  'function slot0() view returns (uint160 sqrtPriceX96,int24 tick,uint16 observationIndex,uint16 observationCardinality,uint16 observationCardinalityNext,uint32 feeProtocol,bool unlocked)',
-];
-const PANCAKE_V3_FACTORY_ABI = [
-  'function getPool(address tokenA,address tokenB,uint24 fee) view returns (address)',
-];
-const PANCAKE_V4_CL_MANAGER_INTERFACE = new ethers.Interface(PancakeV4CLPoolManagerABI);
 const PUMP_INTERFACE = new ethers.Interface(PumpABI);
 const PUMP_TOKEN_INTERFACE = new ethers.Interface(PumpTokenABI);
 const DEFAULT_NFT_PREVIEW_PARAMS = {
@@ -261,7 +233,6 @@ export default function AddPoolModal({
     resolved: false,
     poolId: '',
     error: '',
-    details: null,
   });
   const [indexBrokerPoolDiscovery, setIndexBrokerPoolDiscovery] = useState({
     loading: false,
@@ -792,27 +763,6 @@ export default function AddPoolModal({
   ]);
 
   useEffect(() => {
-    if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false) return;
-    const sourceType = Number(indexBrokerConfig.sourceType);
-    const sourceFactory = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR
-      ? contracts.PancakeV2Factory
-      : sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL
-        ? contracts.PancakeV3Factory
-        : '';
-    setIndexBrokerConfig(current => (
-      current.sourceFactory === (sourceFactory || '')
-        ? current
-        : { ...current, sourceFactory: sourceFactory || '' }
-    ));
-  }, [
-    contracts.PancakeV2Factory,
-    contracts.PancakeV3Factory,
-    indexBrokerConfig.officialToken,
-    indexBrokerConfig.sourceType,
-    poolType,
-  ]);
-
-  useEffect(() => {
     if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false) {
       setIndexBrokerPoolDiscovery({ loading: false, pools: [], error: '' });
       return undefined;
@@ -855,321 +805,45 @@ export default function AddPoolModal({
     poolType,
   ]);
 
+  const priceSourceType = Number(indexBrokerConfig.sourceType);
+  const priceSourceValue = getIndexBrokerPriceSourceValue(indexBrokerConfig);
   useEffect(() => {
-    const sourceType = Number(indexBrokerConfig.sourceType);
-    const isV2 = sourceType === INDEX_BROKER_SOURCE_TYPES.V2_PAIR;
-    const isV3 = sourceType === INDEX_BROKER_SOURCE_TYPES.V3_POOL;
-    if (!isV2 && !isV3) return undefined;
-    if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false) {
-      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
-      return undefined;
-    }
-
-    const enteredPool = indexBrokerConfig.sourcePool.trim();
-    const defaultFactory = isV2 ? contracts.PancakeV2Factory : contracts.PancakeV3Factory;
-    const versionLabel = isV2 ? 'Pancake V2' : 'Pancake V3';
-    if (!enteredPool) {
-      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
-      return undefined;
-    }
-    if (!ethers.isAddress(enteredPool) || enteredPool === ethers.ZeroAddress) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId: enteredPool,
-        error: language === 'zh' ? '请输入有效的 Pancake 交易池地址' : 'Enter a valid Pancake pool address',
-        details: null,
-      });
-      return undefined;
-    }
-    if (!defaultFactory || !ethers.isAddress(defaultFactory)) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId: enteredPool,
-        error: language === 'zh' ? `平台当前未支持 ${versionLabel}` : `${versionLabel} is not currently supported by the platform`,
-        details: null,
-      });
-      return undefined;
-    }
-    if (!readProvider || !contracts.NutboxRouter || !communityTokenAddress) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId: enteredPool,
-        error: language === 'zh' ? '当前无法连接链上验证价格池' : 'The price pool cannot be verified on-chain right now',
-        details: null,
-      });
+    if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false || !priceSourceValue) {
+      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '' });
       return undefined;
     }
 
     let cancelled = false;
-    const normalizedPool = ethers.getAddress(enteredPool);
-    const normalizedFactory = ethers.getAddress(defaultFactory);
-    setIndexBrokerSource({ loading: true, resolved: false, poolId: normalizedPool, error: '', details: null });
+    const source = { poolId: priceSourceValue, sourceType: priceSourceType };
+    setIndexBrokerSource({ ...source, loading: true, resolved: false, error: '' });
     const timer = setTimeout(async () => {
       try {
-        const [poolCode, factoryCode] = await Promise.all([
-          readProvider.getCode(normalizedPool),
-          readProvider.getCode(normalizedFactory),
-        ]);
-        if (poolCode === '0x') throw new Error(language === 'zh' ? '该地址不是交易池合约' : 'This address is not a pool contract');
-        if (factoryCode === '0x') throw new Error(language === 'zh' ? `${versionLabel} 默认 Factory 配置无效` : `The default ${versionLabel} Factory is invalid`);
-
-        const router = new ethers.Contract(contracts.NutboxRouter, NUTBOX_ROUTER_INTERFACE, readProvider);
-        const allowed = isV2
-          ? await router.allowedV2Factory(normalizedFactory)
-          : await router.allowedV3Factory(normalizedFactory);
-        if (!allowed) {
-          throw new Error(language === 'zh'
-            ? `${versionLabel} Factory 尚未被 Nutbox Router 支持`
-            : `The ${versionLabel} Factory is not supported by the Nutbox Router`);
-        }
-
-        let poolFactory;
-        let token0;
-        let token1;
-        let fee = null;
-        if (isV2) {
-          const pair = new ethers.Contract(normalizedPool, PANCAKE_V2_PAIR_ABI, readProvider);
-          const [reportedFactory, firstToken, secondToken, reserves] = await Promise.all([
-            pair.factory(), pair.token0(), pair.token1(), pair.getReserves(),
-          ]);
-          poolFactory = ethers.getAddress(reportedFactory);
-          token0 = ethers.getAddress(firstToken);
-          token1 = ethers.getAddress(secondToken);
-          if (BigInt(reserves.reserve0 ?? reserves[0] ?? 0) === 0n || BigInt(reserves.reserve1 ?? reserves[1] ?? 0) === 0n) {
-            throw new Error(language === 'zh' ? '该 Pancake V2 池没有可用流动性' : 'This Pancake V2 pool has no usable liquidity');
-          }
-          const factory = new ethers.Contract(normalizedFactory, PANCAKE_V2_FACTORY_ABI, readProvider);
-          const registeredPair = await factory.getPair(token0, token1);
-          if (!ethers.isAddress(registeredPair) || registeredPair.toLowerCase() !== normalizedPool.toLowerCase()) {
-            throw new Error(language === 'zh' ? '该交易池不属于平台默认的 Pancake V2 Factory' : 'This pool does not belong to the platform default Pancake V2 Factory');
-          }
-        } else {
-          const pool = new ethers.Contract(normalizedPool, PANCAKE_V3_POOL_ABI, readProvider);
-          const [reportedFactory, firstToken, secondToken, poolFee, liquidity, slot0] = await Promise.all([
-            pool.factory(), pool.token0(), pool.token1(), pool.fee(), pool.liquidity(), pool.slot0(),
-          ]);
-          poolFactory = ethers.getAddress(reportedFactory);
-          token0 = ethers.getAddress(firstToken);
-          token1 = ethers.getAddress(secondToken);
-          fee = Number(poolFee);
-          if (BigInt(liquidity || 0) === 0n || BigInt(slot0.sqrtPriceX96 ?? slot0[0] ?? 0) === 0n) {
-            throw new Error(language === 'zh' ? '该 Pancake V3 池尚未初始化或没有流动性' : 'This Pancake V3 pool is not initialized or has no liquidity');
-          }
-          const factory = new ethers.Contract(normalizedFactory, PANCAKE_V3_FACTORY_ABI, readProvider);
-          const registeredPool = await factory.getPool(token0, token1, fee);
-          if (!ethers.isAddress(registeredPool) || registeredPool.toLowerCase() !== normalizedPool.toLowerCase()) {
-            throw new Error(language === 'zh' ? '该交易池不属于平台默认的 Pancake V3 Factory' : 'This pool does not belong to the platform default Pancake V3 Factory');
-          }
-        }
-
-        if (poolFactory.toLowerCase() !== normalizedFactory.toLowerCase()) {
-          throw new Error(language === 'zh'
-            ? `该交易池报告的 Factory 不是平台默认的 ${versionLabel} Factory`
-            : `The pool does not report the platform default ${versionLabel} Factory`);
-        }
-        const communityToken = communityTokenAddress.toLowerCase();
-        const token0Lower = token0.toLowerCase();
-        const token1Lower = token1.toLowerCase();
-        if (token0Lower !== communityToken && token1Lower !== communityToken) {
-          throw new Error(language === 'zh' ? '该交易池不包含当前社区代币' : 'This pool does not contain the current Community Token');
-        }
-        const quoteToken = token0Lower === communityToken ? token1 : token0;
-        if (quoteToken !== ethers.ZeroAddress && quoteToken.toLowerCase() !== String(contracts.WBNB || '').toLowerCase()) {
-          if (!contracts.WBNB) throw new Error(language === 'zh' ? '当前网络未配置包装原生币' : 'Wrapped native token is not configured for this network');
-          try {
-            await router.validateRoute(quoteToken, contracts.WBNB);
-          } catch {
-            throw new Error(language === 'zh'
-              ? `报价代币 ${shortenAddress(quoteToken)} 尚未配置到包装原生币的 Nutbox Router 路由`
-              : `The quote token ${shortenAddress(quoteToken)} has no Nutbox Router route to the wrapped native token`);
-          }
-        }
-
-        if (cancelled) return;
-        setIndexBrokerSource({
-          loading: false,
-          resolved: true,
-          poolId: normalizedPool,
-          error: '',
-          details: { versionLabel, factory: normalizedFactory, currency0: token0, currency1: token1, quoteToken, fee },
+        const resolvedConfig = await readIndexBrokerPriceSource({
+          readProvider,
+          contracts,
+          sourceType: priceSourceType,
+          poolId: priceSourceValue,
+          communityToken: communityTokenAddress,
+          zh: language === 'zh',
         });
-      } catch (error) {
         if (cancelled) return;
-        console.error(`Failed to validate ${versionLabel} price pool:`, error);
-        setIndexBrokerSource({
-          loading: false,
-          resolved: false,
-          poolId: normalizedPool,
-          error: error.reason || error.shortMessage || error.message
-            || (language === 'zh' ? '无法验证该 Pancake 交易池' : 'Could not validate this Pancake pool'),
-          details: null,
-        });
-      }
-    }, 450);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [
-    communityTokenAddress,
-    contracts.NutboxRouter,
-    contracts.PancakeV2Factory,
-    contracts.PancakeV3Factory,
-    contracts.WBNB,
-    indexBrokerConfig.officialToken,
-    indexBrokerConfig.sourcePool,
-    indexBrokerConfig.sourceType,
-    language,
-    poolType,
-    readProvider,
-  ]);
-
-  useEffect(() => {
-    const sourceType = Number(indexBrokerConfig.sourceType);
-    const poolId = indexBrokerConfig.sourcePoolId.trim();
-    if (!isIndexBrokerV4Source(sourceType)) return undefined;
-    if (poolType !== 'index-broker-nft' || indexBrokerConfig.officialToken !== false) {
-      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
-      return undefined;
-    }
-    if (!poolId) {
-      setIndexBrokerSource({ loading: false, resolved: false, poolId: '', error: '', details: null });
-      return undefined;
-    }
-    if (!ethers.isHexString(poolId, 32)) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId,
-        error: language === 'zh' ? 'Pool ID 必须是 32 字节十六进制值' : 'Pool ID must be a 32-byte hex value',
-        details: null,
-      });
-      return undefined;
-    }
-    const managerAddress = sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4
-      ? contracts.UniswapV4Manager
-      : contracts.PancakeV4CLManager;
-    if (!readProvider || !managerAddress
-      || (sourceType === INDEX_BROKER_SOURCE_TYPES.PANCAKE_V4_CL && !contracts.Multicall3)) {
-      setIndexBrokerSource({
-        loading: false,
-        resolved: false,
-        poolId,
-        error: language === 'zh' ? '当前网络未配置对应的 V4 Pool Manager' : 'The required V4 Pool Manager is not configured',
-        details: null,
-      });
-      return undefined;
-    }
-
-    let cancelled = false;
-    setIndexBrokerSource({ loading: true, resolved: false, poolId, error: '', details: null });
-    const timer = setTimeout(async () => {
-      try {
-        const manager = ethers.getAddress(managerAddress);
-        let details;
-        let sqrtPriceX96;
-        let liquidity;
-        if (sourceType === INDEX_BROKER_SOURCE_TYPES.UNISWAP_V4) {
-          const pool = await resolveUniswapV4Pool({ poolId, poolManager: manager, readProvider });
-          details = {
-            currency0: pool.currency0,
-            currency1: pool.currency1,
-            hooks: pool.hooks,
-            poolManager: pool.poolManager,
-            fee: pool.fee,
-            tickSpacing: pool.tickSpacing,
-          };
-          sqrtPriceX96 = pool.sqrtPriceX96;
-          liquidity = pool.liquidity;
-        } else {
-          const result = await multicallRead(readProvider, contracts.Multicall3, [
-          {
-            key: 'poolKey', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
-            functionName: 'poolIdToPoolKey', args: [poolId],
-          },
-          {
-            key: 'slot0', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
-            functionName: 'getSlot0', args: [poolId],
-          },
-          {
-            key: 'liquidity', target: manager, contractInterface: PANCAKE_V4_CL_MANAGER_INTERFACE,
-            functionName: 'getLiquidity', args: [poolId],
-          },
-          ]);
-          const poolKey = result.poolKey;
-          details = {
-            currency0: ethers.getAddress(poolKey.currency0),
-            currency1: ethers.getAddress(poolKey.currency1),
-            hooks: ethers.getAddress(poolKey.hooks),
-            poolManager: ethers.getAddress(poolKey.poolManager),
-            fee: Number(poolKey.fee),
-            parameters: poolKey.parameters,
-          };
-          sqrtPriceX96 = BigInt(result.slot0.sqrtPriceX96 ?? result.slot0[0] ?? 0);
-          liquidity = BigInt(result.liquidity || 0);
-        }
-        if (cancelled) return;
-        const resolvedSource = {
-          sourcePoolManager: details.poolManager,
-          sourceCurrency0: details.currency0,
-          sourceCurrency1: details.currency1,
-          sourceHooks: details.hooks,
-          sourceFee: String(details.fee),
-          sourceTickSpacing: details.tickSpacing == null ? '' : String(details.tickSpacing),
-          sourceParameters: details.parameters || '',
-        };
-        if (getIndexBrokerV4PoolId({
-          sourceType,
-          sourcePoolId: poolId,
-          ...resolvedSource,
-        }).toLowerCase() !== poolId.toLowerCase()) {
-          throw new Error(language === 'zh' ? 'Pool ID 与链上 PoolKey 不匹配' : 'Pool ID does not match the on-chain PoolKey');
-        }
-        if (details.poolManager.toLowerCase() !== manager.toLowerCase()) {
-          throw new Error(language === 'zh' ? 'Pool Manager 与当前网络配置不匹配' : 'Pool Manager does not match this network');
-        }
-
-        const token = communityTokenAddress.toLowerCase();
-        const currencies = [details.currency0.toLowerCase(), details.currency1.toLowerCase()];
-        const tokenIndex = currencies.indexOf(token);
-        if (tokenIndex < 0) {
-          throw new Error(language === 'zh'
-            ? '该交易池必须包含当前社区代币'
-            : 'The pool must contain this Community Token');
-        }
-        if (sqrtPriceX96 === 0n || liquidity === 0n) {
-          throw new Error(language === 'zh' ? '该池尚未初始化或没有流动性' : 'The pool is not initialized or has no liquidity');
-        }
-        const quoteToken = tokenIndex === 0 ? details.currency1 : details.currency0;
-        if (quoteToken !== ethers.ZeroAddress && quoteToken.toLowerCase() !== String(contracts.WBNB || '').toLowerCase()) {
-          if (!contracts.NutboxRouter || !contracts.WBNB) {
-            throw new Error(language === 'zh' ? '当前网络未配置 Nutbox Router 或包装原生币' : 'Nutbox Router or wrapped native token is not configured for this network');
-          }
-          const nutboxRouter = new ethers.Contract(contracts.NutboxRouter, NUTBOX_ROUTER_INTERFACE, readProvider);
-          await nutboxRouter.validateRoute(quoteToken, contracts.WBNB);
-        }
-
         setIndexBrokerConfig(current => (
-          current.sourcePoolId.trim().toLowerCase() === poolId.toLowerCase()
-            && Number(current.sourceType) === sourceType
-            ? { ...current, ...resolvedSource }
+          Number(current.sourceType) === priceSourceType
+            && getIndexBrokerPriceSourceValue(current) === priceSourceValue
+            ? { ...current, ...resolvedConfig }
             : current
         ));
-        setIndexBrokerSource({ loading: false, resolved: true, poolId, error: '', details });
+        setIndexBrokerSource({ ...source, loading: false, resolved: true, error: '' });
       } catch (error) {
         if (cancelled) return;
-        console.error('Failed to resolve V4 Pool ID:', error);
+        console.error('Failed to validate NFT price pool:', error);
         setIndexBrokerSource({
+          ...source,
           loading: false,
           resolved: false,
-          poolId,
-          error: error.shortMessage || error.reason || error.message
-            || (language === 'zh' ? '无法读取该 Pool ID' : 'Could not resolve this Pool ID'),
-          details: null,
+          error: error.code
+            ? (language === 'zh' ? '无法读取该交易池，请核对池类型和地址或 Pool ID' : 'Could not read this pool. Check the pool type and address or Pool ID.')
+            : error.message,
         });
       }
     }, 450);
@@ -1180,16 +854,12 @@ export default function AddPoolModal({
     };
   }, [
     communityTokenAddress,
-    contracts.Multicall3,
-    contracts.NutboxRouter,
-    contracts.PancakeV4CLManager,
-    contracts.UniswapV4Manager,
-    contracts.WBNB,
+    contracts,
     indexBrokerConfig.officialToken,
-    indexBrokerConfig.sourcePoolId,
-    indexBrokerConfig.sourceType,
     language,
     poolType,
+    priceSourceType,
+    priceSourceValue,
     readProvider,
   ]);
 
@@ -1435,6 +1105,19 @@ export default function AddPoolModal({
     }
   };
 
+  const validateIndexBrokerPriceSource = () => {
+    if (indexBrokerConfig.officialToken !== false) return;
+    if (!priceSourceValue) throw new Error(zh ? '请选择或手动填写一个价格源池' : 'Select or enter a price-source pool');
+    const matches = indexBrokerSource.sourceType === priceSourceType
+      && indexBrokerSource.poolId === priceSourceValue;
+    if (!matches || indexBrokerSource.loading) {
+      throw new Error(zh ? '正在验证 DEX 价格源，请稍候' : 'The DEX price source is still being verified');
+    }
+    if (!indexBrokerSource.resolved) {
+      throw new Error(indexBrokerSource.error || (zh ? '该 DEX 价格池未通过验证' : 'This DEX price pool could not be verified'));
+    }
+  };
+
   const validateWizardStep = stepKey => {
     if (stepKey === 'type') {
       if (!poolType) throw new Error(zh ? '请先选择一种矿池类型' : 'Choose a pool type first');
@@ -1618,17 +1301,7 @@ export default function AddPoolModal({
         && indexTokenValidation.token.toLowerCase() === selectedIndexToken.toLowerCase();
       if (indexTokenValidation.loading || !validationMatches) throw new Error(zh ? '正在验证指数代币，请稍候' : 'The index token is still being verified');
       if (!indexTokenValidation.valid) throw new Error(indexTokenValidation.error || (zh ? '该指数代币无法用于当前 Factory' : 'This index token cannot be used by the current Factory'));
-      if (indexBrokerConfig.officialToken === false) {
-        const sourceValue = isIndexBrokerV4Source(indexBrokerConfig.sourceType)
-          ? indexBrokerConfig.sourcePoolId.trim()
-          : indexBrokerConfig.sourcePool.trim();
-        if (indexBrokerSource.loading) throw new Error(zh ? '正在验证 DEX 价格源，请稍候' : 'The DEX price source is still being verified');
-        if (indexBrokerPoolDiscovery.loading) throw new Error(zh ? '正在查找候选价格池，请稍候' : 'Candidate price pools are still loading');
-        if (!sourceValue) throw new Error(zh ? '请选择一个通过支持检查的价格源池' : 'Select a supported price-source pool');
-        if (!indexBrokerSource.resolved || indexBrokerSource.poolId.toLowerCase() !== sourceValue.toLowerCase()) {
-          throw new Error(indexBrokerSource.error || (zh ? '该 DEX 价格池未通过验证' : 'This DEX price pool could not be verified'));
-        }
-      }
+      validateIndexBrokerPriceSource();
       try {
         encodeIndexBrokerNftPoolMeta(indexBrokerConfig, indexBrokerContext.decimals);
       } catch (error) {
@@ -1779,6 +1452,7 @@ export default function AddPoolModal({
         if (!contracts.Multicall3) {
           throw new Error(language === 'zh' ? '当前网络未配置 Multicall3' : 'Multicall3 is not configured');
         }
+        validateIndexBrokerPriceSource();
         const selectedTemplate = requireSupportedIndexBrokerTemplate(indexBrokerConfig, indexBrokerContext.templateOptions);
         let checks;
         try {
@@ -2385,10 +2059,6 @@ export default function AddPoolModal({
                   pancakeV3: Boolean(contracts.PancakeV3Factory),
                   uniswapV4: Boolean(contracts.UniswapV4Manager),
                   pancakeV4Cl: Boolean(contracts.PancakeV4CLManager),
-                }}
-                sourceFactories={{
-                  pancakeV2: contracts.PancakeV2Factory,
-                  pancakeV3: contracts.PancakeV3Factory,
                 }}
                 nativeSymbol={network.nativeCurrency.symbol}
                 networkName={network.name}

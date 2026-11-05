@@ -121,6 +121,7 @@ export const NFTMiningRendererABI = [
 ];
 
 export const IndexBrokerNFTFactoryABI = [
+  'function nutboxRouter() view returns (address)',
   'function defaultRenderer() view returns (address)',
   'function defaultIndexToken() view returns (address)',
   'function basketRegistry() view returns (address)',
