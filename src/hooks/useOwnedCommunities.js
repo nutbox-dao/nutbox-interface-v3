@@ -1,29 +1,37 @@
 import { useEffect, useState } from 'react';
 import { fetchOwnedCommunities } from '../config/subgraph';
 
-export function useOwnedCommunities(account, chainId, enabled) {
+export function useOwnedCommunities(account, chainId, enabled, keyword) {
   const [result, setResult] = useState(null);
   const [attempt, setAttempt] = useState(0);
-  const key = `${chainId}:${account?.toLowerCase()}`;
+  const [pagination, setPagination] = useState(null);
+  const key = JSON.stringify([chainId, account?.toLowerCase(), keyword]);
+  const page = pagination?.key === key ? pagination.page : 0;
+  const requestKey = JSON.stringify([key, page, attempt]);
 
   useEffect(() => {
     if (!enabled || !account) return undefined;
     const controller = new AbortController();
-    setResult({ key, loading: true, communities: [], error: false });
-    fetchOwnedCommunities(account, chainId, { signal: controller.signal })
-      .then(communities => {
-        if (!controller.signal.aborted) setResult({ key, loading: false, communities, error: false });
+    fetchOwnedCommunities(account, chainId, { page, keyword, signal: controller.signal })
+      .then(data => {
+        if (!controller.signal.aborted) setResult({ requestKey, ...data });
       })
       .catch(error => {
         if (controller.signal.aborted) return;
         console.error('Failed to load wallet communities:', error);
-        setResult({ key, loading: false, communities: [], error: true });
+        setResult({ requestKey, communities: [], error: true });
       });
     return () => controller.abort();
-  }, [account, chainId, enabled, key, attempt]);
+  }, [account, chainId, enabled, requestKey, page, keyword]);
 
+  const data = result?.requestKey === requestKey ? result : null;
   return {
-    ...(result?.key === key ? result : { loading: true, communities: [], error: false }),
+    communities: data?.communities ?? [],
+    loading: data === null,
+    error: data?.error,
+    hasMore: data?.hasMore,
+    page,
+    goToPage: nextPage => setPagination({ key, page: nextPage }),
     retry: () => setAttempt(value => value + 1),
   };
 }

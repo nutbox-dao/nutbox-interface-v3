@@ -1,17 +1,10 @@
 export function communityMatchesKeyword(community, keyword) {
   const values = [
     community.name, community.tick, community.tokenName, community.tokenSymbol,
-    community.id, community.cToken, community.owner?.id, community.creator?.id,
+    community.id, community.cToken, community.owner?.id,
     ...(Array.isArray(community.tags) ? community.tags : []),
   ];
   return values.some(value => String(value || '').toLowerCase().includes(keyword.toLowerCase()));
-}
-
-// Read every API page: filtering just the homepage would omit older communities.
-// Match addresses exactly; keyword searches can also match unrelated metadata.
-export async function loadOwnedCommunities(fetchPage, account, { signal } = {}) {
-  if (!/^0x[0-9a-f]{40}$/i.test(account || '')) throw new Error('Invalid wallet address');
-  return loadMatchingCommunities(fetchPage, community => community.creator?.id?.toLowerCase() === account.toLowerCase(), { signal });
 }
 
 export async function loadMatchingCommunities(fetchPage, matches, { signal } = {}) {

@@ -47,7 +47,7 @@ export default function Home() {
   const viewingCollection = viewingMine || viewingFavorites;
   const { addresses: favoriteAddresses } = useCommunityFavorites(activeChainId);
   const favorites = useFavoriteCommunities(favoriteAddresses, activeChainId, viewingFavorites);
-  const owned = useOwnedCommunities(account, activeChainId, viewingMine);
+  const owned = useOwnedCommunities(account, activeChainId, viewingMine, activeQuery);
 
   useEffect(() => {
     if (!account) setView(current => current === 'mine' ? 'all' : current);
@@ -192,9 +192,9 @@ export default function Home() {
   }, [activeChainId, activeQuery, viewingCollection]);
 
   const collection = viewingFavorites ? favorites : owned;
-  const visibleCommunities = viewingCollection
-    ? collection.communities.filter(community => communityMatchesKeyword(community, activeQuery))
-    : activeQuery ? searchCommunities : communities;
+  const visibleCommunities = viewingMine ? owned.communities
+    : viewingFavorites ? favorites.communities.filter(community => communityMatchesKeyword(community, activeQuery))
+      : activeQuery ? searchCommunities : communities;
   const visibleLoading = viewingCollection ? collection.loading : activeQuery ? searchLoading && searchCommunities.length === 0 : loading;
   const visibleHasMore = !viewingCollection && (activeQuery ? searchHasMore : hasMore);
 
@@ -300,7 +300,7 @@ export default function Home() {
                 </button>
               )}
             </label>
-            {activeQuery && !visibleLoading && (!viewingCollection || !collection.error) && (
+            {activeQuery && !visibleLoading && !viewingMine && (!viewingCollection || !collection.error) && (
               <span className="community-search-count">
                 {t('home.searchCount', { count: viewingCollection ? visibleCommunities.length : searchTotal ?? searchCommunities.length })}
               </span>
@@ -347,6 +347,15 @@ export default function Home() {
             {visibleCommunities.map(community => (
               <CommunityCard key={community.id} community={community} />
             ))}
+          </div>
+        )}
+
+        {viewingMine && !owned.loading && !owned.error && (owned.page > 0 || owned.hasMore) && (
+          <div className="community-load-more is-loading">
+            <button type="button" className="btn btn-ghost" disabled={owned.page === 0}
+              onClick={() => owned.goToPage(owned.page - 1)}>{t('home.previousPage')}</button>
+            <button type="button" className="btn btn-ghost" disabled={!owned.hasMore}
+              onClick={() => owned.goToPage(owned.page + 1)}>{t('home.nextPage')}</button>
           </div>
         )}
 
