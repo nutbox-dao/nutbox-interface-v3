@@ -29,6 +29,7 @@ import DistributionDisplay from '../components/community/DistributionDisplay';
 import IndexBrokerNFTWorkspace from '../components/community/IndexBrokerNFTWorkspace';
 import useTimedActionLoading from '../hooks/useTimedActionLoading';
 import { readV2LpPoolNames } from '../utils/poolDisplayName';
+import CommunityFavoriteButton from '../components/community/CommunityFavoriteButton';
 import './CommunityDetail.css';
 
 export default function CommunityDetail() {
@@ -353,6 +354,7 @@ export default function CommunityDetail() {
             )}
           </div>
           <div className="community-header-actions">
+            <CommunityFavoriteButton address={address} />
             {community.twitter && (
               <a href={`https://x.com/${community.twitter}`} target="_blank" rel="noopener noreferrer" className="btn btn-ghost btn-sm">𝕏</a>
             )}

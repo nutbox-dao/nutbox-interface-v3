@@ -8,6 +8,9 @@ import { useToast } from '../contexts/ToastContext';
 import { getChainPath } from '../config/contracts';
 import { useOwnedCommunities } from '../hooks/useOwnedCommunities';
 import { communityMatchesKeyword } from '../utils/ownedCommunities';
+import { useCommunityFavorites } from '../hooks/useCommunityFavorites';
+import { useFavoriteCommunities } from '../hooks/useFavoriteCommunities';
+import CommunityFavoriteButton from '../components/community/CommunityFavoriteButton';
 import './Home.css';
 
 const COMMUNITY_PAGE_SIZE = 100;
@@ -32,18 +35,22 @@ export default function Home() {
   const [searchLoading, setSearchLoading] = useState(false);
   const [searchHasMore, setSearchHasMore] = useState(false);
   const [searchTotal, setSearchTotal] = useState(null);
-  const [showMine, setShowMine] = useState(false);
+  const [view, setView] = useState('all');
   const sentinelRef = useRef(null);
   // 翻页锁放在 ref 里，避免哨兵连续进入视口时把同一页请求两次。
   const pagingRef = useRef({ page: 0, hasMore: false, loading: false, chainId: null });
   const searchPagingRef = useRef({ page: 0, hasMore: false, loading: false, chainId: null, query: '' });
   const { t } = useLanguage();
   const { activeChainId, network, account } = useWeb3();
-  const viewingMine = showMine && Boolean(account);
+  const viewingMine = view === 'mine' && Boolean(account);
+  const viewingFavorites = view === 'favorites';
+  const viewingCollection = viewingMine || viewingFavorites;
+  const { addresses: favoriteAddresses } = useCommunityFavorites(activeChainId);
+  const favorites = useFavoriteCommunities(favoriteAddresses, activeChainId, viewingFavorites);
   const owned = useOwnedCommunities(account, activeChainId, viewingMine);
 
   useEffect(() => {
-    if (!account) setShowMine(false);
+    if (!account) setView(current => current === 'mine' ? 'all' : current);
   }, [account]);
 
   useEffect(() => {
@@ -94,7 +101,7 @@ export default function Home() {
   }, [searchQuery]);
 
   useEffect(() => {
-    if (!activeQuery || viewingMine) {
+    if (!activeQuery || viewingCollection) {
       setSearchCommunities([]);
       setSearchHasMore(false);
       setSearchTotal(null);
@@ -133,10 +140,10 @@ export default function Home() {
       });
 
     return () => { cancelled = true; };
-  }, [activeQuery, activeChainId, viewingMine]);
+  }, [activeQuery, activeChainId, viewingCollection]);
 
   const loadMore = useCallback(async () => {
-    if (viewingMine) return;
+    if (viewingCollection) return;
     const searching = Boolean(activeQuery);
     const paging = searching ? searchPagingRef.current : pagingRef.current;
     if (paging.loading || !paging.hasMore || paging.chainId !== activeChainId) return;
@@ -182,13 +189,14 @@ export default function Home() {
       const currentPaging = searching ? searchPagingRef.current : pagingRef.current;
       if (currentPaging.chainId === activeChainId) setLoadingMore(false);
     }
-  }, [activeChainId, activeQuery, viewingMine]);
+  }, [activeChainId, activeQuery, viewingCollection]);
 
-  const visibleCommunities = viewingMine
-    ? owned.communities.filter(community => communityMatchesKeyword(community, activeQuery))
+  const collection = viewingFavorites ? favorites : owned;
+  const visibleCommunities = viewingCollection
+    ? collection.communities.filter(community => communityMatchesKeyword(community, activeQuery))
     : activeQuery ? searchCommunities : communities;
-  const visibleLoading = viewingMine ? owned.loading : activeQuery ? searchLoading && searchCommunities.length === 0 : loading;
-  const visibleHasMore = !viewingMine && (activeQuery ? searchHasMore : hasMore);
+  const visibleLoading = viewingCollection ? collection.loading : activeQuery ? searchLoading && searchCommunities.length === 0 : loading;
+  const visibleHasMore = !viewingCollection && (activeQuery ? searchHasMore : hasMore);
 
   useEffect(() => {
     const node = sentinelRef.current;
@@ -252,20 +260,24 @@ export default function Home() {
           <Link to={getChainPath(activeChainId, 'create')} className="btn btn-ghost">{t('home.createNew')}</Link>
         </div>
 
-        {account && (
-          <div className="community-filters" role="group" aria-label={t('home.filterLabel')}>
-            <button type="button" className={`btn ${!viewingMine ? 'btn-primary' : 'btn-ghost'}`}
-              aria-pressed={!viewingMine} onClick={() => setShowMine(false)}>
-              {t('home.allCommunities')}
-            </button>
+        <div className="community-filters" role="group" aria-label={t('home.filterLabel')}>
+          <button type="button" className={`btn ${!viewingCollection ? 'btn-primary' : 'btn-ghost'}`}
+            aria-pressed={!viewingCollection} onClick={() => setView('all')}>
+            {t('home.allCommunities')}
+          </button>
+          {account && (
             <button type="button" className={`btn ${viewingMine ? 'btn-primary' : 'btn-ghost'}`}
-              aria-pressed={viewingMine} onClick={() => setShowMine(true)}>
+              aria-pressed={viewingMine} onClick={() => setView('mine')}>
               {t('home.myCommunities')}
             </button>
-          </div>
-        )}
+          )}
+          <button type="button" className={`btn ${viewingFavorites ? 'btn-primary' : 'btn-ghost'}`}
+            aria-pressed={viewingFavorites} onClick={() => setView('favorites')}>
+            {t('home.favorites')}
+          </button>
+        </div>
 
-        {(viewingMine || (!loading && communities.length > 0) || searchQuery) && (
+        {(viewingCollection || (!loading && communities.length > 0) || searchQuery) && (
           <div className="community-search-row">
             <label className="community-search">
               <span className="community-search-icon" aria-hidden="true">⌕</span>
@@ -288,9 +300,9 @@ export default function Home() {
                 </button>
               )}
             </label>
-            {activeQuery && !visibleLoading && (!viewingMine || !owned.error) && (
+            {activeQuery && !visibleLoading && (!viewingCollection || !collection.error) && (
               <span className="community-search-count">
-                {t('home.searchCount', { count: viewingMine ? visibleCommunities.length : searchTotal ?? searchCommunities.length })}
+                {t('home.searchCount', { count: viewingCollection ? visibleCommunities.length : searchTotal ?? searchCommunities.length })}
               </span>
             )}
           </div>
@@ -306,11 +318,11 @@ export default function Home() {
               </div>
             ))}
           </div>
-        ) : viewingMine && owned.error ? (
+        ) : viewingCollection && collection.error ? (
           <div className="empty-state" role="alert">
-            <div className="empty-state-title">{t('home.myCommunitiesError')}</div>
+            <div className="empty-state-title">{t(viewingFavorites ? 'home.favoritesError' : 'home.myCommunitiesError')}</div>
             <div className="empty-state-desc">{t('home.myCommunitiesErrorDesc')}</div>
-            <button type="button" className="btn btn-primary" onClick={owned.retry}>{t('home.retry')}</button>
+            <button type="button" className="btn btn-primary" onClick={collection.retry}>{t('home.retry')}</button>
           </div>
         ) : activeQuery && visibleCommunities.length === 0 ? (
           <div className="empty-state community-search-empty">
@@ -324,9 +336,11 @@ export default function Home() {
         ) : visibleCommunities.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">🌰</div>
-            <div className="empty-state-title">{t(viewingMine ? 'home.noMyCommunitiesTitle' : 'home.noCommunitiesTitle')}</div>
-            <div className="empty-state-desc">{t(viewingMine ? 'home.noMyCommunitiesDesc' : 'home.noCommunitiesDesc', { network: network.shortName })}</div>
-            <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>
+            <div className="empty-state-title">{t(viewingFavorites ? 'home.noFavoritesTitle' : viewingMine ? 'home.noMyCommunitiesTitle' : 'home.noCommunitiesTitle')}</div>
+            <div className="empty-state-desc">{t(viewingFavorites ? 'home.noFavoritesDesc' : viewingMine ? 'home.noMyCommunitiesDesc' : 'home.noCommunitiesDesc', { network: network.shortName })}</div>
+            {viewingFavorites
+              ? <button type="button" className="btn btn-primary" onClick={() => setView('all')}>{t('home.allCommunities')}</button>
+              : <Link to={getChainPath(activeChainId, 'create')} className="btn btn-primary">{t('home.createBtn')}</Link>}
           </div>
         ) : (
           <div className="grid-communities">
@@ -385,7 +399,7 @@ function CommunityCard({ community }) {
   };
 
   return (
-    <Link to={getChainPath(activeChainId, `community/${community.id}`)} className="community-card glass-card" id={`community-${community.id}`}>
+    <article className="community-card glass-card" id={`community-${community.id}`}>
       <div className="community-card-header">
         <div className="community-avatar">
           {community.tick?.slice(0, 2)
@@ -403,7 +417,7 @@ function CommunityCard({ community }) {
         </div>
         <div className="community-meta">
           <div className="community-name">
-            {displayName}
+            <Link className="community-card-link" to={getChainPath(activeChainId, `community/${community.id}`)}>{displayName}</Link>
             {community.tick && <span className="community-tick">${community.tick}</span>}
           </div>
           <div className="community-address" title={community.id}>
@@ -419,6 +433,7 @@ function CommunityCard({ community }) {
             </button>
           </div>
         </div>
+        <CommunityFavoriteButton address={community.id} />
       </div>
 
       <div className="community-description">
@@ -461,6 +476,6 @@ function CommunityCard({ community }) {
           {t('home.cardFee')}: {((community.feeRatio || 0) / 100).toFixed(1)}%
         </span>
       </div>
-    </Link>
+    </article>
   );
 }

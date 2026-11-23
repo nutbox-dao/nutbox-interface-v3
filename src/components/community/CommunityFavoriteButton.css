@@ -1,0 +1,14 @@
+.community-favorite-button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.community-favorite-button.is-favorite {
+  color: var(--color-text-accent);
+  background: rgba(124, 58, 237, 0.1);
+}
+
+.community-favorite-button:focus-visible {
+  outline: 2px solid var(--color-text-accent);
+  outline-offset: 2px;
+}

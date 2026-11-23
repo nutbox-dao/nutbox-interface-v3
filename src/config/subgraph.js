@@ -8,7 +8,8 @@ import {
   getContracts,
 } from './contracts';
 import { ethers } from 'ethers';
-import { communityMatchesKeyword, loadOwnedCommunities } from '../utils/ownedCommunities';
+import { communityMatchesKeyword, loadOwnedCommunities, loadMatchingCommunities } from '../utils/ownedCommunities';
+import { readCommunityCreator } from '../utils/communityCreator';
 import {
   BasketStakePoolABI,
   BasketTVLMiningPoolABI,
@@ -902,18 +903,57 @@ function normalizeCommunityKeyword(keyword) {
   return String(keyword || '').trim().replace(/^\$/, '').slice(0, 80);
 }
 
+async function fetchCommunityCollectionPage(page, chainId, signal) {
+  const size = 100;
+  const data = await fetchAPI(`/communities?page=${page}&size=${size}`, chainId, { signal });
+  const raw = data.communities || [];
+  return {
+    communities: raw.filter(item => !isDeletedCommunity(item)).map(item => mapCommunity(item, chainId)),
+    hasMore: typeof data.hasMore === 'boolean' ? data.hasMore : raw.length >= size,
+  };
+}
+
+const communityCreatorCache = new Map();
+
+async function resolveCommunityCreator(community, chainId) {
+  if (community.creator?.id) return community;
+  const key = `${chainId}:${community.id.toLowerCase()}`;
+  let promise = communityCreatorCache.get(key);
+  if (!promise) {
+    promise = (async () => {
+      return readCommunityCreator(
+        getChainReadProvider(chainId), getContracts(chainId).CommunityFactory,
+        new ethers.Interface(CommunityFactoryABI), community,
+      );
+    })();
+    communityCreatorCache.set(key, promise);
+    promise.catch(() => communityCreatorCache.delete(key));
+  }
+  return { ...community, creator: { id: await promise } };
+}
+
 export async function fetchOwnedCommunities(account, chainId = DEFAULT_CHAIN_ID, { signal } = {}) {
-  // Both supported networks expose the indexed community list. Keep this read
-  // API-only; no per-community contract calls or log scans on wallet connection.
   return loadOwnedCommunities(async page => {
-    const size = 100;
-    const data = await fetchAPI(`/communities?page=${page}&size=${size}`, chainId, { signal });
-    const raw = data.communities || [];
-    return {
-      communities: raw.filter(item => !isDeletedCommunity(item)).map(item => mapCommunity(item, chainId)),
-      hasMore: typeof data.hasMore === 'boolean' ? data.hasMore : raw.length >= size,
-    };
+    const result = await fetchCommunityCollectionPage(page, chainId, signal);
+    const communities = [];
+    // Bound log-query concurrency; these are event reads, not contract calls.
+    for (let offset = 0; offset < result.communities.length; offset += 6) {
+      signal?.throwIfAborted();
+      communities.push(...await Promise.all(result.communities.slice(offset, offset + 6)
+        .map(community => resolveCommunityCreator(community, chainId))));
+    }
+    return { ...result, communities };
   }, account, { signal });
+}
+
+export async function fetchFavoriteCommunities(addresses, chainId, { signal } = {}) {
+  if (!addresses.length) return [];
+  const ids = new Set(addresses.map(address => address.toLowerCase()));
+  return loadMatchingCommunities(
+    page => fetchCommunityCollectionPage(page, chainId, signal),
+    community => ids.has(community.id.toLowerCase()),
+    { signal },
+  );
 }
 
 export async function fetchCommunities(first = 100, skip = 0, chainId = DEFAULT_CHAIN_ID, keyword = '') {
@@ -1091,6 +1131,7 @@ function mapCommunity(raw, chainId) {
     index: raw.index,
     createdAt: raw.createdAtTs?.toString(),
     owner: { id: raw.owner },
+    creator: { id: raw.creator || null },
     daoFund: raw.daoFund,
     feeRatio: raw.feeRatio,
     cToken: raw.cToken,
