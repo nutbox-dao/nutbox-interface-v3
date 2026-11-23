@@ -1,3 +1,4 @@
+import { getAddress } from 'ethers';
 import { getIndexBrokerTemplates, INDEX_BROKER_PARTICIPATION } from './indexBrokerTemplates.js';
 
 // Read the deployed clone, rather than trusting potentially stale indexer metadata.
@@ -11,42 +12,57 @@ export async function readAgentNftMintAccess(provider, pool, contracts) {
 }
 
 export function buildAgentNftMintCommand({
-  language, chainId, pool, communityToken, communityTokenPrice, nativePrice,
+  chainId, pool, communityToken, communityTokenPrice, nativePrice,
   referrerTokenId = '0', requiresSeedReveal,
 }) {
   const request = JSON.stringify({
-    chainId,
-    pool,
+    pool: getAddress(pool),
     action: 'mint',
-    referrerTokenId: String(referrerTokenId || '0'),
-  }, null, 2);
-  const reference = JSON.stringify({
-    communityToken,
-    communityTokenPriceRaw: communityTokenPrice.toString(),
-    publicMintNativePriceWei: nativePrice.toString(),
-  }, null, 2);
-  if (language === 'zh') {
-    return [
-      '请使用你当前已连接、已注册 Binance Handle 的 Agent Wallet，为我铸造 1 枚 Nutbox NFT。',
-      '铸造请求：', request,
-      '页面参考价格（原始整数单位；实际费用须重新读取链上状态）：', reference,
-      '使用 tagclaw-onchain 技能：先执行 wallet-check（operation: nutbox），将 Agent Wallet 自己的地址填入 from，再用 prepare-nft 准备上述 mint 请求。',
-      '按 Agent Wallet 地址重新检查 Handle 注册、矿池状态、剩余额度、白名单、余额、授权和实际费用。不要使用浏览器钱包的地址或白名单额度。所有批量合约读取使用同一区块的链上 Multicall。',
-      '交易方法是 NFT 合约的 mint(uint256 referrerTokenId)。Agent Wallet 有白名单额度时使用参数 0 和 value=0；否则使用请求中的推荐 ID，并支付最新 nativePrice。两种情况都需支付最新 communityTokenPrice 的社区代币。',
-      '如需授权，只授权本次铸造所需代币额度给上述 NFT 合约；授权确认后重新准备 Mint。若社区代币或原生币铸造价格超过参考值（不含 Gas），请先让我确认。',
-      '通过钱包预览并按正常授权流程签名，等待交易成功后返回交易哈希和 NFT Token ID。不要重复提交已广播的交易。',
-      ...(requiresSeedReveal ? ['该 NFT 需要揭图：Mint 成功后读取目标区块，等待揭图窗口开启并在 256 个区块内完成 reveal，返回揭图交易哈希。'] : []),
-    ].join('\n\n');
-  }
+    referrerTokenId: BigInt(referrerTokenId || '0').toString(),
+  });
+  const token = getAddress(communityToken);
+  const tokenLimit = BigInt(communityTokenPrice).toString();
+  const nativeLimit = BigInt(nativePrice).toString();
   return [
-    'Use your currently connected Agent Wallet with a registered Binance Handle to mint 1 Nutbox NFT for me.',
-    'Mint request:', request,
-    'Page reference prices (raw integer units; refresh actual costs on-chain):', reference,
-    'Use the tagclaw-onchain skill: run wallet-check with operation nutbox, set from to the Agent Wallet’s own address, then prepare-nft for this mint request.',
-    'Recheck the Agent Wallet’s Handle, pool status, supply, whitelist, balances, allowance and actual fees. Do not reuse the browser wallet’s address or whitelist. All batched contract reads must use on-chain Multicall at a fixed block.',
-    'Call mint(uint256 referrerTokenId) on the NFT contract. If the Agent Wallet has a whitelist slot, use argument 0 and value=0; otherwise use the requested referral ID and pay the latest nativePrice. Both modes require the latest communityTokenPrice in community tokens.',
-    'If approval is needed, approve only the required mint token amount to the NFT contract above, wait for confirmation, then rebuild the mint plan. Ask me before exceeding either reference mint price, excluding gas.',
-    'Preview and sign through the normal wallet authorization flow. Wait for success and return the transaction hash and NFT token ID. Do not resubmit a broadcast transaction.',
-    ...(requiresSeedReveal ? ['This NFT requires a reveal: after minting, read the target block, wait for the reveal window and complete reveal within 256 blocks. Return the reveal transaction hash.'] : []),
-  ].join('\n\n');
+    `Mint exactly 1 NFT on BSC (chainId ${chainId}). Run one step at a time in the tagclaw-onchain skill directory. Requires node, jq and baw.`,
+    '```bash',
+    '# 1. Query the Agent Wallet and check readiness.',
+    `NFT_FROM=$(baw wallet address --json | jq -er '.data.addresses[] | select((.binanceChainId | tostring) == "${chainId}") | .address')`,
+    `jq -n --arg from "$NFT_FROM" '{operation:"nutbox",from:$from}' > nft-wallet.json`,
+    'node scripts/tagclaw.mjs wallet-check --input nft-wallet.json',
+    '',
+    '# 2. Prepare the next transaction (approval or mint); all contract reads use fixed-block Multicall.',
+    `printf '%s\\n' '${request}' | jq --arg from "$NFT_FROM" '. + {from:$from}' > nft-request.json`,
+    'node scripts/tagclaw.mjs prepare-nft --input nft-request.json --out nft-plan.json',
+    ...(BigInt(referrerTokenId || '0') > 0n ? [
+      '# Only on REFERRER_UNAVAILABLE_FOR_WHITELIST_MINT: set referrerTokenId="0" in nft-request.json; rerun prepare-nft only (keep the edited request).',
+    ] : []),
+    `# Verify quote.paymentToken=${token}, quote.amount<=${tokenLimit}, quote.nativeValue<=${nativeLimit} wei (gas excluded). Ask before exceeding limits.`,
+    '',
+    '# 3. Recheck readiness, export exact calldata/value, then preview.',
+    'node scripts/tagclaw.mjs wallet-check --input nft-wallet.json',
+    'node scripts/tagclaw.mjs wallet-payload --input nft-plan.json --out nft-call.json',
+    `baw contract-call preview --binanceChainId ${chainId} \\`,
+    '  --from "$(jq -er .transaction.from nft-call.json)" \\',
+    '  --to "$(jq -er .transaction.to nft-call.json)" \\',
+    '  --value "$(jq -er .transaction.value nft-call.json)" \\',
+    '  --inputData "$(jq -er .transaction.data nft-call.json)" --json > nft-preview.json',
+    '',
+    '# 4. Show preview/risk/approval details. Execute only after successful preview and owner approval.',
+    `baw contract-call execute --requestId "$(jq -er 'select(.success == true) | .data.requestId // empty' nft-preview.json)" --json > nft-execution.json`,
+    '',
+    '# 5. Once txHash exists, poll until CONFIRMED. Never execute again for a pending order/hash.',
+    `jq -ec '{hash:(.data.txHash // empty)}' nft-execution.json | node scripts/tagclaw.mjs receipt --input -`,
+    '```',
+    'Stop on errors or unresolved preflight/policy/preview failures. PENDING_CONFIRMATION: track the existing orderId in the wallet.',
+    'After CONFIRMED: if nft-plan.json.rebuildAfterConfirmation=true, rerun prepare-nft and steps 3-5. Otherwise mint is complete; return txHash and the tokenId from its mint Transfer log (do not use totalSupply).',
+    ...(requiresSeedReveal ? [
+      'Reveal: set NFT_ID to the tokenId from the confirmed mint receipt. Query revealBlock; after that block and before revealBlock+256, prepare reveal and repeat steps 3-5 with the new plan:',
+      '```bash',
+      `jq -n --arg from "$NFT_FROM" --arg tokenId "$NFT_ID" '{pool:"${getAddress(pool)}",from:$from,tokenId:$tokenId}' > nft-reveal.json`,
+      'node scripts/tagclaw.mjs nft-info --input nft-reveal.json',
+      `jq '. + {action:"reveal"}' nft-reveal.json | node scripts/tagclaw.mjs prepare-nft --input - --out nft-plan.json`,
+      '```',
+    ] : []),
+  ].join('\n');
 }

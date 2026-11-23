@@ -1707,7 +1707,6 @@ export default function IndexBrokerNFTPoolCard({
     if (!canMint) return;
     if (requiresAgentWallet) {
       const command = buildAgentNftMintCommand({
-        language,
         chainId: network.id,
         pool: pool.id,
         communityToken: data.communityAsset.address,
