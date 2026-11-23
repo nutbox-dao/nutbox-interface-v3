@@ -9,7 +9,7 @@ import {
 } from './contracts';
 import { ethers } from 'ethers';
 import { communityMatchesKeyword, loadOwnedCommunities, loadMatchingCommunities } from '../utils/ownedCommunities';
-import { readCommunityCreator } from '../utils/communityCreator';
+import { readCreatedCommunityAddresses } from '../utils/communityCreator';
 import {
   BasketStakePoolABI,
   BasketTVLMiningPoolABI,
@@ -913,36 +913,38 @@ async function fetchCommunityCollectionPage(page, chainId, signal) {
   };
 }
 
-const communityCreatorCache = new Map();
+const creationLogProviders = new Map();
 
-async function resolveCommunityCreator(community, chainId) {
-  if (community.creator?.id) return community;
-  const key = `${chainId}:${community.id.toLowerCase()}`;
-  let promise = communityCreatorCache.get(key);
-  if (!promise) {
-    promise = (async () => {
-      return readCommunityCreator(
-        getChainReadProvider(chainId), getContracts(chainId).CommunityFactory,
-        new ethers.Interface(CommunityFactoryABI), community,
-      );
-    })();
-    communityCreatorCache.set(key, promise);
-    promise.catch(() => communityCreatorCache.delete(key));
+function getCreationLogProviders(chainId) {
+  if (!creationLogProviders.has(chainId)) {
+    const network = getNetworkConfig(chainId);
+    const urls = new Set([
+      ...(chainId === BSC_CHAIN_ID ? ['https://bsc-rpc.publicnode.com'] : []),
+      network.readRpcUrl,
+      ...network.rpcUrls,
+    ].filter(Boolean));
+    creationLogProviders.set(chainId, [...urls].map(url => {
+      const request = new ethers.FetchRequest(new URL(url, window.location.href).href);
+      request.timeout = 6_000;
+      return new ethers.JsonRpcProvider(request, network.id, { staticNetwork: true, batchMaxCount: 1 });
+    }));
   }
-  return { ...community, creator: { id: await promise } };
+  return creationLogProviders.get(chainId);
 }
 
 export async function fetchOwnedCommunities(account, chainId = DEFAULT_CHAIN_ID, { signal } = {}) {
+  const factory = getContracts(chainId).CommunityFactory;
+  const iface = new ethers.Interface(CommunityFactoryABI);
   return loadOwnedCommunities(async page => {
     const result = await fetchCommunityCollectionPage(page, chainId, signal);
-    const communities = [];
-    // Bound log-query concurrency; these are event reads, not contract calls.
-    for (let offset = 0; offset < result.communities.length; offset += 6) {
-      signal?.throwIfAborted();
-      communities.push(...await Promise.all(result.communities.slice(offset, offset + 6)
-        .map(community => resolveCommunityCreator(community, chainId))));
-    }
-    return { ...result, communities };
+    const unknown = result.communities.filter(community => !community.creator?.id);
+    const created = await readCreatedCommunityAddresses(getCreationLogProviders(chainId), factory, iface, account, unknown, signal);
+    return {
+      ...result,
+      communities: result.communities.map(community => created.has(community.id.toLowerCase())
+        ? { ...community, creator: { id: account } }
+        : community),
+    };
   }, account, { signal });
 }
 

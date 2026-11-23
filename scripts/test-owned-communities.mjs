@@ -1,5 +1,5 @@
 import { Interface, zeroPadValue } from 'ethers';
-import { readCommunityCreator } from '../src/utils/communityCreator.js';
+import { readCreatedCommunityAddresses } from '../src/utils/communityCreator.js';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { loadOwnedCommunities, loadMatchingCommunities, communityMatchesKeyword } from '../src/utils/ownedCommunities.js';
@@ -77,23 +77,29 @@ test('favorites include later pages and exclude deleted communities regardless o
 });
 
 
-test('creator lookup pins factory, community topic and exact creation block, ignores ownership and token creator', async () => {
+test('wallet event lookup groups nearby blocks, retries on another node, and verifies creation blocks', async () => {
   const iface = new Interface(['event CommunityCreated(address indexed creator, address indexed community, address communityToken)']);
   const factory = `0x${'11'.repeat(20)}`;
   const address = `0x${'22'.repeat(20)}`;
-  const encoded = iface.encodeEventLog(iface.getEvent('CommunityCreated'), [wallet, address, other]);
+  const another = `0x${'33'.repeat(20)}`;
+  const event = iface.getEvent('CommunityCreated');
+  const makeLog = (id, blockNumber, creator = wallet) => ({
+    address: factory, blockNumber, ...iface.encodeEventLog(event, [creator, id, other]),
+  });
+  let retries = 0;
+  const failing = { getLogs: async () => { retries++; throw new Error('RPC timeout'); } };
   const provider = { getLogs: async filter => {
     assert.equal(filter.address, factory);
-    assert.deepEqual(filter.topics, [iface.getEvent('CommunityCreated').topicHash, null, zeroPadValue(address, 32)]);
+    assert.deepEqual(filter.topics, [event.topicHash, zeroPadValue(wallet, 32)]);
     assert.equal(filter.fromBlock, 135143646);
-    assert.equal(filter.toBlock, filter.fromBlock);
-    return [{ address: factory, ...encoded }];
+    assert.equal(filter.toBlock, 135143650);
+    return [makeLog(address, 135143646), makeLog(another, 135143649)];
   }};
-  const result = await readCommunityCreator(provider, factory, iface, {
-    id: address, index: -135143646000762, owner: { id: other }, communityInfo: { creator: other },
-  });
-  assert.equal(result.toLowerCase(), wallet);
-  await assert.rejects(readCommunityCreator({getLogs: async () => []}, factory, iface, {
-    id: address, index: -135143646000762,
-  }), /Creation event unavailable/);
+  const communities = [
+    { id: address, index: -135143646000762, owner: { id: other } },
+    { id: another, index: -135143650000001 },
+  ];
+  assert.deepEqual(await readCreatedCommunityAddresses([failing, provider], factory, iface, wallet, communities), new Set([address]));
+  assert.equal(retries, 1);
+  await assert.rejects(readCreatedCommunityAddresses([failing], factory, iface, wallet, communities), /RPC timeout/);
 });
