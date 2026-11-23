@@ -1543,6 +1543,13 @@
   border-width: 2px;
 }
 
+.index-broker-agent-mint-hint {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.6;
+}
+
 .index-broker-trade-mint-balance {
   margin-top: var(--space-2);
   color: var(--color-text-tertiary);

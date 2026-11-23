@@ -35,6 +35,7 @@ import { multicallRead } from '../../utils/multicall';
 import { applySwapSlippage } from '../../utils/nutboxSwap';
 import { encodeIndexBuybackHookData } from '../../utils/indexBuyback';
 import { readBasketNativeNav } from '../../utils/basketNav';
+import { buildAgentNftMintCommand, readAgentNftMintAccess } from '../../utils/agentNftMint';
 import { PoolCardFooter, PoolCardHeader } from './PoolCardTemplate';
 import './IndexBrokerNFTPoolCard.css';
 
@@ -48,6 +49,9 @@ const COPY = {
     referralRate: 'Public-mint referral', copyReferral: 'Copy referral link', referralCopied: 'Referral link copied', referralCopyFailed: 'Could not copy referral link',
     myWeight: 'My community weight', communityRewards: 'Community rewards', claimCommunity: 'Claim community rewards',
     approveMint: 'Approve mint token', mint: 'Mint NFT', referrer: 'Referrer NFT ID (optional)',
+    copyMintCommand: 'Copy Mint command', mintCommandCopied: 'Mint command copied. Send it to your Agent.', mintCommandCopyFailed: 'Could not copy the Mint command. Please try again.',
+    agentMintHint: 'Requires a registered Binance Agent Wallet. Copy the command and send it to your Agent; it will check its own whitelist and mint payment.',
+    agentMintPrice: 'Public mint reference price', mintAccessLoading: 'Checking mint wallet access…', mintAccessFailed: 'Could not verify mint wallet access. Refresh to retry.',
     whitelistMint: 'Your next mint uses a whitelist slot and only requires the Community Token payment.',
     publicMint: 'Public mint requires both the Community Token and {native} payments shown below.',
     mintPayment: 'Mint payment',
@@ -101,6 +105,9 @@ const COPY = {
     referralRate: '公开 Mint 推荐返佣', copyReferral: '复制推荐链接', referralCopied: '推荐链接已复制', referralCopyFailed: '复制推荐链接失败',
     myWeight: '我的社区挖矿权重', communityRewards: '社区奖励', claimCommunity: '领取社区奖励',
     approveMint: '授权铸造代币', mint: '铸造 NFT', referrer: '推荐 NFT ID（可选）',
+    copyMintCommand: '复制 Mint 命令', mintCommandCopied: 'Mint 命令已复制，请发送给你的 Agent 执行', mintCommandCopyFailed: '复制 Mint 命令失败，请重试',
+    agentMintHint: '需使用已注册的 Binance Agent Wallet 铸造。复制命令交给 Agent，它会按自己的地址检查白名单和实际费用。',
+    agentMintPrice: '公开铸造参考价', mintAccessLoading: '正在确认铸造钱包范围…', mintAccessFailed: '暂时无法确认铸造钱包范围，请刷新重试。',
     whitelistMint: '你下一次铸造使用白名单额度，只需支付社区代币。',
     publicMint: '公开铸造需同时支付下方展示的社区代币和 {native}。',
     mintPayment: '本次铸造支付',
@@ -612,6 +619,23 @@ export default function IndexBrokerNFTPoolCard({
   const [mintPreview, setMintPreview] = useState({ items: [], index: 0, loading: false, error: '' });
   const mintPreviewTimerRef = useRef(null);
   const [mintAttempted, setMintAttempted] = useState(false);
+  const [mintAccess, setMintAccess] = useState({ key: '', requiresAgentWallet: false, error: false });
+  const mintAccessKey = `${network.id}:${pool.id.toLowerCase()}`;
+  const mintAccessReady = mintAccess.key === mintAccessKey && !mintAccess.error;
+  const requiresAgentWallet = mintAccessReady && mintAccess.requiresAgentWallet;
+
+  useEffect(() => {
+    let cancelled = false;
+    readAgentNftMintAccess(readProvider, pool.id, contracts)
+      .then(required => {
+        if (!cancelled) setMintAccess({ key: mintAccessKey, requiresAgentWallet: required, error: false });
+      })
+      .catch(error => {
+        console.error('Failed to verify NFT mint wallet access:', error);
+        if (!cancelled) setMintAccess({ key: mintAccessKey, requiresAgentWallet: false, error: true });
+      });
+    return () => { cancelled = true; };
+  }, [contracts, mintAccessKey, pool.id, readProvider]);
   const [buybackQuote, setBuybackQuote] = useState({
     loading: false,
     nativeReserve: 0n,
@@ -640,6 +664,7 @@ export default function IndexBrokerNFTPoolCard({
   const [personalActivityHasMore, setPersonalActivityHasMore] = useState(false);
   const [indexedLoading, setIndexedLoading] = useState(true);
   const [data, setData] = useState({
+    poolKey: '',
     name: pool.name || c.type,
     symbol: 'INDEX',
     fundsReceiver: '',
@@ -1340,6 +1365,7 @@ export default function IndexBrokerNFTPoolCard({
 
       if (requestId !== requestRef.current) return;
       setData({
+        poolKey: `${network.id}:${pool.id.toLowerCase()}`,
         name, symbol, fundsReceiver, rendererAddress, ammAddress, indexToken, communityAsset, miningToken, miningMode, settlementToken,
         communityTokenPrice: toBigInt(primary.communityTokenPrice),
         activationPrice: toBigInt(primary.activationPrice),
@@ -1678,6 +1704,22 @@ export default function IndexBrokerNFTPoolCard({
   };
 
   const handleMint = async () => {
+    if (!canMint) return;
+    if (requiresAgentWallet) {
+      const command = buildAgentNftMintCommand({
+        language,
+        chainId: network.id,
+        pool: pool.id,
+        communityToken: data.communityAsset.address,
+        communityTokenPrice: data.communityTokenPrice,
+        nativePrice: data.nativePrice,
+        referrerTokenId,
+        requiresSeedReveal,
+      });
+      if (await copyToClipboard(command)) toast.success(c.mintCommandCopied);
+      else toast.error(c.mintCommandCopyFailed);
+      return;
+    }
     let receipt = null;
     setMintAttempted(true);
     setActionLoading('mint');
@@ -1951,8 +1993,13 @@ export default function IndexBrokerNFTPoolCard({
   };
 
   const busy = Boolean(actionLoading);
-  const mintUsesWhitelist = data.whitelistRemaining > 0n;
-  const canMint = data.totalSupply < data.maxSupply && (mintUsesWhitelist || data.remainingPaidMints > 0n);
+  const mintUsesWhitelist = !requiresAgentWallet && data.whitelistRemaining > 0n;
+  const canMint = mintAccessReady && data.poolKey === mintAccessKey
+    && !loading && !loadError && data.totalSupply < data.maxSupply
+    && (requiresAgentWallet || mintUsesWhitelist || data.remainingPaidMints > 0n);
+  const mintAccessHint = mintAccessReady
+    ? (requiresAgentWallet ? c.agentMintHint : '')
+    : (mintAccess.key === mintAccessKey && mintAccess.error ? c.mintAccessFailed : c.mintAccessLoading);
   const mintBalanceError = isConnected && mintAttempted
     ? getMintBalanceError(data.communityBalance, data.nativeBalance)
     : '';
@@ -2621,7 +2668,7 @@ export default function IndexBrokerNFTPoolCard({
           <section className="index-broker-mint-panel">
             <div>
               <h3>{c.mint}</h3>
-              <p>{mintUsesWhitelist ? c.whitelistMint : c.publicMint}</p>
+              <p>{mintAccessHint || (mintUsesWhitelist ? c.whitelistMint : c.publicMint)}</p>
               <div className={`index-broker-mint-costs ${mintUsesWhitelist ? 'is-whitelist' : ''}`}>
                 <span>{c.mintPayment}{language === 'zh' ? '：' : ':'}</span>
                 <strong>{formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}</strong>
@@ -2652,7 +2699,7 @@ export default function IndexBrokerNFTPoolCard({
                   </small>
                 </div>
               )}
-              {isConnected && !loading && (
+              {isConnected && !requiresAgentWallet && mintAccessReady && !loading && (
                 <div className="index-broker-mint-balance">
                   <span>
                     {c.mintBalances}: {formatTokenAmount(data.communityBalance, data.communityAsset.decimals)} {data.communityAsset.symbol}
@@ -2662,10 +2709,10 @@ export default function IndexBrokerNFTPoolCard({
                 </div>
               )}
             </div>
-            {!isConnected ? (
+            {!isConnected && mintAccessReady && !requiresAgentWallet ? (
               <button className="btn btn-primary" disabled={connecting} onClick={connect}>{c.connect}</button>
             ) : (
-              <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{c.mint}</button>
+              <button className="btn btn-primary" disabled={busy || !canMint} onClick={handleMint}>{requiresAgentWallet ? c.copyMintCommand : c.mint}</button>
             )}
           </section>
         )}
@@ -3148,21 +3195,22 @@ export default function IndexBrokerNFTPoolCard({
                   </div>
                   <div className="index-broker-trade-mint-controls">
                     <div className="index-broker-trade-mint-price">
-                      <span>{language === 'zh' ? '铸造价格' : 'Mint price'}</span>
+                      <span>{requiresAgentWallet ? c.agentMintPrice : (language === 'zh' ? '铸造价格' : 'Mint price')}</span>
                       <strong>
                         {formatTokenAmount(data.communityTokenPrice, data.communityAsset.decimals)} {data.communityAsset.symbol}
                         {!mintUsesWhitelist && ` + ${formatTokenAmount(data.nativePrice, network.nativeCurrency.decimals)} ${network.nativeCurrency.symbol}`}
                       </strong>
                       {mintUsesWhitelist && <small>{c.whitelistPaymentOnly}</small>}
                     </div>
-                    {!isConnected ? (
+                    {mintAccessHint && <p className="index-broker-agent-mint-hint" role="status">{mintAccessHint}</p>}
+                    {!isConnected && mintAccessReady && !requiresAgentWallet ? (
                       <button className="btn btn-primary index-broker-trade-mint-action" disabled={connecting} onClick={connect}>{c.connect}</button>
                     ) : (
                       <button className="btn btn-primary index-broker-trade-mint-action" disabled={busy || !canMint} onClick={handleMint}>
-                        {actionLoading === 'mint' ? <span className="spinner" /> : c.mint}
+                        {actionLoading === 'mint' ? <span className="spinner" /> : requiresAgentWallet ? c.copyMintCommand : c.mint}
                       </button>
                     )}
-                    {isConnected && !loading && (
+                    {isConnected && !requiresAgentWallet && mintAccessReady && !loading && (
                       <div className="index-broker-trade-mint-balance">
                         <span>
                           {c.mintBalances}: {formatTokenAmount(data.communityBalance, data.communityAsset.decimals)} {data.communityAsset.symbol}
